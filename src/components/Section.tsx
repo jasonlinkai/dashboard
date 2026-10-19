@@ -1,0 +1,94 @@
+import type { ReactNode } from "react";
+import { mmss } from "../format";
+import { type Polled, useNow } from "../hooks";
+
+const hms = new Intl.DateTimeFormat("zh-TW", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: "Asia/Taipei",
+});
+
+const age = (sec: number) => (sec < 60 ? `${Math.floor(sec)} 秒` : `${Math.floor(sec / 60)} 分鐘`);
+
+/** Small ring that empties as the next refresh approaches. */
+function Ring({ fraction }: { fraction: number }) {
+  const r = 5;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg className="ring" viewBox="0 0 14 14" aria-hidden>
+      <circle cx="7" cy="7" r={r} className="ring-track" />
+      <circle cx="7" cy="7" r={r} className="ring-fill" strokeDasharray={`${c * fraction} ${c}`} transform="rotate(-90 7 7)" />
+    </svg>
+  );
+}
+
+/**
+ * Whether the data on screen can be trusted as current. A refresh countdown alone can't tell:
+ * a refresh may fail, or the backend may hand back its previous copy, so judge by the data's age.
+ */
+function freshness(state: Polled<unknown>, maxAgeSec: number, now: number): { text: string; warn: boolean; title?: string } | null {
+  if (!state.updated && !state.error) return null;
+  const ageSec = state.dataTime == null ? null : (now - state.dataTime) / 1000;
+  if (state.error) {
+    return {
+      text: state.data !== undefined && ageSec != null ? `⚠ 更新失敗・資料已 ${age(ageSec)}` : "⚠ 更新失敗",
+      warn: true,
+      title: state.error,
+    };
+  }
+  if (ageSec == null) return { text: "⚠ 無即時資料", warn: true };
+  if (state.stale || ageSec > maxAgeSec) return { text: `⚠ 資料延遲 ${age(ageSec)}`, warn: true };
+  return { text: `資料 ${hms.format(state.dataTime!)}`, warn: false };
+}
+
+/** Card wrapper: title, refresh countdown, and how fresh the data is (red when it isn't). */
+export function Section({
+  title,
+  className,
+  state,
+  maxAgeSec,
+  actions,
+  children,
+}: {
+  title: string;
+  className: string;
+  state: Polled<unknown>;
+  /** Data older than this is flagged as delayed. */
+  maxAgeSec: number;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  useNow(1000); // re-render every second
+  // Read the clock directly: useNow's value can be up to 1 s old when a fetch finishing triggers
+  // the render, which made a fresh countdown start at 10:01 instead of 10:00.
+  const now = Date.now();
+  const fresh = freshness(state, maxAgeSec, now);
+  const left = state.nextAt == null ? null : Math.min(state.intervalSec, (state.nextAt - now) / 1000);
+
+  return (
+    <section className={`card ${className} ${fresh?.warn ? "card-warn" : ""}`}>
+      <header className="card-head">
+        <h2>{title}</h2>
+        {actions}
+        <span className="muted status">
+          {left == null ? (
+            state.loading ? "載入中…" : "已暫停"
+          ) : (
+            <span className="countdown">
+              <Ring fraction={Math.min(1, Math.max(0, left / state.intervalSec))} />
+              {left <= 0 ? "更新中…" : `${mmss(left)} 後更新`}
+            </span>
+          )}
+          {fresh && (
+            <span className={fresh.warn ? "error" : ""} title={fresh.title}>
+              ・{fresh.text}
+            </span>
+          )}
+        </span>
+      </header>
+      {children}
+    </section>
+  );
+}

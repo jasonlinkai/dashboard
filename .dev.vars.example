@@ -1,0 +1,6 @@
+# 複製成 .dev.vars 後填入（.dev.vars 不會進 git）
+# 交通部 TDX：https://tdx.transportdata.tw → 會員中心 → 資料服務 → API 金鑰
+TDX_CLIENT_ID=
+TDX_CLIENT_SECRET=
+# 中央氣象署開放資料：https://opendata.cwa.gov.tw → 會員 → 取得授權碼
+CWA_API_KEY=

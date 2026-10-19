@@ -1,0 +1,155 @@
+import { type ReactNode, useEffect, useRef } from "react";
+import {
+  BUS_ESTIMATE_STALE_MIN,
+  INSTRUMENTS,
+  LOCATIONS,
+  QUOTE_LAG_MIN,
+  REFRESH_SEC,
+  STALE_AFTER_SEC,
+  STATION_MAX_AGE_MIN,
+  TRAIN,
+} from "../config";
+
+const dur = (sec: number) => (sec < 60 ? `${sec} 秒` : `${Math.round(sec / 60)} 分鐘`);
+
+const delayedYields = INSTRUMENTS.filter((i) => i.format.kind === "yield" && i.feedDelayMin);
+const yieldDelay = Math.max(0, ...delayedYields.map((i) => i.feedDelayMin ?? 0));
+const fixedStations = LOCATIONS.filter((l) => l.cwa.station).map((l) => `${l.name}→${l.cwa.station}站`);
+const townStations = LOCATIONS.filter((l) => !l.cwa.station).map((l) => l.name);
+
+interface Block {
+  title: string;
+  source: ReactNode;
+  refresh: ReactNode;
+  notes: ReactNode[];
+}
+
+// Keep this honest: say what is verified, what is a known limitation, and what is not verified.
+const BLOCKS: Block[] = [
+  {
+    title: "市場行情",
+    source: "Yahoo Finance 的公開網頁介面（非官方 API，未經交易所授權，可能隨時變更或中斷）",
+    refresh: `每 ${dur(REFRESH_SEC.quotes)}；超過 ${dur(STALE_AFTER_SEC.quotes)} 未取得新資料即警示`,
+    notes: [
+      "台股、那斯達克等是否為即時報價、延遲多久未經驗證；交易請以券商報價為準。",
+      `美債殖利率（CBOE 13 週、5 年、10 年、30 年指數）實測固定延遲約 ${yieldDelay} 分鐘，標示為「延遲報價」。`,
+      "黃金是 COMEX 期貨近月合約（美元/盎司），不是現貨或銀行黃金牌價。",
+      "美元/台幣是 Yahoo 報價，不是銀行牌告價。",
+      "漲跌以 Yahoo 的前一日收盤為基準（比特幣 24 小時交易，基準點不同）。",
+      `收盤後顯示「收盤 HH:MM」；開盤中超過 ${QUOTE_LAG_MIN} 分鐘沒有新成交（扣除固定延遲）顯示紅色「停在 HH:MM」。`,
+    ],
+  },
+  {
+    title: "天氣",
+    source: (
+      <>
+        現在溫度、濕度、天氣：氣象署測站實測。
+        <br />
+        高低溫、降雨、體感、24 小時預報：Open-Meteo 模型。
+      </>
+    ),
+    refresh: `每 ${dur(REFRESH_SEC.weather)}；測站約每 10 分鐘一筆，發布會晚幾分鐘；超過 ${dur(STALE_AFTER_SEC.weather)} 未更新即警示`,
+    notes: [
+      `使用的測站：${fixedStations.join("、")}${townStations.length ? `；${townStations.join("、")}用同區測站` : ""}。南港區只有國道旁的「國三S016K」，可能和住宅區有落差。`,
+      `測站超過 ${STATION_MAX_AGE_MIN} 分鐘沒新資料就改用模型數值，卡片底部會註明。`,
+      "模型格點約數公里，內湖、南港、汐止在同一格點，三區預報幾乎相同；只有現在溫度（實測）會不同。",
+      "高低溫是預報值不是實測，也不是氣象署官方預報；點卡片可開氣象署鄉鎮預報對照。",
+    ],
+  },
+  {
+    title: "公車",
+    source: "交通部 TDX 運輸資料流通服務（新北市公車預估到站）",
+    refresh: `每 ${dur(REFRESH_SEC.bus)}；超過 ${dur(STALE_AFTER_SEC.bus)} 未更新即警示`,
+    notes: [
+      "預估由業者系統依車輛位置推算（TDX 約每分鐘更新），塞車、改道、脫班時可能不準。",
+      "秒數是看板依預估往下推算，每次更新重新校正，實際精確度不到秒。",
+      `單一路線預估超過 ${BUS_ESTIMATE_STALE_MIN} 分鐘沒更新，該列會顯示紅色警告。`,
+      "「往台北方向」依路線的「往 XX」站名自動判斷，可在設定檔改成固定方向。",
+      "TDX 金鑰每分鐘限查 5 次（交通資料共用），額度用完時沿用上一筆並標示延遲。",
+    ],
+  },
+  {
+    title: `火車（${TRAIN.from} → 台北）`,
+    source: "交通部 TDX：臺鐵每日時刻表＋車站即時看板（誤點）",
+    refresh: `時刻表每天抓一次；誤點每 ${dur(REFRESH_SEC.train)}；超過 ${dur(STALE_AFTER_SEC.train)} 未更新即警示`,
+    notes: [
+      "倒數是「表定開車時間＋誤點分鐘」。",
+      "車站即時看板通常只列出快到站的列車，較晚班次顯示「無即時資訊」不代表準點。",
+      "沒有接臺鐵停駛、改點、通阻公告；颱風或事故時請以臺鐵官網為準（點班次可開車次頁）。",
+    ],
+  },
+  {
+    title: "頭條新聞",
+    source: "Google 新聞台灣版 RSS（焦點、財經、國際、科技）",
+    refresh: `每 ${dur(REFRESH_SEC.news)}；超過 ${dur(STALE_AFTER_SEC.news)} 未更新即警示`,
+    notes: [
+      "哪些新聞上榜由 Google 演算法決定，不是編輯台挑選；內容正確性由各媒體負責。",
+      "「X 小時前」是 RSS 裡的發布時間。",
+    ],
+  },
+];
+
+const LEGEND: [ReactNode, string][] = [
+  ["◯ 0:24 後更新", "下一次向後端要資料的倒數；倒數本身不代表資料是新的。"],
+  ["資料 23:51:27", "後端最後一次真正從資料來源取得資料的時間。"],
+  [<span className="error">⚠ 資料延遲 N 分鐘</span>, "資料太舊，或後端更新失敗正在用上一份資料；卡片外框同時變紅。"],
+  [<span className="error">⚠ 更新失敗</span>, "看板連不到後端（例如網路斷線），畫面上是之前的資料。"],
+  [<span className="error">⚠ 無即時資料</span>, "這次只拿到靜態資料（例如火車只有時刻表、沒有誤點）。"],
+];
+
+export function Reliability({ onClose }: { onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rel-title" onClick={(e) => e.stopPropagation()}>
+        <header className="modal-head">
+          <h2 id="rel-title">資料可靠度說明</h2>
+          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="關閉">
+            ✕
+          </button>
+        </header>
+        <div className="modal-body">
+          <section className="rel-block rel-legend">
+            <h3>右上角的標示怎麼看</h3>
+            <dl>
+              {LEGEND.map(([k, v], i) => (
+                <div key={i}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+          {BLOCKS.map((b) => (
+            <section key={b.title} className="rel-block">
+              <h3>{b.title}</h3>
+              <p>
+                <b>來源</b>
+                {b.source}
+              </p>
+              <p>
+                <b>更新</b>
+                {b.refresh}
+              </p>
+              <ul>
+                {b.notes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+          <p className="rel-foot">
+            所有數字僅供參考，不構成投資建議；出門、搭車、交易前請以官方來源確認。點任何一筆資料都可以開啟它的來源頁面。
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
