@@ -183,8 +183,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 
 .grid { flex: 1; min-height: 0; display: grid; gap: var(--gap); }
 .card {
-  /* Slightly see-through so the weather animation shows faintly behind the data. */
-  background: color-mix(in srgb, var(--card) 86%, transparent);
+  /* See-through so the weather animation shows behind the data (no blur: it would erase rain). */
+  background: color-mix(in srgb, var(--card) 62%, transparent);
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 10px 12px;
@@ -208,7 +208,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 
 .tiles { flex: 1; min-height: 0; display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; }
 .tile {
-  background: var(--card-2); border-radius: 10px; padding: 8px 10px; min-width: 0; min-height: 0;
+  background: color-mix(in srgb, var(--card-2) 55%, transparent); border-radius: 10px; padding: 8px 10px; min-width: 0; min-height: 0;
   display: flex; flex-direction: column; overflow: hidden;
 }
 .tile-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; white-space: nowrap; }
@@ -228,7 +228,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 
 .wx-grid { flex: 1; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
 .wx {
-  background: var(--card-2); border-radius: 10px; padding: 7px 10px; min-height: 0; overflow: hidden;
+  background: color-mix(in srgb, var(--card-2) 55%, transparent); border-radius: 10px; padding: 7px 10px; min-height: 0; overflow: hidden;
   display: grid; gap: 2px 10px; align-content: center;
   /* Name + rain/humidity across the top; temperature on the left, hourly strip on the right. */
   grid-template-columns: minmax(96px, 0.55fr) minmax(0, 2fr);

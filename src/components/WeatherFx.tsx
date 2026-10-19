@@ -103,14 +103,14 @@ export function WeatherFx({ scene }: { scene: Scene }) {
         const cx = w * 0.88;
         const cy = h * 0.06;
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.45);
-        g.addColorStop(0, "rgba(255,200,90,0.28)");
+        g.addColorStop(0, "rgba(255,200,90,0.42)");
         g.addColorStop(1, "rgba(255,200,90,0)");
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(t / 60000);
-        ctx.fillStyle = "rgba(255,210,120,0.06)";
+        ctx.fillStyle = "rgba(255,210,120,0.1)";
         for (let i = 0; i < 12; i++) {
           ctx.rotate((Math.PI * 2) / 12);
           ctx.beginPath();
@@ -124,7 +124,7 @@ export function WeatherFx({ scene }: { scene: Scene }) {
 
       // Stars twinkle on clear nights.
       for (const s of stars) {
-        const a = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(t / 1000 * s.v + s.p));
+        const a = 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(t / 1000 * s.v + s.p));
         ctx.fillStyle = `rgba(${dark ? "255,255,240" : "90,110,150"},${a})`;
         ctx.beginPath();
         ctx.arc(s.x * w, s.y * h, s.s, 0, Math.PI * 2);
@@ -136,7 +136,7 @@ export function WeatherFx({ scene }: { scene: Scene }) {
       for (const c of clouds) {
         c.x += c.v * dt;
         if (c.x > 1.25) c.x = -0.3;
-        const alpha = (heavySky ? 0.2 : 0.17) * c.p;
+        const alpha = (heavySky ? 0.3 : 0.26) * c.p;
         for (let i = 0; i < 4; i++) {
           const bx = c.x * w + (i - 1.5) * c.s * 0.45;
           const by = c.y * h + Math.sin(i * 1.7) * c.s * 0.12;
@@ -157,7 +157,7 @@ export function WeatherFx({ scene }: { scene: Scene }) {
         const y = f.y * h;
         const g = ctx.createLinearGradient(0, y - f.s / 2, 0, y + f.s / 2);
         g.addColorStop(0, `rgba(${ink},0)`);
-        g.addColorStop(0.5, `rgba(${ink},0.07)`);
+        g.addColorStop(0.5, `rgba(${ink},0.12)`);
         g.addColorStop(1, `rgba(${ink},0)`);
         ctx.fillStyle = g;
         ctx.fillRect((f.x - 0.5) * w, y - f.s / 2, w * 1.2, f.s);
@@ -165,7 +165,7 @@ export function WeatherFx({ scene }: { scene: Scene }) {
 
       // Rain: slanted streaks.
       if (drops.length) {
-        ctx.strokeStyle = `rgba(${dark ? "170,200,255" : "60,90,140"},${kind === "drizzle" ? 0.22 : 0.3})`;
+        ctx.strokeStyle = `rgba(${dark ? "170,200,255" : "60,90,140"},${kind === "drizzle" ? 0.35 : 0.48})`;
         ctx.lineWidth = kind === "heavy" || kind === "storm" ? 1.4 : 1;
         ctx.beginPath();
         for (const d of drops) {
@@ -188,7 +188,7 @@ export function WeatherFx({ scene }: { scene: Scene }) {
         f.y += f.v * dt * 0.12;
         f.x += Math.sin(t / 1500 + f.p) * dt * 0.01;
         if (f.y > 1.03) f.y = -0.03;
-        ctx.fillStyle = `rgba(${dark ? "255,255,255" : "120,140,170"},0.6)`;
+        ctx.fillStyle = `rgba(${dark ? "255,255,255" : "120,140,170"},0.8)`;
         ctx.beginPath();
         ctx.arc(f.x * w, f.y * h, f.s, 0, Math.PI * 2);
         ctx.fill();
@@ -201,7 +201,7 @@ export function WeatherFx({ scene }: { scene: Scene }) {
           nextFlash = t + rnd(5000, 14000);
         }
         if (flash > 0) {
-          ctx.fillStyle = `rgba(${dark ? "220,230,255" : "255,255,255"},${flash * 0.22})`;
+          ctx.fillStyle = `rgba(${dark ? "220,230,255" : "255,255,255"},${flash * 0.3})`;
           ctx.fillRect(0, 0, w, h);
           flash = Math.max(0, flash - dt * 2.5);
         }
