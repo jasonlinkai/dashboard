@@ -36,9 +36,12 @@ export async function quotes(symbols: string[]): Promise<Quote[]> {
 interface Feed {
   source: string;
   url: string;
+  /** Google News sitemap instead of RSS; keep only these sections (first path segment of the link). */
+  sections?: string[];
 }
 const CNA = (feed: string): Feed => ({ source: "中央社", url: `https://feeds.feedburner.com/rsscna/${feed}` });
-const LTN = (feed: string): Feed => ({ source: "自由時報", url: `https://news.ltn.com.tw/rss/${feed}.xml` });
+// TVBS has no RSS; its Google News sitemap (last ~2 days, every section) is the next best thing.
+const TVBS = (...sections: string[]): Feed => ({ source: "TVBS", url: "https://news.tvbs.com.tw/sitemap/news-sitemap", sections });
 const feedOf = (source: string, url: string): Feed => ({ source, url });
 // Foreign outlets are shown as published (德國之聲 in simplified Chinese, the rest in English).
 const BBC_ZH = feedOf("BBC 中文", "https://feeds.bbci.co.uk/zhongwen/trad/rss.xml");
@@ -48,7 +51,7 @@ const TOPICS: Record<string, Feed[]> = {
     CNA("politics"),
     CNA("social"),
     CNA("lifehealth"),
-    LTN("all"),
+    TVBS("politics", "local", "life", "world", "china", "money"),
     feedOf("ETtoday", "https://feeds.feedburner.com/ettoday/realtime"),
     feedOf("公視", "https://news.pts.org.tw/xml/newsfeed.xml"),
     feedOf("新頭殼", "https://newtalk.tw/rss/all"),
@@ -57,20 +60,21 @@ const TOPICS: Record<string, Feed[]> = {
   ],
   business: [
     CNA("finance"),
-    LTN("business"),
+    TVBS("money"),
     feedOf("經濟日報", "https://money.udn.com/rssfeed/news/1001/5591?ch=money"),
     feedOf("ETtoday", "https://feeds.feedburner.com/ettoday/finance"),
     feedOf("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
   ],
   world: [
     CNA("intworld"),
-    LTN("world"),
+    TVBS("world", "china"),
     BBC_ZH,
     DW_ZH,
     feedOf("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
   ],
   tech: [
     CNA("technology"),
+    TVBS("tech"),
     feedOf("iThome", "https://www.ithome.com.tw/rss"),
     feedOf("科技新報", "https://technews.tw/feed/"),
     feedOf("INSIDE", "https://www.inside.com.tw/feed/rss"),
@@ -97,10 +101,31 @@ function decode(s: string): string {
 
 const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))?.[1];
 
-async function feed({ source, url }: Feed): Promise<NewsItem[]> {
+async function download(url: string): Promise<string> {
   const res = await fetch(url, { headers: { "User-Agent": UA } });
   if (!res.ok) throw new Error(`news ${res.status}`);
-  const xml = await res.text();
+  return res.text();
+}
+
+/** All stories in a Google News sitemap, each with its section (first path segment). */
+function sitemap(url: string, source: string) {
+  // Shared by every topic that uses it, so the ~300 KB file is fetched once per refresh.
+  return cached(`sitemap:${url}`, 300, async () =>
+    [...(await download(url)).matchAll(/<url>([\s\S]*?)<\/url>/g)].map(([, u]) => {
+      const link = decode(tag(u, "loc") ?? "");
+      const pub = tag(u, "news:publication_date");
+      const time = pub ? Date.parse(pub) : NaN;
+      return {
+        section: link.match(/^https?:\/\/[^/]+\/([^/]+)\//)?.[1] ?? "",
+        item: { title: decode(tag(u, "news:title") ?? ""), source, link, published: Number.isNaN(time) ? null : time } as NewsItem,
+      };
+    }),
+  );
+}
+
+async function feed({ source, url, sections }: Feed): Promise<NewsItem[]> {
+  if (sections) return (await sitemap(url, source)).filter((s) => sections.includes(s.section)).map((s) => s.item);
+  const xml = await download(url);
   // RSS <item> or Atom <entry>; links as <link>url</link> or <link href="url"/>.
   return [...xml.matchAll(/<(item|entry)[\s>]([\s\S]*?)<\/\1>/g)]
     .map(([, , item]): NewsItem => {

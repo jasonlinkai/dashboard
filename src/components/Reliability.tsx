@@ -85,13 +85,13 @@ const BLOCKS: Block[] = [
       <>
         多家媒體 RSS 混合：
         <br />
-        綜合：中央社、自由時報、ETtoday、公視、新頭殼、BBC 中文、德國之聲
+        綜合：中央社、TVBS、ETtoday、公視、新頭殼、BBC 中文、德國之聲
         <br />
-        財經：中央社、自由時報、經濟日報、ETtoday、CNBC
+        財經：中央社、TVBS、經濟日報、ETtoday、CNBC
         <br />
-        國際：中央社、自由時報、BBC 中文、德國之聲、Al Jazeera
+        國際：中央社、TVBS、BBC 中文、德國之聲、Al Jazeera
         <br />
-        科技：中央社、iThome、科技新報、INSIDE、TechCrunch
+        科技：中央社、TVBS、iThome、科技新報、INSIDE、TechCrunch
       </>
     ),
     refresh: `每 ${dur(REFRESH_SEC.news)}；超過 ${dur(STALE_AFTER_SEC.news)} 未更新即警示`,
@@ -99,6 +99,7 @@ const BLOCKS: Block[] = [
       "各家輪流排列：先列每家最新的一則（依時間排），再列每家第二新的，以此類推；每家最多 8 則，避免單一媒體洗版；超過 36 小時的不列。不是編輯挑選的頭條，也沒有判斷重要性。",
       "多家媒體轉載同一則中央社稿件時，標題相同的只留一則（標題被改寫就無法辨識）。",
       "某家來源暫時連不上時，其他來源照常顯示。",
+      "TVBS 沒有 RSS，改讀它提供給 Google 新聞的網站地圖，依網址分類（政治、社會、生活、國際、財經、科技…）放進各分頁。",
       "外媒標題照原文顯示：德國之聲是簡體中文，Al Jazeera、CNBC、TechCrunch 是英文，不做翻譯或轉換。",
       "Google 新聞、中時、風傳媒、關鍵評論會拒絕來自 Cloudflare 機房的請求，聯合新聞網的 RSS 目前是空的，所以沒有收錄。",
       "「X 小時前」是 RSS 裡的發布時間。",
