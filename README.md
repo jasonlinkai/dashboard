@@ -27,17 +27,26 @@ npm run dev
 
 用 iPad 或手機開終端機顯示的 `Network:` 網址（要跟電腦連同一個 Wi-Fi）。
 
-## 部署到網路上（Cloudflare，免費方案即可）
+## 部署（Cloudflare，免費方案即可）
+
+網址：https://dashboard.jasonlinkai.workers.dev
+
+**自動部署**：這個 repo 已經連結 Cloudflare Workers Builds，push 到 `main` 就會自動執行
+`npm run build` 和 `npx wrangler deploy`。建置進度在 Cloudflare 後台 Workers & Pages → dashboard → Deployments。
+
+**手動部署**（第一次設定，或要跳過 GitHub 時）：
 
 ```bash
 npx wrangler login
-npx wrangler secret put TDX_CLIENT_ID
-npx wrangler secret put TDX_CLIENT_SECRET
-npx wrangler secret put CWA_API_KEY
+npx wrangler secret bulk .dev.vars   # 上傳金鑰（只需一次，之後會保留）
 npm run deploy
 ```
 
-部署後會得到一個 `https://dashboard.<你的帳號>.workers.dev` 網址。
+部署注意事項：
+
+- TDX 金鑰每分鐘只能查 5 次。所有公車與火車查詢都經過同一個 Durable Object（`TdxGate`），
+  共用快取與額度；本機開發伺服器用同一組金鑰時會互搶額度，正式版在用時建議關掉本機的。
+- Google 新聞會拒絕 Cloudflare 機房的請求，所以新聞改用中央社 RSS。
 
 ## 加到 iPad 主畫面
 
