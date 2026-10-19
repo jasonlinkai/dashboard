@@ -7,7 +7,7 @@ import {
   REFRESH_SEC,
   STALE_AFTER_SEC,
   STATION_MAX_AGE_MIN,
-  TRAIN,
+  TRAINS,
 } from "../config";
 
 const dur = (sec: number) => (sec < 60 ? `${sec} 秒` : `${Math.round(sec / 60)} 分鐘`);
@@ -69,11 +69,12 @@ const BLOCKS: Block[] = [
     ],
   },
   {
-    title: `火車（${TRAIN.from} → 台北）`,
+    title: `火車（${TRAINS.map((t) => `${t.from}→${t.to}`.replace(/臺/g, "台")).join("、")}）`,
     source: "交通部 TDX：臺鐵每日時刻表＋車站即時看板（誤點）",
     refresh: `時刻表每天抓一次；誤點每 ${dur(REFRESH_SEC.train)}；超過 ${dur(STALE_AFTER_SEC.train)} 未更新即警示`,
     notes: [
       "倒數是「表定開車時間＋誤點分鐘」。",
+      "只有展開的路線會更新；切換路線時會重新查詢（TDX 額度與公車共用）。",
       "車站即時看板通常只列出快到站的列車，較晚班次顯示「無即時資訊」不代表準點。",
       "沒有接臺鐵停駛、改點、通阻公告；颱風或事故時請以臺鐵官網為準（點班次可開車次頁）。",
     ],

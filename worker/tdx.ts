@@ -117,7 +117,7 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
       asOf: Date.parse(e.SrcUpdateTime ?? e.UpdateTime ?? "") || fetchedAt,
     }));
   });
-  const arrivals = etas.map((e): BusArrival => {
+  const all = etas.map((e): BusArrival => {
     const route = zh(e.RouteName);
     const next = hhmm(e.NextBusTime);
     const hasEstimate = typeof e.EstimateTime === "number";
@@ -133,7 +133,15 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
       status: status === "尚未發車" && next ? `${next} 發車` : status,
     };
   });
-  return { arrivals, notFound };
+  // Loop routes (590, F913 in 日月光社區) pass the same stop twice per trip, and sub-routes
+  // add more rows: keep only the soonest bus per route, direction and stop.
+  const soonest = new Map<string, BusArrival>();
+  for (const a of all) {
+    const key = `${a.route}|${a.direction}|${a.stop}`;
+    const prev = soonest.get(key);
+    if (!prev || (a.estimateSec != null && (prev.estimateSec == null || a.estimateSec < prev.estimateSec))) soonest.set(key, a);
+  }
+  return { arrivals: [...soonest.values()], notFound };
 }
 
 export async function bus(env: Env, queries: BusQuery[]): Promise<BusResponse> {

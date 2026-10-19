@@ -272,6 +272,18 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grow > div { overflow: hidden; text-overflow: ellipsis; }
 .chip { border-radius: 7px; padding: 3px 7px; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .blue-chip { background: color-mix(in srgb, var(--blue) 20%, transparent); color: var(--blue); }
+/* Train routes: an accordion; the open route's list takes the remaining height and scrolls. */
+.acc { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.acc-item { flex: none; display: flex; flex-direction: column; min-height: 0; }
+.acc-open { flex: 1; }
+.acc-head {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; flex: none;
+  border: 0; border-radius: 8px; padding: 6px 10px; background: var(--card-2); color: var(--muted);
+  font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.acc-open > .acc-head { color: var(--text); }
+.acc-chev { font-size: 18px; line-height: 1; transition: transform 0.15s; }
+.acc-open .acc-chev { transform: rotate(90deg); }
 .eta { font-size: 18px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .time { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
 

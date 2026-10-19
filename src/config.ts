@@ -56,17 +56,21 @@ export interface BusStop {
 export const BUS_STOPS: BusStop[] = [
   { city: "NewTaipei", route: "藍23", stop: "忠孝里", direction: "auto" },
   { city: "NewTaipei", route: "藍39", stop: "樟樹實中", direction: "auto" },
+  { city: "NewTaipei", route: "590", stop: "日月光社區", direction: "auto" }, // 往南港車站
+  { city: "NewTaipei", route: "F913", stop: "日月光社區", direction: "auto" }, // 環狀線，只有一個方向
 ];
 
 /** "auto" 判斷「往台北」的關鍵字（比對路線的往 XX 方向） */
 export const TOWARD_TAIPEI = /捷運|臺北|台北|市政府|南港|昆陽|松山/;
 
-export const TRAIN = {
-  from: "汐科", // 上車站
-  to: "臺北",
-  type: "區間", // 也會包含「區間快」
-  limit: 10, // 列表可捲動，螢幕高的時候能多顯示幾班
-};
+/** 火車區塊的路線（手風琴，依序排列，第一條預設展開） */
+export const TRAINS = [
+  { from: "汐科", to: "臺北" }, // 上車站 → 下車站
+  { from: "臺北", to: "汐科" },
+  { from: "松山", to: "汐科" },
+];
+export const TRAIN_TYPE = "區間"; // 也會包含「區間快」
+export const TRAIN_LIMIT = 10; // 列表可捲動，螢幕高的時候能多顯示幾班
 
 export const links = {
   quote: (i: Instrument) => `https://tw.stock.yahoo.com/quote/${encodeURIComponent(i.page ?? i.symbol)}`,

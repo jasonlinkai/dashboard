@@ -1,7 +1,8 @@
-import { BUS_ESTIMATE_STALE_MIN, BUS_STOPS, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN, links } from "../config";
+import { BUS_ESTIMATE_STALE_MIN, BUS_STOPS, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAINS, TRAIN_LIMIT, TRAIN_TYPE, links } from "../config";
+import { useState } from "react";
 import { countdown } from "../format";
 import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
-import type { BusArrival, BusResponse, TrainResponse } from "../shared";
+import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
 import { Section } from "./Section";
 
 const NOT_CONFIGURED = <p className="hint">尚未設定 TDX 金鑰，請參考 README。</p>;
@@ -74,46 +75,79 @@ export function Bus() {
 }
 
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const station = (name: string) => name.replace(/臺/g, "台");
 
-export function Train() {
-  const now = useNow(1000);
-  const q = new URLSearchParams({ from: TRAIN.from, to: TRAIN.to, type: TRAIN.type, limit: String(TRAIN.limit) });
-  const state = usePolling(() => getJSON<TrainResponse>(`/api/train?${q}`), REFRESH_SEC.train);
+/** One route's departures. Keyed by route so its scroll position and hint start fresh. */
+function TrainList({ trains, to, now }: { trains: TrainDeparture[]; to: string; now: number }) {
   const listRef = useScrollHint<HTMLUListElement>();
   const local = new Date(now + 8 * 3600_000);
   const nowSec = local.getUTCHours() * 3600 + local.getUTCMinutes() * 60 + local.getUTCSeconds();
   const today = local.toISOString().slice(0, 10);
   // Seconds until the train actually leaves (scheduled time + reported delay).
-  const trains = (state.data?.trains ?? [])
+  const rows = trains
     .map((t) => ({ ...t, left: (toMin(t.departure) + (t.delayMin ?? 0)) * 60 - nowSec }))
     .filter((t) => t.left > -30); // drop ones that left since the last refresh
   return (
-    <Section title={`火車 ${TRAIN.from} → 台北`} className="train" state={state} maxAgeSec={STALE_AFTER_SEC.train}>
+    <ul className="list scroll" ref={listRef}>
+      {rows.map((t) => (
+        <li key={t.trainNo}>
+          <a className="row link" href={links.train(t.trainNo, today)} target="_blank" rel="noopener noreferrer">
+            <span className="time">{t.departure}</span>
+            <span className="grow">
+              <div>
+                {t.type} <span className="muted small">{t.trainNo} 次・往{t.endingStation}</span>
+              </div>
+              <div className="muted small">
+                {t.arrival} 抵達{station(to)}・
+                {t.delayMin == null ? "無即時資訊" : t.delayMin > 0 ? <span className="red">晚 {t.delayMin} 分</span> : "準點"}
+              </div>
+            </span>
+            <span className={`eta ${t.left < 300 ? "red" : ""}`}>{t.left <= 30 ? "即將發車" : countdown(t.left)}</span>
+          </a>
+        </li>
+      ))}
+      {!rows.length && <li className="hint">今天已經沒有{TRAIN_TYPE}車了</li>}
+    </ul>
+  );
+}
+
+/**
+ * Accordion of routes; exactly one is open, and only that one is polled, so the TDX quota
+ * (shared with the buses) doesn't grow with the number of routes.
+ */
+export function Train() {
+  const now = useNow(1000);
+  const [open, setOpen] = useState(0);
+  const route = TRAINS[open];
+  const q = new URLSearchParams({ from: route.from, to: route.to, type: TRAIN_TYPE, limit: String(TRAIN_LIMIT) });
+  const state = usePolling(() => getJSON<TrainResponse>(`/api/train?${q}`), REFRESH_SEC.train, [open]);
+  // Right after switching, the previous route's answer is still in state; don't show it here.
+  const current = state.data && state.data.from === route.from && state.data.to === route.to ? state.data : undefined;
+  return (
+    <Section title="火車" className="train" state={state} maxAgeSec={STALE_AFTER_SEC.train}>
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (
-        <ul className="list scroll" ref={listRef}>
-          {trains.map((t) => {
-            return (
-              <li key={t.trainNo}>
-                <a className="row link" href={links.train(t.trainNo, today)} target="_blank" rel="noopener noreferrer">
-                  <span className="time">{t.departure}</span>
-                  <span className="grow">
-                    <div>
-                      {t.type} <span className="muted small">{t.trainNo} 次・往{t.endingStation}</span>
-                    </div>
-                    <div className="muted small">
-                      {t.arrival} 抵達台北・
-                      {t.delayMin == null ? "無即時資訊" : t.delayMin > 0 ? <span className="red">晚 {t.delayMin} 分</span> : "準點"}
-                    </div>
-                  </span>
-                  <span className={`eta ${t.left < 300 ? "red" : ""}`}>{t.left <= 30 ? "即將發車" : countdown(t.left)}</span>
-                </a>
-              </li>
-            );
-          })}
-          {state.data?.configured && !trains.length && <li className="hint">今天已經沒有區間車了</li>}
-        </ul>
+        <div className="acc">
+          {TRAINS.map((r, i) => (
+            <div key={`${r.from}-${r.to}`} className={`acc-item ${i === open ? "acc-open" : ""}`}>
+              <button className="acc-head" aria-expanded={i === open} onClick={() => setOpen(i)}>
+                <span>
+                  {station(r.from)} → {station(r.to)}
+                </span>
+                <span className="acc-chev" aria-hidden>
+                  ›
+                </span>
+              </button>
+              {i === open &&
+                (current ? (
+                  <TrainList key={i} trains={current.trains} to={r.to} now={now} />
+                ) : (
+                  <p className="hint">{state.error ?? "載入中…"}</p>
+                ))}
+            </div>
+          ))}
+        </div>
       )}
     </Section>
   );
