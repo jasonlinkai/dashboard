@@ -1,7 +1,8 @@
+import { DurableObject } from "cloudflare:workers";
 import { observations } from "./cwa";
 import { news, quotes } from "./markets";
 import { bus, train } from "./tdx";
-import { type Env, type Freshness, freshness } from "./util";
+import { type Env, type Freshness, freshness, setPersistentStore } from "./util";
 
 function json(body: unknown, status = 200) {
   const headers = new Headers({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -13,10 +14,33 @@ function json(body: unknown, status = 200) {
 
 const list = (v: string | null) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
+function serve(request: Request, env: Env): Promise<Response> {
+  const f: Freshness = { oldest: Infinity, stale: false };
+  return freshness.run(f, () => handle(request, env));
+}
+
+// TDX allows 5 calls a minute per key. Cloudflare runs many short-lived copies of this Worker,
+// each with its own cache and counter, which together blow through that. So every TDX request goes
+// through one Durable Object: a single shared cache and rate counter, plus durable storage for the
+// daily timetable / station list / route info.
+const TDX_PATHS = new Set(["/api/bus", "/api/train"]);
+
+export class TdxGate extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    setPersistentStore(ctx.storage);
+  }
+  fetch(request: Request): Promise<Response> {
+    return serve(request, this.env);
+  }
+}
+
 export default {
   fetch(request, env): Promise<Response> {
-    const f: Freshness = { oldest: Infinity, stale: false };
-    return freshness.run(f, () => handle(request, env));
+    if (TDX_PATHS.has(new URL(request.url).pathname)) {
+      return env.TDX.get(env.TDX.idFromName("tdx")).fetch(request);
+    }
+    return serve(request, env);
   },
 } satisfies ExportedHandler<Env>;
 

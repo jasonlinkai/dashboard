@@ -23,7 +23,7 @@ export interface Polled<T> {
 
 /**
  * Fetches immediately, then `intervalSec` after each fetch finishes, so `nextAt` is an exact
- * countdown target. Pauses while the page is hidden and refreshes as soon as it is shown again
+ * countdown target. After the first load it pauses while the page is hidden and refreshes as soon as it is shown again
  * (e.g. waking the iPad). Keeps the last good data on error so a flaky network doesn't blank the screen.
  */
 export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: number, deps: unknown[] = []): Polled<T> {
@@ -45,13 +45,16 @@ export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: numbe
     let paused = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    let first = true;
     const tick = async () => {
       timer = undefined;
-      if (document.visibilityState !== "visible") {
+      // Always do the first load, even in a background tab, so the page is never left blank.
+      if (!first && document.visibilityState !== "visible") {
         paused = true;
         setState((s) => ({ ...s, nextAt: null }));
         return;
       }
+      first = false;
       try {
         const { data, dataTime, stale } = await loadRef.current();
         if (!active) return;

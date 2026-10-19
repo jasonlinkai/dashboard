@@ -30,11 +30,15 @@ export async function quotes(symbols: string[]): Promise<Quote[]> {
   return settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
 }
 
-const TOPICS: Record<string, string> = {
-  top: "https://news.google.com/rss",
-  business: "https://news.google.com/rss/headlines/section/topic/BUSINESS",
-  world: "https://news.google.com/rss/headlines/section/topic/WORLD",
-  tech: "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY",
+// Central News Agency (中央社) RSS. Google News would be closer to "headlines", but it answers
+// requests from Cloudflare's network with 503, so it can't be used once deployed.
+const CNA = (feed: string) => `https://feeds.feedburner.com/rsscna/${feed}`;
+const TOPICS: Record<string, string[]> = {
+  // CNA has no headline feed; "綜合" is the latest stories across its main categories.
+  top: ["politics", "intworld", "finance", "technology", "social", "mainland", "lifehealth"].map(CNA),
+  business: [CNA("finance")],
+  world: [CNA("intworld")],
+  tech: [CNA("technology")],
 };
 
 function decode(s: string): string {
@@ -51,18 +55,27 @@ function decode(s: string): string {
 
 const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))?.[1];
 
+async function feed(url: string): Promise<NewsItem[]> {
+  const res = await fetch(url, { headers: { "User-Agent": UA } });
+  if (!res.ok) throw new Error(`news ${res.status}`);
+  const xml = await res.text();
+  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(([, item]) => {
+    const pub = tag(item, "pubDate");
+    return { title: decode(tag(item, "title") ?? ""), source: "中央社", link: decode(tag(item, "link") ?? ""), published: pub ? Date.parse(pub) : null };
+  });
+}
+
 export function news(topic: string): Promise<NewsItem[]> {
-  const base = TOPICS[topic] ?? TOPICS.top;
+  const urls = TOPICS[topic] ?? TOPICS.top;
   return cached(`news:${topic}`, 300, async () => {
-    const res = await fetch(`${base}?hl=zh-TW&gl=TW&ceid=TW:zh-Hant`, { headers: { "User-Agent": UA } });
-    if (!res.ok) throw new Error(`news ${res.status}`);
-    const xml = await res.text();
-    return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 30).map(([, item]) => {
-      const source = decode(tag(item, "source") ?? "");
-      let title = decode(tag(item, "title") ?? "");
-      if (source && title.endsWith(` - ${source}`)) title = title.slice(0, -(source.length + 3));
-      const pub = tag(item, "pubDate");
-      return { title, source, link: decode(tag(item, "link") ?? ""), published: pub ? Date.parse(pub) : null };
-    });
+    const settled = await Promise.allSettled(urls.map(feed));
+    const ok = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    if (!ok.length) throw (settled[0] as PromiseRejectedResult).reason;
+    const seen = new Set<string>();
+    return ok
+      .flat()
+      .filter((n) => n.link && !seen.has(n.link) && seen.add(n.link))
+      .sort((a, b) => (b.published ?? 0) - (a.published ?? 0))
+      .slice(0, 30);
   });
 }

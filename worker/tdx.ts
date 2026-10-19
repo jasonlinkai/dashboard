@@ -152,13 +152,18 @@ export async function bus(env: Env, queries: BusQuery[]): Promise<BusResponse> {
 const norm = (s: string) => s.replace(/台/g, "臺").replace(/(車?站)$/, "");
 
 async function stationId(env: Env, name: string): Promise<string> {
-  const all = await cached("stations", 86400, async () => rows(await tdx(env, "/v3/Rail/TRA/Station")));
-  const s = all.find((x) => norm(zh(x.StationName)) === norm(name));
-  if (!s) throw new Error(`找不到車站 ${name}`);
-  return s.StationID as string;
+  // Stored as a small name → id table (it is also persisted, so keep it compact).
+  const ids = await cached("stations", 86400, async () =>
+    Object.fromEntries(rows(await tdx(env, "/v3/Rail/TRA/Station")).map((x) => [norm(zh(x.StationName)), String(x.StationID)])),
+  );
+  const id = ids[norm(name)];
+  if (!id) throw new Error(`找不到車站 ${name}`);
+  return id;
 }
 
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+
+type Scheduled = Omit<TrainDeparture, "delayMin">;
 
 export async function train(env: Env, from: string, to: string, typeKeyword: string, limit: number): Promise<TrainResponse> {
   const base = { configured: tdxConfigured(env), from, to, trains: [] as TrainDeparture[] };
@@ -167,9 +172,23 @@ export async function train(env: Env, from: string, to: string, typeKeyword: str
   const toId = await stationId(env, to);
   const { date, minutes } = taipeiNow();
 
-  // The day's timetable doesn't change, so it costs one call per day.
+  // The day's timetable doesn't change: one call per day, reduced to the fields we show.
   const timetable = await cached(`tt:${fromId}:${toId}:${date}`, 86400, async () =>
-    rows(await tdx(env, `/v3/Rail/TRA/DailyTrainTimetable/OD/${fromId}/to/${toId}/${date}`)),
+    rows(await tdx(env, `/v3/Rail/TRA/DailyTrainTimetable/OD/${fromId}/to/${toId}/${date}`)).flatMap((t): Scheduled[] => {
+      const stops: any[] = t.StopTimes ?? [];
+      const dep = stops.find((s) => s.StationID === fromId);
+      const arr = stops.find((s) => s.StationID === toId);
+      if (!dep || !arr) return [];
+      return [
+        {
+          trainNo: String(t.TrainInfo.TrainNo),
+          type: zh(t.TrainInfo.TrainTypeName).replace(/\(.*\)/, ""),
+          departure: dep.DepartureTime,
+          arrival: arr.ArrivalTime,
+          endingStation: zh(t.TrainInfo.EndingStationName),
+        },
+      ];
+    }),
   );
   // Live delays are best-effort: if they're unavailable the timetable still shows.
   const delays = new Map<string, number>();
@@ -179,23 +198,9 @@ export async function train(env: Env, from: string, to: string, typeKeyword: str
   } catch {}
 
   base.trains = timetable
-    .filter((t) => zh(t.TrainInfo?.TrainTypeName).includes(typeKeyword))
-    .map((t): TrainDeparture | null => {
-      const stops: any[] = t.StopTimes ?? [];
-      const dep = stops.find((s) => s.StationID === fromId);
-      const arr = stops.find((s) => s.StationID === toId);
-      if (!dep || !arr) return null;
-      const no = String(t.TrainInfo.TrainNo);
-      return {
-        trainNo: no,
-        type: zh(t.TrainInfo.TrainTypeName).replace(/\(.*\)/, ""),
-        departure: dep.DepartureTime,
-        arrival: arr.ArrivalTime,
-        endingStation: zh(t.TrainInfo.EndingStationName),
-        delayMin: delays.get(no) ?? null,
-      };
-    })
-    .filter((t): t is TrainDeparture => t !== null && toMin(t.departure) + (t.delayMin ?? 0) >= minutes)
+    .filter((t) => t.type.includes(typeKeyword))
+    .map((t): TrainDeparture => ({ ...t, delayMin: delays.get(t.trainNo) ?? null }))
+    .filter((t) => toMin(t.departure) + (t.delayMin ?? 0) >= minutes)
     .sort((a, b) => toMin(a.departure) - toMin(b.departure))
     .slice(0, limit);
   return base;

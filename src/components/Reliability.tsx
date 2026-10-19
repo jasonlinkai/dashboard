@@ -79,11 +79,12 @@ const BLOCKS: Block[] = [
     ],
   },
   {
-    title: "頭條新聞",
-    source: "Google 新聞台灣版 RSS（焦點、財經、國際、科技）",
+    title: "新聞",
+    source: "中央社 RSS（綜合、財經、國際、科技）",
     refresh: `每 ${dur(REFRESH_SEC.news)}；超過 ${dur(STALE_AFTER_SEC.news)} 未更新即警示`,
     notes: [
-      "哪些新聞上榜由 Google 演算法決定，不是編輯台挑選；內容正確性由各媒體負責。",
+      "「綜合」是中央社各類別（政治、國際、財經、科技、社會、兩岸、生活）的最新報導，依時間排序，不是編輯挑選的頭條。",
+      "原本用 Google 新聞，但它拒絕來自 Cloudflare 機房的請求，部署後無法使用，因此改用中央社。",
       "「X 小時前」是 RSS 裡的發布時間。",
     ],
   },

@@ -1,11 +1,11 @@
 # 晨報看板
 
-天氣、市場行情、公車、火車、頭條新聞一頁看完。網頁 App（PWA），iPad、iPhone、Android、電腦都能用。
+天氣、市場行情、公車、火車、新聞一頁看完。網頁 App（PWA），iPad、iPhone、Android、電腦都能用。
 
 | 區塊 | 資料來源 | 需要金鑰 |
 | --- | --- | --- |
 | 市場行情（台股、那斯達克、BTC、黃金、美元/台幣、美債殖利率） | Yahoo Finance | 不用 |
-| 頭條新聞 | Google 新聞 | 不用 |
+| 新聞 | 中央社 RSS | 不用 |
 | 天氣預報 | Open-Meteo | 不用 |
 | 天氣即時實測（各區測站） | 中央氣象署 | `CWA_API_KEY` |
 | 公車到站、區間車時刻與誤點 | 交通部 TDX | `TDX_CLIENT_ID` / `TDX_CLIENT_SECRET` |

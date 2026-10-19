@@ -6,7 +6,7 @@ import type { NewsItem } from "../shared";
 import { Section } from "./Section";
 
 const TOPICS = [
-  ["top", "焦點"],
+  ["top", "綜合"],
   ["business", "財經"],
   ["world", "國際"],
   ["tech", "科技"],
@@ -41,7 +41,7 @@ export function News() {
   );
 
   return (
-    <Section title="頭條新聞" className="news" state={state} maxAgeSec={STALE_AFTER_SEC.news} actions={tabs}>
+    <Section title="新聞" className="news" state={state} maxAgeSec={STALE_AFTER_SEC.news} actions={tabs}>
       <ol className="news-list scroll">
         {state.data?.map((n) => (
           <li key={n.link}>

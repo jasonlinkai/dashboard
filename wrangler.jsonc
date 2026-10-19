@@ -4,6 +4,10 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_als"],
+  "durable_objects": {
+    "bindings": [{ "name": "TDX", "class_name": "TdxGate" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TdxGate"] }],
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",

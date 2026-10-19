@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 export interface Env {
   ASSETS: Fetcher;
+  /** Single coordinator for all TDX calls (see TdxGate in index.ts). */
+  TDX: DurableObjectNamespace;
   TDX_CLIENT_ID?: string;
   TDX_CLIENT_SECRET?: string;
   CWA_API_KEY?: string;
@@ -22,8 +24,22 @@ export const freshness = new AsyncLocalStorage<Freshness>();
 // Anything cached for an hour or more is reference data (station lists, timetables), not live data.
 const LIVE_TTL_SEC = 3600;
 
-const memo = new Map<string, { fetchedAt: number; expires: number; value: unknown }>();
+interface Entry {
+  fetchedAt: number;
+  expires: number;
+  value: unknown;
+}
+const memo = new Map<string, Entry>();
 const STALE_OK_MS = 15 * 60_000;
+
+/**
+ * Durable storage for reference data (TTL ≥ 1 h), so a restarted instance doesn't re-download
+ * timetables and station lists. Only the TDX Durable Object sets this; elsewhere it stays null.
+ */
+let store: DurableObjectStorage | null = null;
+export function setPersistentStore(s: DurableObjectStorage) {
+  store = s;
+}
 
 function track(ttlSec: number, fetchedAt: number, stale: boolean) {
   const f = freshness.getStore();
@@ -39,7 +55,12 @@ function track(ttlSec: number, fetchedAt: number, stale: boolean) {
  * request that awaits a promise created by another request.
  */
 export async function cached<T>(key: string, ttlSec: number, load: () => Promise<T>): Promise<T> {
-  const hit = memo.get(key);
+  const persist = store && ttlSec >= LIVE_TTL_SEC ? store : null;
+  let hit = memo.get(key);
+  if (!hit && persist) {
+    hit = await persist.get<Entry>(`cache:${key}`);
+    if (hit) memo.set(key, hit);
+  }
   if (hit && hit.expires > Date.now()) {
     track(ttlSec, hit.fetchedAt, false);
     return hit.value as T;
@@ -47,7 +68,9 @@ export async function cached<T>(key: string, ttlSec: number, load: () => Promise
   try {
     const value = await load();
     const fetchedAt = Date.now();
-    memo.set(key, { fetchedAt, expires: fetchedAt + ttlSec * 1000, value });
+    const entry = { fetchedAt, expires: fetchedAt + ttlSec * 1000, value };
+    memo.set(key, entry);
+    if (persist) await persist.put(`cache:${key}`, entry);
     track(ttlSec, fetchedAt, false);
     return value;
   } catch (e) {
