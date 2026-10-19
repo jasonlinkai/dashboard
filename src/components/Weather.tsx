@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type Scene, sceneFor } from "./WeatherFx";
 import { FX_LOCATION, LOCATIONS, type Location, REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
 import { clock } from "../format";
@@ -71,55 +71,92 @@ async function loadForecasts(): Promise<Loaded<Forecast[]>> {
   return { data: Array.isArray(data) ? data : [data], dataTime: Date.now(), stale: false };
 }
 
-// After the user scrolls the hourly strip away, bring "now" back to the centre after this long.
+// After the user scrolls the hourly strips away, bring "now" back to the centre after this long.
 const RECENTER_AFTER_MS = 8000;
 
 /**
- * One scrollable row: the past 12 hours (dimmed), the current hour (highlighted) and the next 23.
- * The current hour is kept centred: on load, when the hour changes, whenever the strip changes size
- * (rotation, or the phone's weather tab being shown — it has no width while hidden), and a few
- * seconds after the user scrolls it away.
+ * Keeps the four hourly strips moving together. All strips list the same hours with the same
+ * cell width, so syncing scrollLeft lines them up. Scroll events we cause ourselves (syncing or
+ * re-centring) are ignored for a moment so they aren't mistaken for the user scrolling.
  */
-function Hourly({ f }: { f: Forecast }) {
+class StripGroup {
+  private strips = new Set<HTMLDivElement>();
+  private ignoreUntil = new WeakMap<HTMLDivElement, number>();
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private resize = new ResizeObserver((entries) => {
+    if (entries.some((e) => e.contentRect.width > 0)) this.centerAll(false);
+  });
+
+  add(el: HTMLDivElement) {
+    this.strips.add(el);
+    el.addEventListener("scroll", this.onScroll, { passive: true });
+    this.resize.observe(el);
+    this.center(el, false);
+  }
+
+  remove(el: HTMLDivElement) {
+    this.strips.delete(el);
+    el.removeEventListener("scroll", this.onScroll);
+    this.resize.unobserve(el);
+  }
+
+  dispose() {
+    clearTimeout(this.timer);
+    this.resize.disconnect();
+  }
+
+  private quiet(el: HTMLDivElement, ms: number) {
+    this.ignoreUntil.set(el, performance.now() + ms);
+  }
+
+  private onScroll = (e: Event) => {
+    const src = e.currentTarget as HTMLDivElement;
+    if (performance.now() < (this.ignoreUntil.get(src) ?? 0)) return;
+    // The user is scrolling this strip: drag the others along.
+    for (const el of this.strips) {
+      if (el === src || Math.abs(el.scrollLeft - src.scrollLeft) < 1) continue;
+      this.quiet(el, 150);
+      el.scrollLeft = src.scrollLeft;
+    }
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.centerAll(true), RECENTER_AFTER_MS);
+  };
+
+  private center(el: HTMLDivElement, smooth: boolean) {
+    const cell = el.querySelector<HTMLElement>(".wx-now");
+    if (!cell || el.clientWidth === 0) return;
+    // Measure on screen: offsetLeft is relative to the page, not to this strip.
+    const delta = cell.getBoundingClientRect().left - el.getBoundingClientRect().left;
+    this.quiet(el, smooth ? 800 : 100);
+    el.scrollTo({ left: el.scrollLeft + delta - (el.clientWidth - cell.offsetWidth) / 2, behavior: smooth ? "smooth" : "auto" });
+  }
+
+  centerAll(smooth: boolean) {
+    for (const el of this.strips) this.center(el, smooth);
+  }
+}
+
+/**
+ * One scrollable row: the past 12 hours (dimmed), the current hour (highlighted) and the next 23.
+ * The current hour is kept centred (see StripGroup), and re-centred when the hour changes.
+ */
+function Hourly({ f, group }: { f: Forecast; group: StripGroup }) {
   // Open-Meteo hourly times are local (Asia/Taipei) without an offset.
   const nowKey = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 13);
   const now = f.hourly.time.findIndex((t) => t.slice(0, 13) === nowKey);
   const strip = useRef<HTMLDivElement>(null);
-  const current = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const el = strip.current;
     if (!el) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let programmatic = false;
-    const center = (smooth: boolean) => {
-      const cell = current.current;
-      if (!cell) return;
-      programmatic = true;
-      // Measure on screen: offsetLeft is relative to the page, not to this strip.
-      const delta = cell.getBoundingClientRect().left - el.getBoundingClientRect().left;
-      el.scrollTo({ left: el.scrollLeft + delta - (el.clientWidth - cell.offsetWidth) / 2, behavior: smooth ? "smooth" : "auto" });
-      setTimeout(() => (programmatic = false), smooth ? 600 : 0);
-    };
-    const onScroll = () => {
-      if (programmatic) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => center(true), RECENTER_AFTER_MS);
-    };
-    const resize = new ResizeObserver(() => el.clientWidth > 0 && center(false));
-    resize.observe(el);
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      clearTimeout(timer);
-      resize.disconnect();
-      el.removeEventListener("scroll", onScroll);
-    };
-  }, [nowKey]);
+    group.add(el);
+    return () => group.remove(el);
+  }, [group, nowKey]);
 
   return (
     <div className="wx-strip" ref={strip}>
       {f.hourly.time.map((t, i) => (
-        <div key={t} ref={i === now ? current : undefined} className={i === now ? "wx-now" : i < now ? "wx-past" : ""}>
+        <div key={t} className={i === now ? "wx-now" : i < now ? "wx-past" : ""}>
           <div className="wx-h">{i === now ? "現在" : t.slice(11, 13)}</div>
           <div>{wmo(f.hourly.weather_code[i], f.hourly.is_day[i] === 1)[1]}</div>
           <div>{Math.round(f.hourly.temperature_2m[i])}°</div>
@@ -130,7 +167,7 @@ function Hourly({ f }: { f: Forecast }) {
   );
 }
 
-function WeatherCard({ loc, f, obs }: { loc: Location; f?: Forecast; obs?: Observation }) {
+function WeatherCard({ loc, f, obs, group }: { loc: Location; f?: Forecast; obs?: Observation; group: StripGroup }) {
   if (!f) return <div className="wx"><div className="wx-name">{loc.name}</div></div>;
   const day = f.current.is_day === 1;
   const [mText, mIcon] = wmo(f.current.weather_code, day);
@@ -161,7 +198,7 @@ function WeatherCard({ loc, f, obs }: { loc: Location; f?: Forecast; obs?: Obser
         <div className="wx-meta small">體感 {Math.round(f.current.apparent_temperature)}°</div>
         <div className="wx-src muted tiny">{obs ? `實測 ${obs.station}站 ${clock(obs.time)}` : "Open-Meteo 模型"}</div>
       </div>
-      <Hourly f={f} />
+      <Hourly f={f} group={group} />
     </a>
   );
 }
@@ -171,6 +208,8 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   // Station data is optional: without a CWA key (or if it fails) the cards fall back to the model.
   const obs = usePolling(() => getJSON<ObservationResponse>("/api/observations"), REFRESH_SEC.weather);
   const stations = obs.data?.observations ?? [];
+  const [group] = useState(() => new StripGroup());
+  useEffect(() => () => group.dispose(), [group]);
 
   // Tell the page what the weather is at FX_LOCATION, for the full-page animation.
   const fxIndex = LOCATIONS.findIndex((l) => l.name === FX_LOCATION);
@@ -185,7 +224,7 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
     <Section title="天氣" className="weather" state={forecasts} maxAgeSec={STALE_AFTER_SEC.weather}>
       <div className="wx-grid">
         {LOCATIONS.map((loc, i) => (
-          <WeatherCard key={loc.name} loc={loc} f={forecasts.data?.[i]} obs={pickStation(loc, stations)} />
+          <WeatherCard key={loc.name} loc={loc} f={forecasts.data?.[i]} obs={pickStation(loc, stations)} group={group} />
         ))}
       </div>
       {obs.data && !obs.data.configured && <p className="hint">設定氣象署授權碼後，會改用各區測站的實測資料。</p>}

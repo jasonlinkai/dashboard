@@ -169,13 +169,15 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .link:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 55%, transparent); }
 }
 
-/* The page never scrolls, but long lists scroll inside their card. The bottom fades to hint at
-   more, and extra padding lets the last item scroll clear of the fade. */
+/* The page never scrolls, but long lists scroll inside their card. */
 .scroll {
   /* Vertical only. */
-  overflow-y: auto; overflow-x: hidden; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none; padding-bottom: 20px;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  overflow-y: auto; overflow-x: hidden; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none;
+}
+/* Fade the bottom only while there is more below (data-more is set by useScrollHint). */
+.scroll[data-more="true"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 .scroll::-webkit-scrollbar { display: none; }
 
@@ -305,6 +307,36 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 }
 .tabbar button[aria-selected="true"] { color: var(--text); background: var(--card-2); }
 .tab-icon { font-size: 18px; line-height: 1.1; }
+
+/* Phone only (neither tablet layout below applies). */
+@media (max-width: 699px), (max-width: 899px) and (min-aspect-ratio: 1/1) {
+  /* The tab bar sits on the bottom edge like a native one and clears the home indicator itself,
+     instead of floating above an extra gap. */
+  .app { padding-bottom: 0; }
+  .tabbar {
+    margin: 0 calc(-1 * max(12px, env(safe-area-inset-right))) 0 calc(-1 * max(12px, env(safe-area-inset-left)));
+    border-width: 1px 0 0; border-radius: 0;
+    padding: 4px max(12px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  /* The weather tab has the whole screen: use it for bigger hourly cells. */
+  .grid[data-tab="weather"] .wx-strip { font-size: 12.5px; line-height: 1.45; }
+  .grid[data-tab="weather"] .wx-strip > div { flex-basis: 42px; }
+  .grid[data-tab="weather"] .wx-temp { font-size: 36px; }
+}
+
+/* Phone landscape: little height, so put things side by side and slim the chrome. */
+@media (max-width: 899px) and (min-aspect-ratio: 1/1) and (max-height: 520px) {
+  .app { gap: 6px; padding-top: max(6px, env(safe-area-inset-top)); }
+  .clock { font-size: 22px; }
+  .date { font-size: 13px; }
+  .grid[data-tab="transit"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .grid[data-tab="weather"] .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .grid[data-tab="weather"] .wx-temp { font-size: 28px; }
+  .grid[data-tab="markets"] .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .grid[data-tab="markets"] .tile-price { font-size: 20px; }
+  .tabbar button { flex-direction: row; justify-content: center; gap: 6px; padding: 3px 0; }
+  .tab-icon { font-size: 15px; }
+}
 
 /* Tablet portrait (iPad Air 820×1180): everything on one screen, stacked. */
 @media (min-width: 700px) and (max-aspect-ratio: 1/1) {

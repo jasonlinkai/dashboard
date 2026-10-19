@@ -1,6 +1,6 @@
 import { BUS_ESTIMATE_STALE_MIN, BUS_STOPS, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN, links } from "../config";
 import { countdown } from "../format";
-import { getJSON, useNow, usePolling } from "../hooks";
+import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainResponse } from "../shared";
 import { Section } from "./Section";
 
@@ -33,6 +33,7 @@ export function Bus() {
   const now = useNow(1000);
   const routes = BUS_STOPS.map((s) => `${s.city}:${s.route}:${s.stop}`).join(",");
   const state = usePolling(() => getJSON<BusResponse>(`/api/bus?routes=${encodeURIComponent(routes)}`), REFRESH_SEC.bus);
+  const listRef = useScrollHint<HTMLUListElement>();
   const all = state.data?.arrivals ?? [];
   const rows = all
     .filter((a) => wanted(a, all))
@@ -42,7 +43,7 @@ export function Bus() {
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (
-        <ul className="list scroll">
+        <ul className="list scroll" ref={listRef}>
           {rows.map((a) => {
             const e = eta(busLeft(a, now), a.status);
             return (
@@ -78,6 +79,7 @@ export function Train() {
   const now = useNow(1000);
   const q = new URLSearchParams({ from: TRAIN.from, to: TRAIN.to, type: TRAIN.type, limit: String(TRAIN.limit) });
   const state = usePolling(() => getJSON<TrainResponse>(`/api/train?${q}`), REFRESH_SEC.train);
+  const listRef = useScrollHint<HTMLUListElement>();
   const local = new Date(now + 8 * 3600_000);
   const nowSec = local.getUTCHours() * 3600 + local.getUTCMinutes() * 60 + local.getUTCSeconds();
   const today = local.toISOString().slice(0, 10);
@@ -90,7 +92,7 @@ export function Train() {
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (
-        <ul className="list scroll">
+        <ul className="list scroll" ref={listRef}>
           {trains.map((t) => {
             return (
               <li key={t.trainNo}>

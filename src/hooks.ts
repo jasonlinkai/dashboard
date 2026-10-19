@@ -144,3 +144,30 @@ export function useWakeLock() {
 
   return { supported, enabled, toggle: () => setEnabled((v) => !v) };
 }
+
+/**
+ * For scrollable lists: sets data-more="true" while there is content below the fold, so the
+ * bottom fade only appears when there really is more to scroll to.
+ */
+export function useScrollHint<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      el.dataset.more = String(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const resize = new ResizeObserver(update);
+    resize.observe(el);
+    const mutate = new MutationObserver(update); // new data arrived
+    mutate.observe(el, { childList: true, subtree: true });
+    return () => {
+      el.removeEventListener("scroll", update);
+      resize.disconnect();
+      mutate.disconnect();
+    };
+  }, []);
+  return ref;
+}

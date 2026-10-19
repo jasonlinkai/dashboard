@@ -65,7 +65,7 @@ export const TRAIN = {
   from: "汐科", // 上車站
   to: "臺北",
   type: "區間", // 也會包含「區間快」
-  limit: 6,
+  limit: 10, // 列表可捲動，螢幕高的時候能多顯示幾班
 };
 
 export const links = {
