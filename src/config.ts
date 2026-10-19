@@ -51,13 +51,18 @@ export interface BusStop {
   stop: string;
   /** 0 = 去程, 1 = 返程, "auto" = 選目的地看起來是往台北的方向 */
   direction: 0 | 1 | "auto";
+  /** 只看會開往這一站的車（取代 direction）；環狀線同一站經過兩次時，用它選對邊 */
+  toward?: string;
+  /** 列表分組標題；同組的排在一起，依設定順序 */
+  group: string;
 }
 
 export const BUS_STOPS: BusStop[] = [
-  { city: "NewTaipei", route: "藍23", stop: "忠孝里", direction: "auto" },
-  { city: "NewTaipei", route: "藍39", stop: "樟樹實中", direction: "auto" },
-  { city: "NewTaipei", route: "590", stop: "日月光社區", direction: "auto" }, // 往南港車站
-  { city: "NewTaipei", route: "F913", stop: "日月光社區", direction: "auto" }, // 環狀線，只有一個方向
+  { city: "NewTaipei", route: "藍23", stop: "忠孝里", direction: "auto", group: "往台北" },
+  { city: "NewTaipei", route: "藍39", stop: "樟樹實中", direction: "auto", group: "往台北" },
+  // 站名可以寫簡稱：TDX 上是「汐科站北站」、「南港行政中心(南港車站)」
+  { city: "NewTaipei", route: "F913", stop: "汐科站北站", direction: "auto", toward: "日月光社區", group: "往日月光社區" },
+  { city: "NewTaipei", route: "590", stop: "南港車站", direction: "auto", toward: "日月光社區", group: "往日月光社區" },
 ];
 
 /** "auto" 判斷「往台北」的關鍵字（比對路線的往 XX 方向） */

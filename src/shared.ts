@@ -22,6 +22,7 @@ export interface BusArrival {
   stop: string; // stop name as TDX spells it
   direction: number; // 0 = 去程, 1 = 返程
   headsign: string; // e.g. "往 捷運昆陽站"
+  toward: string | null; // set when the config asks for buses heading toward a given stop
   estimateSec: number | null; // seconds until arrival, measured at `asOf`
   asOf: number; // unix ms when TDX computed the estimate; the client counts down from here
   status: string | null; // set when there is no estimate (未發車 / 末班已過 …)

@@ -1,5 +1,5 @@
 import { BUS_ESTIMATE_STALE_MIN, BUS_STOPS, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAINS, TRAIN_LIMIT, TRAIN_TYPE, links } from "../config";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { countdown } from "../format";
 import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
@@ -11,6 +11,7 @@ const NOT_CONFIGURED = <p className="hint">尚未設定 TDX 金鑰，請參考 R
 function wanted(a: BusArrival, all: BusArrival[]): boolean {
   const cfg = BUS_STOPS.find((s) => s.route === a.route);
   if (!cfg) return false;
+  if (cfg.toward) return true; // the backend already kept only buses heading there
   if (cfg.direction !== "auto") return a.direction === cfg.direction;
   const toward = all.filter((x) => x.route === a.route && TOWARD_TAIPEI.test(x.headsign));
   const dirs = new Set(toward.map((x) => x.direction));
@@ -32,39 +33,49 @@ function eta(left: number | null, status: string | null): { text: string; cls: s
 
 export function Bus() {
   const now = useNow(1000);
-  const routes = BUS_STOPS.map((s) => `${s.city}:${s.route}:${s.stop}`).join(",");
+  const routes = BUS_STOPS.map((s) => [s.city, s.route, s.stop, ...(s.toward ? [s.toward] : [])].join(":")).join(",");
   const state = usePolling(() => getJSON<BusResponse>(`/api/bus?routes=${encodeURIComponent(routes)}`), REFRESH_SEC.bus);
   const listRef = useScrollHint<HTMLUListElement>();
   const all = state.data?.arrivals ?? [];
-  const rows = all
-    .filter((a) => wanted(a, all))
-    .sort((a, b) => (busLeft(a, now) ?? 1e9) - (busLeft(b, now) ?? 1e9));
+  const rows = all.filter((a) => wanted(a, all));
+  // Groups in config order (往台北 first), soonest bus first within a group.
+  const groups = [...new Set(BUS_STOPS.map((s) => s.group))].map((group) => ({
+    group,
+    rows: rows
+      .filter((a) => BUS_STOPS.find((s) => s.route === a.route)?.group === group)
+      .sort((a, b) => (busLeft(a, now) ?? 1e9) - (busLeft(b, now) ?? 1e9)),
+  })).filter((g) => g.rows.length);
   return (
     <Section title="公車" className="bus" state={state} maxAgeSec={STALE_AFTER_SEC.bus}>
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (
         <ul className="list scroll" ref={listRef}>
-          {rows.map((a) => {
-            const e = eta(busLeft(a, now), a.status);
-            return (
-              <li key={`${a.route}-${a.direction}-${a.stop}`}>
-                <a className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
-                  <span className="chip blue-chip">{a.route}</span>
-                  <span className="grow">
-                    <div>{a.headsign}</div>
-                    <div className="muted small">
-                      {a.stop} 站
-                      {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (
-                        <span className="error">・⚠ 預估已 {Math.floor((now - a.asOf) / 60000)} 分鐘未更新</span>
-                      )}
-                    </div>
-                  </span>
-                  <span className={`eta ${e.cls}`}>{e.text}</span>
-                </a>
-              </li>
-            );
-          })}
+          {groups.map((g) => (
+            <Fragment key={g.group}>
+              <li className="list-group">{g.group}</li>
+              {g.rows.map((a) => {
+                const e = eta(busLeft(a, now), a.status);
+                return (
+                  <li key={`${a.route}-${a.direction}-${a.stop}`}>
+                    <a className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
+                      <span className="chip blue-chip">{a.route}</span>
+                      <span className="grow">
+                        <div>{a.headsign}</div>
+                        <div className="muted small">
+                          {a.stop} 站
+                          {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (
+                            <span className="error">・⚠ 預估已 {Math.floor((now - a.asOf) / 60000)} 分鐘未更新</span>
+                          )}
+                        </div>
+                      </span>
+                      <span className={`eta ${e.cls}`}>{e.text}</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </Fragment>
+          ))}
           {state.data?.notFound.map((p) => (
             <li key={p} className="hint error">找不到站牌：{p.replace(":", " ")}</li>
           ))}

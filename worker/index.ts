@@ -54,11 +54,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
       case "/api/news":
         return json(await news(q.get("topic") ?? "top"));
       case "/api/bus": {
-        // routes=NewTaipei:藍23:忠孝里,NewTaipei:藍39:樟樹實中
+        // routes=NewTaipei:藍23:忠孝里,NewTaipei:F913:汐科站北:日月光社區 (optional 4th: heading toward)
         const queries = list(q.get("routes"))
           .map((p) => p.split(":"))
-          .filter((p) => p.length === 3)
-          .map(([city, route, stop]) => ({ city, route, stop }));
+          .filter((p) => p.length === 3 || p.length === 4)
+          .map(([city, route, stop, toward]) => ({ city, route, stop, toward: toward || undefined }));
         return json(await bus(env, queries.slice(0, 6)));
       }
       case "/api/train":

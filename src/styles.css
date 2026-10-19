@@ -268,6 +268,10 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .list { flex: 1; min-height: 0; }
 .row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; margin: 0 -6px; }
 .list li + li { border-top: 1px solid var(--line); }
+/* Sub-heading inside a list (公車: 往台北 / 往日月光社區). */
+.list .list-group { color: var(--muted); font-size: 12px; font-weight: 600; padding: 8px 0 2px; }
+.list .list-group:first-child { padding-top: 0; }
+.list .list-group + li { border-top: 0; }
 .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .grow > div { overflow: hidden; text-overflow: ellipsis; }
 .chip { border-radius: 7px; padding: 3px 7px; font-weight: 700; font-size: 14px; white-space: nowrap; }
@@ -379,7 +383,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .grid > .card { display: flex; }
   .grid[data-tab] {
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.1fr);
-    grid-template-rows: auto auto minmax(0, 1fr);
+    /* Bus and train split the column evenly; each list scrolls inside its card. */
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas: "markets markets markets" "weather bus news" "weather train news";
   }
   .grid > .markets { grid-area: markets; }

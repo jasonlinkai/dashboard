@@ -59,6 +59,6 @@ npm run deploy
 
 - `LOCATIONS`：天氣地點與對應的氣象署行政區
 - `INSTRUMENTS`：行情項目（Yahoo Finance 代號）
-- `BUS_STOPS`：公車路線、上車站、方向（`"auto"` 會自動選往台北的方向；選錯的話改成 `0` 或 `1`）
+- `BUS_STOPS`：公車路線、上車站、方向（`"auto"` 會自動選往台北的方向；選錯的話改成 `0` 或 `1`；設定 `toward` 則只看會開往該站的車）、分組標題 `group`
 - `TRAINS`：火車路線（上車站、下車站），`TRAIN_TYPE`：車種
 - `RED_IS_UP`：紅漲綠跌

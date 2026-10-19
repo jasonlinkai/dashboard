@@ -55,7 +55,11 @@ export interface BusQuery {
   city: string; // TDX city code, e.g. NewTaipei
   route: string;
   stop: string;
+  /** Only boardings heading toward this stop (it must come later on the same trip). */
+  toward?: string;
 }
+
+const queryKey = (q: BusQuery) => `${q.route}:${q.stop}:${q.toward ?? ""}`;
 
 function isSubsequence(needle: string, hay: string): boolean {
   let i = 0;
@@ -64,14 +68,16 @@ function isSubsequence(needle: string, hay: string): boolean {
 }
 
 /**
- * Daily lookup (2 calls per city): headsign per direction, and the exact TDX spelling of each
- * configured stop. Stop names on signs often differ (樟樹實中 → 樟樹國際實中), so when there is
- * no exact match we accept a name containing every configured character in order.
+ * Daily lookup (2 calls per city): headsign per direction, and which physical stops (StopUID)
+ * each configured stop means. Stop names on signs often differ (樟樹實中 → 樟樹國際實中, 南港車站 →
+ * 南港行政中心(南港車站)), so when no stop on the route has the exact name we accept a name
+ * containing every configured character in order. With `toward`, a stop only counts where that
+ * stop comes later on the same trip: loop routes pass a stop twice, once each way.
  */
 function routeInfo(env: Env, city: string, queries: BusQuery[]) {
   const routes = [...new Set(queries.map((q) => q.route))];
   const filter = routes.map((r) => `RouteName/Zh_tw eq ${quote(r)}`).join(" or ");
-  return cached(`routes:${city}:${routes.join(",")}`, 86400, async () => {
+  return cached(`routes2:${city}:${queries.map(queryKey).join(",")}`, 86400, async () => {
     const routeRows = rows(await tdx(env, `/v2/Bus/Route/City/${city}`, { $filter: filter }));
     const stopRows = rows(await tdx(env, `/v2/Bus/StopOfRoute/City/${city}`, { $filter: filter }));
     const headsigns: Record<string, Record<number, string>> = {};
@@ -82,14 +88,27 @@ function routeInfo(env: Env, city: string, queries: BusQuery[]) {
       h[0] ??= `往 ${r.DestinationStopNameZh ?? ""}`;
       h[1] ??= `往 ${r.DepartureStopNameZh ?? ""}`;
     }
-    const stopNames: Record<string, string | null> = {};
+    /** queryKey → StopUIDs to ask for */
+    const stopUids: Record<string, string[]> = {};
     for (const q of queries) {
-      const names = new Set<string>();
-      for (const r of stopRows) if (zh(r.RouteName) === q.route) for (const s of r.Stops ?? []) names.add(zh(s.StopName));
-      const all = [...names];
-      stopNames[`${q.route}:${q.stop}`] = all.find((n) => n === q.stop) ?? all.find((n) => isSubsequence(q.stop, n)) ?? null;
+      const trips = stopRows.filter((r) => zh(r.RouteName) === q.route).map((r) => (r.Stops ?? []) as any[]);
+      // Stops (by UID) that match the name and, with `toward`, still have it ahead on the trip.
+      const pick = (matches: (name: string) => boolean) => {
+        const uids = new Set<string>();
+        for (const stops of trips)
+          stops.forEach((s, i) => {
+            if (!matches(zh(s.StopName))) return;
+            if (q.toward && !stops.slice(i + 1).some((t) => zh(t.StopName) === q.toward)) return;
+            uids.add(String(s.StopUID));
+          });
+        return uids;
+      };
+      // 590's last stop is literally 南港車站, but buses toward 日月光 leave from 南港行政中心(南港車站).
+      let uids = pick((n) => n === q.stop);
+      if (!uids.size) uids = pick((n) => isSubsequence(q.stop, n));
+      stopUids[queryKey(q)] = [...uids];
     }
-    return { headsigns, routeIds, stopNames };
+    return { headsigns, routeIds, stopUids };
   });
 }
 
@@ -101,14 +120,17 @@ function hhmm(iso: string | undefined): string | null {
 }
 
 async function busCity(env: Env, city: string, queries: BusQuery[]) {
-  const { headsigns, routeIds, stopNames } = await routeInfo(env, city, queries);
-  const found = queries.filter((q) => stopNames[`${q.route}:${q.stop}`]);
-  const notFound = queries.filter((q) => !stopNames[`${q.route}:${q.stop}`]).map((q) => `${q.route}:${q.stop}`);
+  const { headsigns, routeIds, stopUids } = await routeInfo(env, city, queries);
+  const found = queries.filter((q) => stopUids[queryKey(q)]?.length);
+  const notFound = queries.filter((q) => !stopUids[queryKey(q)]?.length).map((q) => `${q.route}:${q.stop}`);
   if (!found.length) return { arrivals: [], notFound };
+  // Which query (for its "toward") each requested stop belongs to.
+  const towardOf = new Map<string, string | undefined>();
+  for (const q of found) for (const uid of stopUids[queryKey(q)]) towardOf.set(`${q.route}|${uid}`, q.toward);
 
   // One call covers every configured route/stop pair.
   const filter = found
-    .map((q) => `(RouteName/Zh_tw eq ${quote(q.route)} and StopName/Zh_tw eq ${quote(stopNames[`${q.route}:${q.stop}`]!)})`)
+    .map((q) => `(RouteName/Zh_tw eq ${quote(q.route)} and (${stopUids[queryKey(q)].map((u) => `StopUID eq ${quote(u)}`).join(" or ")}))`)
     .join(" or ");
   const etas = await cached(`eta:${city}:${filter}`, 50, async () => {
     const fetchedAt = Date.now();
@@ -119,6 +141,7 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
   });
   const all = etas.map((e): BusArrival => {
     const route = zh(e.RouteName);
+    const toward = towardOf.get(`${route}|${e.StopUID}`);
     const next = hhmm(e.NextBusTime);
     const hasEstimate = typeof e.EstimateTime === "number";
     const status = hasEstimate ? null : (STOP_STATUS[e.StopStatus] ?? "暫無資料");
@@ -127,7 +150,9 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
       routeId: routeIds[route] ?? String(e.RouteID ?? ""),
       stop: zh(e.StopName),
       direction: e.Direction,
-      headsign: headsigns[route]?.[e.Direction] ?? "",
+      // A loop route's own terminus says nothing about where this rider is going.
+      headsign: toward ? `往 ${toward}` : (headsigns[route]?.[e.Direction] ?? ""),
+      toward: toward ?? null,
       estimateSec: hasEstimate ? e.EstimateTime : null,
       asOf: e.asOf,
       status: status === "尚未發車" && next ? `${next} 發車` : status,
