@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { FX_LOCATION } from "../config";
 import type { ThemePref } from "../theme";
 
 const THEMES: [ThemePref, string, string][] = [
@@ -7,7 +8,19 @@ const THEMES: [ThemePref, string, string][] = [
   ["dark", "深色", "夜間、放在床頭或牆上"],
 ];
 
-export function Settings({ theme, onTheme, onClose }: { theme: ThemePref; onTheme: (t: ThemePref) => void; onClose: () => void }) {
+export function Settings({
+  theme,
+  onTheme,
+  fx,
+  onFx,
+  onClose,
+}: {
+  theme: ThemePref;
+  onTheme: (t: ThemePref) => void;
+  fx: boolean;
+  onFx: (on: boolean) => void;
+  onClose: () => void;
+}) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -36,6 +49,17 @@ export function Settings({ theme, onTheme, onClose }: { theme: ThemePref; onThem
               ))}
             </div>
             <div className="muted small">{THEMES.find(([id]) => id === theme)?.[2]}</div>
+          </div>
+          <div className="setting">
+            <div className="setting-label">天氣動畫</div>
+            <div className="segmented" role="radiogroup" aria-label="天氣動畫">
+              {([true, false] as const).map((v) => (
+                <button key={String(v)} role="radio" aria-checked={fx === v} onClick={() => onFx(v)}>
+                  {v ? "開" : "關"}
+                </button>
+              ))}
+            </div>
+            <div className="muted small">依照{FX_LOCATION}現在的天氣，在整個畫面背景顯示晴、雲、雨、雷等動畫。系統開啟「減少動態效果」時不會播放。</div>
           </div>
         </div>
       </div>

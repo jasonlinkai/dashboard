@@ -70,7 +70,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 a { color: inherit; text-decoration: none; }
 ul, ol { list-style: none; margin: 0; padding: 0; }
 
+/* Full-page weather animation, behind everything. */
+.weather-fx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; }
+
 .app {
+  position: relative;
+  z-index: 1;
   height: 100vh;
   height: 100dvh;
   max-width: 1800px;
@@ -178,7 +183,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 
 .grid { flex: 1; min-height: 0; display: grid; gap: var(--gap); }
 .card {
-  background: var(--card);
+  /* Slightly see-through so the weather animation shows faintly behind the data. */
+  background: color-mix(in srgb, var(--card) 86%, transparent);
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 10px 12px;

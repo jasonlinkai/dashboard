@@ -15,6 +15,9 @@ export const LOCATIONS: Location[] = [
   { name: "台北", latitude: 25.0375, longitude: 121.5637, cwa: { county: "臺北市", town: "中正區", townId: "6300500", station: "臺北" } },
 ];
 
+/** 整頁天氣動畫依照這個地點的現在天氣 */
+export const FX_LOCATION = "汐止";
+
 export type QuoteFormat = { kind: "price"; decimals: number; prefix?: string } | { kind: "yield" };
 
 export interface Instrument {

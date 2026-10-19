@@ -25,6 +25,23 @@ function apply(pref: ThemePref) {
   }
 }
 
+/** Full-page weather animation on/off (on by default). */
+export function useFx() {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem("fx") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("fx", on ? "1" : "0");
+    } catch {}
+  }, [on]);
+  return [on, setOn] as const;
+}
+
 export function useTheme() {
   const [pref, setPref] = useState<ThemePref>(load);
   useEffect(() => {

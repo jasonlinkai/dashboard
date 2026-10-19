@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef } from "react";
-import { LOCATIONS, type Location, REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { type Scene, sceneFor } from "./WeatherFx";
+import { FX_LOCATION, LOCATIONS, type Location, REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
 import { clock } from "../format";
 import { type Loaded, getJSON, usePolling } from "../hooks";
 import type { Observation, ObservationResponse } from "../shared";
@@ -165,11 +166,21 @@ function WeatherCard({ loc, f, obs }: { loc: Location; f?: Forecast; obs?: Obser
   );
 }
 
-export function Weather() {
+export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   const forecasts = usePolling(loadForecasts, REFRESH_SEC.weather);
   // Station data is optional: without a CWA key (or if it fails) the cards fall back to the model.
   const obs = usePolling(() => getJSON<ObservationResponse>("/api/observations"), REFRESH_SEC.weather);
   const stations = obs.data?.observations ?? [];
+
+  // Tell the page what the weather is at FX_LOCATION, for the full-page animation.
+  const fxIndex = LOCATIONS.findIndex((l) => l.name === FX_LOCATION);
+  const fxForecast = forecasts.data?.[fxIndex];
+  const fxText = fxIndex >= 0 ? pickStation(LOCATIONS[fxIndex], stations)?.weather : null;
+  const fxKind = fxForecast ? sceneFor(fxText, fxForecast.current.weather_code, fxForecast.current.is_day === 1) : null;
+  useEffect(() => {
+    if (fxKind && onScene) onScene(fxKind);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fxKind?.kind, fxKind?.day]);
   return (
     <Section title="天氣" className="weather" state={forecasts} maxAgeSec={STALE_AFTER_SEC.weather}>
       <div className="wx-grid">
