@@ -25,7 +25,8 @@ export interface BusArrival {
   toward: string | null; // set when the config asks for buses heading toward a given stop
   estimateSec: number | null; // seconds until arrival, measured at `asOf`
   asOf: number; // unix ms when TDX computed the estimate; the client counts down from here
-  status: string | null; // set when there is no estimate (未發車 / 末班已過 …)
+  status: string | null; // 尚未發車 / 末班車已過 …; null while the bus is on its way
+  lastBus: boolean; // this is the day's last bus
 }
 
 export interface BusResponse {
@@ -41,6 +42,8 @@ export interface TrainDeparture {
   arrival: string; // HH:mm at the destination
   endingStation: string;
   delayMin: number | null; // null = no live data
+  cancelled: boolean; // 停駛 per the station live board (RunningStatus 2)
+  platform: string | null; // from the live board; null when not listed
 }
 
 export interface TrainResponse {
@@ -48,6 +51,8 @@ export interface TrainResponse {
   from: string;
   to: string;
   trains: TrainDeparture[];
+  /** 臺鐵 service alerts other than 全線營運正常; null = couldn't be fetched (so unknown). */
+  alerts: string[] | null;
 }
 
 /** One CWA weather-station observation; -99 style sentinels are mapped to null. */

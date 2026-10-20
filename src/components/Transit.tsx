@@ -55,12 +55,14 @@ export function Bus() {
   const all = state.data?.arrivals ?? [];
   const rows = all.filter((a) => wanted(a, all));
   // Groups in config order (往台北 first), soonest bus first within a group.
-  const groups = [...new Set(BUS_STOPS.map((s) => s.group))].map((group) => ({
-    group,
-    rows: rows
-      .filter((a) => BUS_STOPS.find((s) => s.route === a.route)?.group === group)
-      .sort((a, b) => (busLeft(a, now) ?? 1e9) - (busLeft(b, now) ?? 1e9)),
-  })).filter((g) => g.rows.length);
+  const groups = [...new Set(BUS_STOPS.map((s) => s.group))]
+    .map((group) => ({
+      group,
+      rows: rows
+        .filter((a) => BUS_STOPS.find((s) => s.route === a.route)?.group === group)
+        .sort((a, b) => (busLeft(a, now) ?? 1e9) - (busLeft(b, now) ?? 1e9)),
+    }))
+    .filter((g) => g.rows.length);
   return (
     <Section title="公車" className="bus" state={state} maxAgeSec={STALE_AFTER_SEC.bus}>
       {state.data && !state.data.configured ? (
@@ -79,8 +81,8 @@ export function Bus() {
                       <span className="grow">
                         <div>{a.headsign}</div>
                         <div className="muted small">
-                          {a.stop} 站
-                          {a.status && a.estimateSec != null && <span>・{a.status}</span>}
+                          {a.stop} 站{a.status && a.estimateSec != null && <span>・{a.status}</span>}
+                          {a.lastBus && <span className="red">・末班車</span>}
                           {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (
                             <span className="error">・⚠ 預估已 {Math.floor((now - a.asOf) / 60000)} 分鐘未更新</span>
                           )}
@@ -104,6 +106,10 @@ export function Bus() {
 
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 const station = (name: string) => name.replace(/臺/g, "台");
+const addMin = (hhmm: string, min: number) => {
+  const m = (toMin(hhmm) + min) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+};
 
 /** One route's departures. Keyed by route so its scroll position and hint start fresh. */
 function TrainList({ trains, to, now }: { trains: TrainDeparture[]; to: string; now: number }) {
@@ -118,19 +124,34 @@ function TrainList({ trains, to, now }: { trains: TrainDeparture[]; to: string; 
   return (
     <ul className="list scroll" ref={listRef}>
       {rows.map((t) => (
-        <li key={t.trainNo}>
+        <li key={t.trainNo} className={t.cancelled ? "cancelled" : ""}>
           <a className="row link" href={links.train(t.trainNo, today)} target="_blank" rel="noopener noreferrer">
-            <span className="time">{t.departure}</span>
+            <span className="time">
+              {t.departure}
+              {t.platform && !t.cancelled && <span className="platform">{t.platform} 月台</span>}
+            </span>
             <span className="grow">
               <div>
-                {t.type} <span className="muted small">{t.trainNo} 次・往{t.endingStation}</span>
+                {t.type}{" "}
+                <span className="muted small">
+                  {t.trainNo} 次・往{t.endingStation}
+                </span>
               </div>
               <div className="muted small">
-                {t.arrival} 抵達{station(to)}・
-                {t.delayMin == null ? "無即時資訊" : t.delayMin > 0 ? <span className="red">晚 {t.delayMin} 分</span> : "準點"}
+                {t.cancelled ? (
+                  <span className="red">停駛</span>
+                ) : (
+                  <>
+                    {/* With a known delay, the arrival moves by the same amount (best estimate). */}
+                    {t.delayMin ? `約 ${addMin(t.arrival, t.delayMin)}` : t.arrival} 抵達{station(to)}・
+                    {t.delayMin == null ? "無即時資訊" : t.delayMin > 0 ? <span className="red">晚 {t.delayMin} 分</span> : "準點"}
+                  </>
+                )}
               </div>
             </span>
-            <span className={`eta ${t.left < 300 ? "red" : ""}`}>{t.left <= 30 ? "即將發車" : countdown(t.left)}</span>
+            <span className={`eta ${t.cancelled ? "red" : t.left < 300 ? "red" : ""}`}>
+              {t.cancelled ? "停駛" : t.left <= 30 ? "即將發車" : countdown(t.left)}
+            </span>
           </a>
         </li>
       ))}
@@ -156,26 +177,34 @@ export function Train() {
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (
-        <div className="acc">
-          {TRAINS.map((r, i) => (
-            <div key={`${r.from}-${r.to}`} className={`acc-item ${i === open ? "acc-open" : ""}`}>
-              <button className="acc-head" aria-expanded={i === open} onClick={() => setOpen(i)}>
-                <span>
-                  {station(r.from)} → {station(r.to)}
-                </span>
-                <span className="acc-chev" aria-hidden>
-                  ›
-                </span>
-              </button>
-              {i === open &&
-                (current ? (
-                  <TrainList key={i} trains={current.trains} to={r.to} now={now} />
-                ) : (
-                  <p className="hint">{state.error ?? "載入中…"}</p>
-                ))}
-            </div>
+        <>
+          {current?.alerts?.map((a) => (
+            <a key={a} className="alert" href={links.traAlerts} target="_blank" rel="noopener noreferrer">
+              ⚠ 臺鐵公告：{a}
+            </a>
           ))}
-        </div>
+          {current && current.alerts == null && <p className="hint error">⚠ 暫時無法確認臺鐵營運公告（停駛、通阻），請以臺鐵官網為準</p>}
+          <div className="acc">
+            {TRAINS.map((r, i) => (
+              <div key={`${r.from}-${r.to}`} className={`acc-item ${i === open ? "acc-open" : ""}`}>
+                <button className="acc-head" aria-expanded={i === open} onClick={() => setOpen(i)}>
+                  <span>
+                    {station(r.from)} → {station(r.to)}
+                  </span>
+                  <span className="acc-chev" aria-hidden>
+                    ›
+                  </span>
+                </button>
+                {i === open &&
+                  (current ? (
+                    <TrainList key={i} trains={current.trains} to={r.to} now={now} />
+                  ) : (
+                    <p className="hint">{state.error ?? "載入中…"}</p>
+                  ))}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </Section>
   );

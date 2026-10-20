@@ -158,6 +158,7 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
       estimateSec: hasEstimate ? e.EstimateTime : null,
       asOf: e.asOf,
       status: status === "尚未發車" && next ? `${next} 發車` : status,
+      lastBus: e.IsLastBus === true,
     };
   });
   // Loop routes (590, F913 in 日月光社區) pass the same stop twice per trip, and sub-routes
@@ -198,10 +199,10 @@ async function stationId(env: Env, name: string): Promise<string> {
 
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 
-type Scheduled = Omit<TrainDeparture, "delayMin">;
+type Scheduled = Omit<TrainDeparture, "delayMin" | "cancelled" | "platform">;
 
 export async function train(env: Env, from: string, to: string, typeKeyword: string, limit: number): Promise<TrainResponse> {
-  const base = { configured: tdxConfigured(env), from, to, trains: [] as TrainDeparture[] };
+  const base: TrainResponse = { configured: tdxConfigured(env), from, to, trains: [], alerts: null };
   if (!base.configured) return base;
   const fromId = await stationId(env, from);
   const toId = await stationId(env, to);
@@ -225,16 +226,35 @@ export async function train(env: Env, from: string, to: string, typeKeyword: str
       ];
     }),
   );
-  // Live delays are best-effort: if they're unavailable the timetable still shows.
-  const delays = new Map<string, number>();
+  // Live data is best-effort: if it's unavailable the timetable still shows (as 無即時資訊).
+  const live = new Map<string, { delay: number; cancelled: boolean; platform: string | null }>();
   try {
-    const live = await cached(`live:${fromId}`, 55, async () => rows(await tdx(env, `/v3/Rail/TRA/StationLiveBoard/Station/${fromId}`)));
-    for (const t of live) if (typeof t.DelayTime === "number") delays.set(String(t.TrainNo), t.DelayTime);
+    const board = await cached(`live:${fromId}`, 55, async () =>
+      rows(await tdx(env, `/v3/Rail/TRA/StationLiveBoard/Station/${fromId}`)).map((t) => ({
+        trainNo: String(t.TrainNo),
+        delay: typeof t.DelayTime === "number" ? t.DelayTime : null,
+        // RunningStatus: 0 準點, 1 誤點, 2 取消（停駛）
+        cancelled: t.RunningStatus === 2,
+        platform: t.Platform ? String(t.Platform) : null,
+      })),
+    );
+    for (const t of board) if (t.delay != null || t.cancelled) live.set(t.trainNo, { delay: t.delay ?? 0, cancelled: t.cancelled, platform: t.platform });
+  } catch {}
+  // Line-wide notices (typhoons, accidents, suspended sections). One call covers all of 臺鐵.
+  try {
+    base.alerts = await cached("tra:alerts", 300, async () =>
+      rows(await tdx(env, "/v3/Rail/TRA/Alert"))
+        .filter((a) => a.Status !== 1) // 1 = 全線營運正常
+        .map((a) => [a.Title, a.Description].filter(Boolean).join("：")),
+    );
   } catch {}
 
   base.trains = timetable
     .filter((t) => t.type.includes(typeKeyword))
-    .map((t): TrainDeparture => ({ ...t, delayMin: delays.get(t.trainNo) ?? null }))
+    .map((t): TrainDeparture => {
+      const l = live.get(t.trainNo);
+      return { ...t, delayMin: l ? l.delay : null, cancelled: l?.cancelled ?? false, platform: l?.platform ?? null };
+    })
     .filter((t) => toMin(t.departure) + (t.delayMin ?? 0) >= minutes)
     .sort((a, b) => toMin(a.departure) - toMin(b.departure))
     .slice(0, limit);

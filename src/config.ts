@@ -78,6 +78,8 @@ export const TRAIN_TYPE = "區間"; // 也會包含「區間快」
 export const TRAIN_LIMIT = 10; // 列表可捲動，螢幕高的時候能多顯示幾班
 
 export const links = {
+  /** 臺鐵營運資訊（停駛、通阻公告） */
+  traAlerts: "https://www.railway.gov.tw/tra-tip-web/tip",
   quote: (i: Instrument) => `https://tw.stock.yahoo.com/quote/${encodeURIComponent(i.page ?? i.symbol)}`,
   weather: (l: Location) => `https://www.cwa.gov.tw/V8/C/W/Town/Town.html?TID=${l.cwa.townId}`,
   bus: (routeId: string) => `https://pda5284.gov.taipei/MQS/route.jsp?rid=${routeId}`,

@@ -276,6 +276,13 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grow > div { overflow: hidden; text-overflow: ellipsis; }
 .chip { border-radius: 7px; padding: 3px 7px; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .blue-chip { background: color-mix(in srgb, var(--blue) 20%, transparent); color: var(--blue); }
+/* 停駛 trains stay listed (so nobody waits for them) but are struck through. */
+.time .platform { display: block; font-size: 11px; font-weight: 500; color: var(--muted); text-align: center; }
+.list .cancelled .time { text-decoration: line-through; color: var(--muted); }
+.alert {
+  display: block; flex: none; margin: 0 0 6px; padding: 6px 10px; border-radius: 8px; font-size: 13px;
+  color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent);
+}
 /* Train routes: an accordion; the open route's list takes the remaining height and scrolls. */
 .acc { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
 .acc-item { flex: none; display: flex; flex-direction: column; min-height: 0; }
