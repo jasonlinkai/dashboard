@@ -271,51 +271,65 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
 
 // ---------- 行情 ----------
 
+/** Symbol formats people need (Yahoo Finance), shown next to the input. */
+const SYMBOL_EXAMPLES: [string, string][] = [
+  ["台股上市", "2330.TW"],
+  ["台股上櫃", "6488.TWO"],
+  ["美股", "AAPL"],
+  ["指數", "^TWII、^IXIC、^GSPC"],
+  ["匯率", "TWD=X（美元/台幣）、JPYTWD=X"],
+  ["加密貨幣", "BTC-USD"],
+  ["期貨", "GC=F（黃金）、CL=F（原油）"],
+  ["美債殖利率", "^TNX（10 年）"],
+];
+
+/**
+ * Markets are added by typing a Yahoo Finance symbol: any symbol Yahoo has can be added, which a
+ * picker or search could never guarantee. Each one is checked for a quote before it is added.
+ */
 function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
   const items = s.markets;
   const update = (markets: MarketItem[]) => set({ ...s, markets });
   const used = new Set(items.map(marketSymbol));
   const full = items.length >= LIMITS.markets;
-  const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SymbolHit[] | string | null>(null);
-  const [adding, setAdding] = useState("");
-  const [manual, setManual] = useState({ symbol: "", name: "" });
+  const [symbol, setSymbol] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const sym = symbol.trim().toUpperCase();
+  const valid = /^[A-Z0-9.^=\-]{1,20}$/.test(sym);
 
-  // Search as you type (debounced): Chinese → Taiwan listings + common names; else Yahoo's search.
-  useEffect(() => {
-    const q = query.trim();
-    if (!q) return setHits(null);
-    setHits(null);
-    const t = setTimeout(() => {
-      fetch(`/api/symbol-search?q=${encodeURIComponent(q)}`)
-        .then(async (r) => {
-          const body = await r.json().catch(() => null);
-          if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
-          setHits(body as SymbolHit[]);
-        })
-        .catch((e: Error) => setHits(e.message));
-    }, 350);
-    return () => clearTimeout(t);
-  }, [query]);
-
-  /** Only add symbols that actually return a quote, so a tile never sits there showing "—". */
-  const add = async (h: SymbolHit) => {
-    if (full || used.has(h.symbol)) return;
-    setAdding(h.symbol);
+  /** Best-effort display name when none was typed: Taiwan listings get their Chinese short name. */
+  const lookupName = async (sy: string) => {
+    if (!/\.TWO?$/.test(sy)) return sy; // as documented: other markets keep the symbol as their name
     try {
-      const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(h.symbol)}`);
+      const code = sy.replace(/\.TWO?$/, "");
+      const res = await fetch(`/api/symbol-search?q=${encodeURIComponent(code)}`);
+      const hits = (await res.json()) as SymbolHit[];
+      return hits.find((h) => h.symbol.toUpperCase() === sy)?.name ?? sy;
+    } catch {
+      return sy;
+    }
+  };
+
+  const add = async () => {
+    if (full || !valid || used.has(sym)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(sym)}`);
       const [q] = ((await res.json().catch(() => [])) as { price: number }[]) ?? [];
-      if (!q || typeof q.price !== "number") return void toast(`Yahoo 沒有「${h.name}」（${h.symbol}）的報價，無法加入`, "error");
-      const known = INSTRUMENT_CATALOG.some((i) => i.symbol === h.symbol);
+      if (!q || typeof q.price !== "number") return void toast(`Yahoo 沒有「${sym}」的報價，請確認代號`, "error");
+      const known = INSTRUMENT_CATALOG.some((i) => i.symbol === sym);
+      const label = name.trim() || (known ? instrumentOf(sym).name : await lookupName(sym));
       // Decimals that suit the size of the number (0.2042 JPY, 32.592 USD/TWD, 83,192 BTC).
-      const decimals = q.price < 1 ? 4 : /匯率/.test(h.where) ? 3 : q.price >= 10_000 && /加密/.test(h.where) ? 0 : 2;
-      update([...items, known ? h.symbol : { symbol: h.symbol, name: h.name.slice(0, 24), decimals }]);
-      toast(`已新增「${known ? instrumentOf(h.symbol).name : h.name}」`);
-      setQuery("");
+      const decimals = q.price < 1 ? 4 : sym.endsWith("=X") ? 3 : q.price >= 10_000 && sym.endsWith("-USD") ? 0 : 2;
+      update([...items, known && !name.trim() ? sym : { symbol: sym, name: label.slice(0, 24), decimals }]);
+      toast(`已新增「${label}」`);
+      setSymbol("");
+      setName("");
     } catch {
       toast("暫時無法確認報價，請稍後再試", "error");
     } finally {
-      setAdding("");
+      setBusy(false);
     }
   };
 
@@ -346,74 +360,38 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
         <>
           <div className="ed-add">
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜尋：鴻海、2330、Apple、黃金、日圓、比特幣…"
-              maxLength={30}
-              aria-label="搜尋股票、指數、匯率"
-            />
-          </div>
-          {query.trim() &&
-            (hits === null ? (
-              <p className="muted small">搜尋中…</p>
-            ) : typeof hits === "string" ? (
-              <p className="hint error">搜尋失敗：{hits}</p>
-            ) : !hits.length ? (
-              <p className="muted small">找不到「{query.trim()}」。上櫃股票請用代號搜尋（例如 6488）。</p>
-            ) : (
-              <ul className="pick-list">
-                {hits.map((h) => (
-                  <li key={h.symbol}>
-                    <button className="pick-item" disabled={used.has(h.symbol) || !!adding} onClick={() => add(h)}>
-                      <span className="pick-name">{h.name}</span>
-                      <span className="muted small">
-                        {h.symbol}・{h.where}
-                        {used.has(h.symbol) ? "・已加入" : adding === h.symbol ? "・確認報價中…" : ""}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ))}
-        </>
-      )}
-      {!full && (
-        <div className="ed-manual">
-          <div className="setting-label">搜不到時：直接輸入 Yahoo 代號</div>
-          <div className="ed-add">
-            <input
-              value={manual.symbol}
-              onChange={(e) => setManual({ ...manual, symbol: e.target.value.trim() })}
-              placeholder="代號，如 6488.TWO、AAPL、^SOX"
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder="Yahoo 代號，如 2317.TW"
               maxLength={20}
               autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
               aria-label="Yahoo 代號"
             />
-            <input
-              value={manual.name}
-              onChange={(e) => setManual({ ...manual, name: e.target.value })}
-              placeholder="顯示名稱（選填）"
-              maxLength={24}
-              aria-label="顯示名稱"
-            />
-            <button
-              className="ed-primary"
-              disabled={!/^[A-Za-z0-9.^=\-]{1,20}$/.test(manual.symbol) || used.has(manual.symbol.toUpperCase()) || !!adding}
-              onClick={() => {
-                const symbol = manual.symbol.toUpperCase();
-                add({ symbol, name: manual.name.trim() || symbol, where: "手動輸入" }).then(() => setManual({ symbol: "", name: "" }));
-              }}
-            >
-              {adding && adding === manual.symbol.toUpperCase() ? "確認中…" : "加入"}
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="顯示名稱（選填）" maxLength={24} aria-label="顯示名稱" />
+            <button className="ed-primary" disabled={!valid || used.has(sym) || busy} onClick={add}>
+              {busy ? "確認報價中…" : "加入"}
             </button>
           </div>
-          <p className="muted small">代號以 Yahoo Finance 為準（上市 .TW、上櫃 .TWO，例如 2330.TW、6488.TWO）；加入前會先確認有報價。</p>
-        </div>
+          {used.has(sym) && <p className="hint error">{sym} 已經在清單裡了。</p>}
+          <dl className="ed-examples">
+            {SYMBOL_EXAMPLES.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
       )}
       <p className="muted small">
-        目前 {items.length}／{LIMITS.markets} 格。中文可搜上市股票、ETF
-        與常用的指數、匯率、商品；上櫃股票請用代號（櫃買中心不開放這個網站讀取名單）。英文名稱或代號可搜全球商品，但每次最多列出約 12
-        筆，找不到時用上方的手動輸入。
+        目前 {items.length}／{LIMITS.markets} 格。代號以 Yahoo Finance 為準，加入前會先確認有報價；不知道代號可到{" "}
+        <a href="https://tw.stock.yahoo.com/" target="_blank" rel="noopener noreferrer">
+          Yahoo 股市
+        </a>{" "}
+        搜尋，報價頁網址最後一段就是代號。名稱沒填時，台股自動用中文簡稱，其他用代號。
       </p>
     </>
   );
