@@ -227,18 +227,31 @@ export async function train(env: Env, from: string, to: string, typeKeyword: str
     }),
   );
   // Live data is best-effort: if it's unavailable the timetable still shows (as 無即時資訊).
-  const live = new Map<string, { delay: number; cancelled: boolean; platform: string | null }>();
+  // Delays: every running train nationwide in one call, so small stations (汐科 has no station
+  // board) are covered too, and all routes share it.
+  const delays = new Map<string, number>();
   try {
-    const board = await cached(`live:${fromId}`, 55, async () =>
+    const running = await cached("tra:trains", 55, async () =>
+      rows(await tdx(env, "/v3/Rail/TRA/TrainLiveBoard")).map((t) => [String(t.TrainNo), t.DelayTime] as const),
+    );
+    for (const [no, delay] of running) if (typeof delay === "number") delays.set(no, delay);
+  } catch {}
+  // 停駛 and platforms only exist on station boards, which TDX publishes for larger stations only.
+  const board = new Map<string, { cancelled: boolean; platform: string | null }>();
+  try {
+    const live = await cached(`live:${fromId}`, 55, async () =>
       rows(await tdx(env, `/v3/Rail/TRA/StationLiveBoard/Station/${fromId}`)).map((t) => ({
         trainNo: String(t.TrainNo),
-        delay: typeof t.DelayTime === "number" ? t.DelayTime : null,
         // RunningStatus: 0 準點, 1 誤點, 2 取消（停駛）
         cancelled: t.RunningStatus === 2,
         platform: t.Platform ? String(t.Platform) : null,
+        delay: typeof t.DelayTime === "number" ? t.DelayTime : null,
       })),
     );
-    for (const t of board) if (t.delay != null || t.cancelled) live.set(t.trainNo, { delay: t.delay ?? 0, cancelled: t.cancelled, platform: t.platform });
+    for (const t of live) {
+      board.set(t.trainNo, { cancelled: t.cancelled, platform: t.platform });
+      if (t.delay != null && !delays.has(t.trainNo)) delays.set(t.trainNo, t.delay);
+    }
   } catch {}
   // Line-wide notices (typhoons, accidents, suspended sections). One call covers all of 臺鐵.
   try {
@@ -252,8 +265,8 @@ export async function train(env: Env, from: string, to: string, typeKeyword: str
   base.trains = timetable
     .filter((t) => t.type.includes(typeKeyword))
     .map((t): TrainDeparture => {
-      const l = live.get(t.trainNo);
-      return { ...t, delayMin: l ? l.delay : null, cancelled: l?.cancelled ?? false, platform: l?.platform ?? null };
+      const b = board.get(t.trainNo);
+      return { ...t, delayMin: delays.get(t.trainNo) ?? null, cancelled: b?.cancelled ?? false, platform: b?.platform ?? null };
     })
     .filter((t) => toMin(t.departure) + (t.delayMin ?? 0) >= minutes)
     .sort((a, b) => toMin(a.departure) - toMin(b.departure))

@@ -1,6 +1,5 @@
 import { BUS_ESTIMATE_STALE_MIN, BUS_STOPS, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAINS, TRAIN_LIMIT, TRAIN_TYPE, links } from "../config";
 import { Fragment, useState } from "react";
-import { countdown } from "../format";
 import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
 import { Section } from "./Section";
@@ -19,32 +18,23 @@ function wanted(a: BusArrival, all: BusArrival[]): boolean {
   return dirs.size !== 1 || dirs.has(a.direction);
 }
 
-// TDX re-estimates about once a minute; older than this and the countdown may be off.
+// TDX re-estimates about once a minute; older than this and the estimate may be off.
 const BUS_STALE_MS = BUS_ESTIMATE_STALE_MIN * 60_000;
 
-// Same wording and thresholds as the 5284 / 大台北公車 app.
+// Shown as TDX reports it, refreshed every minute: no local per-second countdown, which only
+// looked precise and jumped back whenever a new estimate arrived.
 const ARRIVING_SEC = 60; // 進站中
 const NEAR_SEC = 180; // 將到站
 
-/**
- * Seconds left, counted down locally from when TDX made the estimate. Only fresh data may say
- * the bus is arriving: a bus held at a stop or in traffic keeps the same estimate, so the local
- * countdown stops at the 進站中 threshold instead of running past it.
- */
-function busLeft(a: BusArrival, now: number): number | null {
-  if (a.estimateSec == null) return null;
-  if (a.status) return a.estimateSec; // not on its way yet (尚未發車): don't count down
-  const left = a.estimateSec - (now - a.asOf) / 1000;
-  return a.estimateSec < ARRIVING_SEC ? a.estimateSec : Math.max(ARRIVING_SEC, left);
-}
-
-function eta(a: BusArrival, left: number | null): { text: string; cls: string } {
-  if (left == null) return { text: a.status ?? "—", cls: "muted" };
-  // Not departed yet: the estimate comes from the timetable, so give it as approximate minutes.
-  if (a.status) return { text: `約 ${Math.max(1, Math.round(left / 60))} 分`, cls: "muted" };
-  if (left < ARRIVING_SEC) return { text: "進站中", cls: "red" };
-  if (left < NEAR_SEC) return { text: "將到站", cls: "red" };
-  return { text: countdown(left), cls: "" };
+function eta(a: BusArrival): { text: string; cls: string } {
+  const sec = a.estimateSec;
+  if (sec == null) return { text: a.status ?? "—", cls: "muted" };
+  // Not departed yet: the estimate comes from the timetable.
+  if (a.status) return { text: `約 ${Math.max(1, Math.floor(sec / 60))} 分`, cls: "muted" };
+  if (sec < ARRIVING_SEC) return { text: "進站中", cls: "red" };
+  if (sec < NEAR_SEC) return { text: "將到站", cls: "red" };
+  // Rounded down, so the bus is never later than it says.
+  return { text: `${Math.floor(sec / 60)} 分`, cls: "" };
 }
 
 export function Bus() {
@@ -60,7 +50,7 @@ export function Bus() {
       group,
       rows: rows
         .filter((a) => BUS_STOPS.find((s) => s.route === a.route)?.group === group)
-        .sort((a, b) => (busLeft(a, now) ?? 1e9) - (busLeft(b, now) ?? 1e9)),
+        .sort((a, b) => (a.estimateSec ?? 1e9) - (b.estimateSec ?? 1e9)),
     }))
     .filter((g) => g.rows.length);
   return (
@@ -73,7 +63,7 @@ export function Bus() {
             <Fragment key={g.group}>
               <li className="list-group">{g.group}</li>
               {g.rows.map((a) => {
-                const e = eta(a, busLeft(a, now));
+                const e = eta(a);
                 return (
                   <li key={`${a.route}-${a.direction}-${a.stop}`}>
                     <a className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
@@ -150,7 +140,7 @@ function TrainList({ trains, to, now }: { trains: TrainDeparture[]; to: string; 
               </div>
             </span>
             <span className={`eta ${t.cancelled ? "red" : t.left < 300 ? "red" : ""}`}>
-              {t.cancelled ? "停駛" : t.left <= 30 ? "即將發車" : countdown(t.left)}
+              {t.cancelled ? "停駛" : t.left < 60 ? "即將發車" : `${Math.floor(t.left / 60)} 分`}
             </span>
           </a>
         </li>
