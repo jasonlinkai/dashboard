@@ -3,6 +3,7 @@
 
 import { type ReactNode, createContext, useContext, useEffect, useState } from "react";
 import type { Instrument } from "./config";
+import { type BusCity, MAX_BUS_CITIES, isBusCity } from "./bus-cities";
 import { MAX_NEWS_SOURCES, NEWS_BY_ID, TOPICS, type Topic } from "./news-sources";
 
 export interface WeatherPlace {
@@ -27,6 +28,8 @@ export interface BusStop {
   direction: 0 | 1 | "auto";
   /** 只看會開往這一站的車（取代 direction）；環狀線同一站經過兩次時，用它選對邊 */
   toward?: string;
+  /** 顯示的方向，例如「往 捷運昆陽站」；沒有的話用 TDX 的起訖站 */
+  headsign?: string;
   /** 舊版的分組標題；已不使用，匯入時忽略 */
   group?: string;
 }
@@ -48,11 +51,7 @@ export interface Settings {
 
 // ---------- Catalogs and limits ----------
 
-export const BUS_CITIES = [
-  ["NewTaipei", "新北市"],
-  ["Taipei", "臺北市"],
-] as const;
-export type BusCity = (typeof BUS_CITIES)[number][0];
+export { BUS_CITY_LIST as BUS_CITIES, type BusCity } from "./bus-cities";
 
 /** 車種：用車種名稱的關鍵字篩選（「區間」也包含「區間快」） */
 export const TRAIN_TYPES = ["區間", "自強", "莒光", "全部"] as const;
@@ -213,21 +212,25 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     raw.bus.forEach((b, i) => {
       const at = `bus[${i}]`;
       if (!isObj(b)) return err(`${at} 必須是物件`);
-      if (!BUS_CITIES.some(([id]) => id === b.city)) return err(`${at}：city 只能是 ${BUS_CITIES.map(([id]) => id).join(" 或 ")}`);
+      if (!isBusCity(b.city)) return err(`${at}：city 要是 TDX 的縣市代碼（例如 Taipei、NewTaipei、Taichung）`);
       if (!text(b.route, 12) || !text(b.stop, 24)) return err(`${at}：route、stop 必填（不能含 , 或 :）`);
       const direction = b.direction ?? "auto";
       if (direction !== "auto" && direction !== 0 && direction !== 1) return err(`${at}：direction 只能是 "auto"、0 或 1`);
       if (b.toward !== undefined && !text(b.toward, 24)) return err(`${at}：toward 不能是空字串，也不能含 , 或 :`);
+      if (b.headsign !== undefined && !(typeof b.headsign === "string" && b.headsign.length <= 30)) return err(`${at}：headsign 要是 30 字內的文字`);
       bus.push({
-        city: b.city as BusCity,
+        city: b.city,
         route: b.route as string,
         stop: b.stop as string,
         direction,
         ...(b.toward ? { toward: b.toward as string } : {}),
+        ...(b.headsign ? { headsign: b.headsign as string } : {}),
       });
     });
-    const routes = bus.map((b) => b.route);
+    const routes = bus.map((b) => `${b.city}:${b.route}`);
     if (new Set(routes).size !== routes.length) err("bus 的同一條路線只能出現一次");
+    const cities = new Set(bus.map((b) => b.city));
+    if (cities.size > MAX_BUS_CITIES) err(`bus 最多 ${MAX_BUS_CITIES} 個縣市（每個縣市每分鐘多查一次 TDX）`);
   }
 
   const trains: TrainRoute[] = [];

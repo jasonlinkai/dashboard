@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { BUS_CITY_NAME, type BusRouteInfo, type BusTrip, MAX_BUS_CITIES } from "../bus-cities";
 import { NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
 import { tdxHeaders } from "../tdxKey";
 import { toast } from "../toast";
@@ -306,34 +307,98 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
 
 // ---------- 公車 ----------
 
-const busLabel = (b: BusStop) => `${b.stop}${b.toward ? `，往${b.toward}` : ""}`;
+const busLabel = (b: BusStop) =>
+  `${b.stop}${b.headsign ? `・${b.headsign}` : b.toward ? `・往 ${b.toward}` : ""}${b.city !== "Taipei" && b.city !== "NewTaipei" ? `・${BUS_CITY_NAME.get(b.city)}` : ""}`;
 
+/** GET a TDX-backed API with the visitor's own key (if any); throws the server's message on error. */
+async function tdxApi<T>(url: string): Promise<T> {
+  const res = await fetch(url, { headers: tdxHeaders() });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+  return body as T;
+}
+
+/** Where a trip goes: "往 終點", or for a loop (ends where it starts) the next stop's side. */
+function tripLabel(t: BusTrip, all: BusTrip[]) {
+  const first = t.stops[0];
+  const last = t.stops[t.stops.length - 1];
+  const base = first === last ? `環狀（${first} 發車）` : `往 ${last}`;
+  const twins = all.filter((x) => x !== t && x.stops[x.stops.length - 1] === last && x.stops[0] === first);
+  return twins.length && t.subRoute ? `${base}・${t.subRoute}` : base;
+}
+
+/**
+ * Add a bus by picking, not typing: city → route (search) → direction → the stop to board at.
+ * The stop after the chosen one is saved as `toward`, which pins the exact side of the road
+ * (loop routes pass a stop name twice, once each way).
+ */
 function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
   const stops = s.bus;
   const update = (bus: BusStop[]) => set({ ...s, bus });
-  const [form, setForm] = useState({ city: "NewTaipei" as BusCity, route: "", stop: "", toward: "" });
-  const clean = (v: string) => v.trim().replace(/[,:]/g, "");
-  const route = clean(form.route);
-  const dup = stops.some((b) => b.route === route);
-  const ok = route && clean(form.stop) && !dup && stops.length < LIMITS.bus;
+  const [city, setCity] = useState<BusCity>(stops[0]?.city ?? "NewTaipei");
+  const [routes, setRoutes] = useState<Partial<Record<BusCity, BusRouteInfo[] | string>>>({});
+  const [query, setQuery] = useState("");
+  const [route, setRoute] = useState<BusRouteInfo | null>(null);
+  const [trips, setTrips] = useState<BusTrip[] | string | null>(null);
+  const [tripIndex, setTripIndex] = useState(0);
+  const cities = new Set(stops.map((b) => b.city));
+  const cityFull = !cities.has(city) && cities.size >= MAX_BUS_CITIES;
+  const full = stops.length >= LIMITS.bus;
 
-  const add = () => {
-    if (!ok) return;
-    const toward = clean(form.toward);
+  // The city's route list (fetched once per city; the server keeps it for a day).
+  const list = routes[city];
+  useEffect(() => {
+    if (list !== undefined) return;
+    tdxApi<BusRouteInfo[]>(`/api/bus-routes?city=${city}`)
+      .then((r) => setRoutes((m) => ({ ...m, [city]: r })))
+      .catch((e: Error) => setRoutes((m) => ({ ...m, [city]: e.message })));
+  }, [city, list]);
+
+  const q = query.trim();
+  const matches =
+    Array.isArray(list) && q
+      ? list
+          .filter((r) => r.name.includes(q) || r.from.includes(q) || r.to.includes(q))
+          .sort((a, b) => Number(!a.name.startsWith(q)) - Number(!b.name.startsWith(q)))
+          .slice(0, 30)
+      : [];
+
+  const pickRoute = (r: BusRouteInfo) => {
+    setRoute(r);
+    setTrips(null);
+    setTripIndex(0);
+    tdxApi<BusTrip[]>(`/api/bus-trips?city=${city}&route=${encodeURIComponent(r.name)}`)
+      .then((t) => setTrips(t.length ? t : "這條路線沒有站牌資料"))
+      .catch((e: Error) => setTrips(e.message));
+  };
+
+  const trip = Array.isArray(trips) ? trips[Math.min(tripIndex, trips.length - 1)] : null;
+  const already = route ? stops.some((b) => b.city === city && b.route === route.name) : false;
+
+  const add = (i: number) => {
+    if (!route || !trip || full || cityFull || already) return;
+    const stop = trip.stops[i];
     update([
       ...stops,
-      { city: form.city, route, stop: clean(form.stop), direction: "auto", ...(toward ? { toward } : {}) },
+      { city, route: route.name, stop, direction: "auto", toward: trip.stops[i + 1], headsign: tripLabel(trip, trips as BusTrip[]) },
     ]);
-    setForm({ ...form, route: "", stop: "", toward: "" });
-    toast(`已新增「${route} ${clean(form.stop)}」，公車區塊下次更新時出現`);
+    toast(`已新增「${route.name} ${stop}」，公車區塊下次更新時出現`);
+    setRoute(null);
+    setQuery("");
   };
-  const field = (k: keyof typeof form) => ({ value: form[k], onChange: (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value }) });
 
   return (
     <>
       <ul className="ed-list">
         {stops.map((b, i) => (
-          <Row key={b.route} name={b.route} i={i} count={stops.length} onMove={(by) => update(move(stops, i, by))} onRemove={() => update(without(stops, i))}>
+          <Row
+            key={`${b.city}:${b.route}`}
+            name={b.route}
+            i={i}
+            count={stops.length}
+            onMove={(by) => update(move(stops, i, by))}
+            onRemove={() => update(without(stops, i))}
+          >
             {b.route}
             <span className="muted small">
               {" "}
@@ -342,27 +407,98 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
           </Row>
         ))}
       </ul>
-      <div className="ed-add ed-grid">
-        <select {...field("city")} aria-label="縣市">
-          {BUS_CITIES.map(([id, label]) => (
-            <option key={id} value={id}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <input {...field("route")} placeholder="路線，如 藍23" maxLength={12} aria-label="路線" />
-        <input {...field("stop")} placeholder="上車站，如 忠孝里" maxLength={24} aria-label="上車站" />
-        <input {...field("toward")} placeholder="開往哪一站（選填）" maxLength={24} aria-label="開往" />
-        <button className="ed-primary" onClick={add} disabled={!ok}>
-          新增
-        </button>
-      </div>
+      {full ? (
+        <p className="muted small">最多 {LIMITS.bus} 條，請先刪除一條再新增。</p>
+      ) : !route ? (
+        <>
+          <div className="ed-add">
+            <select value={city} onChange={(e) => (setCity(e.target.value as BusCity), setQuery(""))} aria-label="縣市">
+              {BUS_CITIES.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜尋路線，如 藍23、307" maxLength={20} aria-label="搜尋路線" />
+          </div>
+          {cityFull ? (
+            <p className="hint error">最多 {MAX_BUS_CITIES} 個縣市（每個縣市每分鐘要多查一次 TDX）。</p>
+          ) : list === undefined ? (
+            <p className="muted small">載入路線清單中…</p>
+          ) : typeof list === "string" ? (
+            <p className="hint error">
+              無法載入路線：{list}{" "}
+              <button className="link-btn" onClick={() => setRoutes((m) => ({ ...m, [city]: undefined }))}>
+                重試
+              </button>
+            </p>
+          ) : !q ? (
+            <p className="muted small">輸入路線名稱，或起訖站名（{BUS_CITY_NAME.get(city)}共 {list.length} 條路線）。</p>
+          ) : !matches.length ? (
+            <p className="muted small">找不到「{q}」。</p>
+          ) : (
+            <ul className="pick-list">
+              {matches.map((r) => (
+                <li key={r.name}>
+                  <button className="pick-item" onClick={() => pickRoute(r)}>
+                    <span className="chip blue-chip">{r.name}</span>
+                    <span className="muted small">
+                      {r.from} ↔ {r.to}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <div className="pick-route">
+          <div className="pick-head">
+            <button className="link-btn" onClick={() => setRoute(null)}>
+              ‹ 換路線
+            </button>
+            <span className="chip blue-chip">{route.name}</span>
+            <span className="muted small">{BUS_CITY_NAME.get(city)}</span>
+          </div>
+          {trips === null ? (
+            <p className="muted small">載入站牌中…</p>
+          ) : typeof trips === "string" ? (
+            <p className="hint error">
+              無法載入站牌：{trips}{" "}
+              <button className="link-btn" onClick={() => pickRoute(route)}>
+                重試
+              </button>
+            </p>
+          ) : (
+            <>
+              <div className="tabs ed-tabs" role="tablist">
+                {trips.map((t, i) => (
+                  <button key={i} role="tab" aria-selected={t === trip} onClick={() => setTripIndex(i)}>
+                    {tripLabel(t, trips)}
+                  </button>
+                ))}
+              </div>
+              {already ? (
+                <p className="hint error">這條路線已經在清單裡了，要換站牌請先刪除原本那一筆。</p>
+              ) : (
+                <p className="muted small">點你要上車的站牌（終點站不能上車，所以不列出）：</p>
+              )}
+              <ul className="pick-list">
+                {trip!.stops.slice(0, -1).map((name, i) => (
+                  <li key={i}>
+                    <button className="pick-item" disabled={already} onClick={() => add(i)}>
+                      <span className="pick-seq">{i + 1}</span>
+                      {name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
       <p className="muted small">
-        {stops.length >= LIMITS.bus
-          ? `最多 ${LIMITS.bus} 條。`
-          : dup
-            ? "這條路線已經在清單裡了。"
-            : "站名可以寫簡稱（例如 樟樹實中）。沒填「開往哪一站」時自動選往台北的方向；環狀線請填開往的站名。站名找不到時，公車區塊會顯示「找不到站牌」。"}
+        資料來自 TDX 的市區公車（公路客運不在內）。雙北的公車點擊後開大台北公車，其他縣市開 Google 地圖搜尋該路線。
       </p>
     </>
   );

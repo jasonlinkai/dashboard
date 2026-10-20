@@ -1,3 +1,4 @@
+import { BUS_CITY_NAME } from "../bus-cities";
 import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN_LIMIT, links } from "../config";
 import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
 import { useEffect, useState } from "react";
@@ -6,15 +7,17 @@ import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../
 import { Flip } from "./Flip";
 import { Section } from "./Section";
 
-const NOT_CONFIGURED = <p className="hint">尚未設定 TDX 金鑰，請參考 README。</p>;
+const NOT_CONFIGURED = <p className="hint">網站尚未設定 TDX 金鑰，可在右上角「設定」填入你自己的金鑰。</p>;
+
+const sameRoute = (a: BusArrival, s: BusStop) => a.route === s.route && (a.city ?? s.city) === s.city;
 
 /** Keep the configured direction; "auto" keeps whichever direction heads toward Taipei. */
 function wanted(a: BusArrival, all: BusArrival[], stops: BusStop[]): boolean {
-  const cfg = stops.find((s) => s.route === a.route);
+  const cfg = stops.find((s) => sameRoute(a, s));
   if (!cfg) return false;
   if (cfg.toward) return true; // the backend already kept only buses heading there
   if (cfg.direction !== "auto") return a.direction === cfg.direction;
-  const toward = all.filter((x) => x.route === a.route && TOWARD_TAIPEI.test(x.headsign));
+  const toward = all.filter((x) => sameRoute(x, cfg) && TOWARD_TAIPEI.test(x.headsign));
   const dirs = new Set(toward.map((x) => x.direction));
   // If both or neither direction looks like Taipei we can't tell, so show both.
   return dirs.size !== 1 || dirs.has(a.direction);
@@ -75,10 +78,10 @@ export function Bus() {
           {/* One item per configured stop (it can show both directions), in the user's order. */}
           {stops.map((cfg) => {
             const rows = all
-              .filter((a) => a.route === cfg.route && wanted(a, all, stops))
+              .filter((a) => sameRoute(a, cfg) && wanted(a, all, stops))
               .sort((a, b) => (a.estimateSec ?? 1e9) - (b.estimateSec ?? 1e9));
             return (
-              <li key={cfg.route} data-reorder className="bus-stop">
+              <li key={`${cfg.city}:${cfg.route}`} data-reorder className="bus-stop">
                 {notFound.has(`${cfg.route}:${cfg.stop}`) ? (
                   <div className="row">
                     <span className="chip blue-chip">{cfg.route}</span>
@@ -96,12 +99,19 @@ export function Bus() {
                   rows.map((a) => {
                     const e = eta(a);
                     return (
-                      <a key={`${a.direction}-${a.stop}`} className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
+                      <a
+                        key={`${a.direction}-${a.stop}`}
+                        className="row link"
+                        href={links.bus(a.routeId, cfg.city, cfg.route)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
                         <span className="chip blue-chip">{a.route}</span>
                         <span className="grow">
                           <div>{a.stop}</div>
                           <div className="muted small">
-                            {a.headsign}
+                            {cfg.headsign ?? a.headsign}
+                            {cfg.city !== "Taipei" && cfg.city !== "NewTaipei" && <span>・{BUS_CITY_NAME.get(cfg.city)}</span>}
                             {a.status && a.estimateSec != null && <span>・{a.status}</span>}
                             {a.lastBus && <span className="red">・末班車</span>}
                             {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (

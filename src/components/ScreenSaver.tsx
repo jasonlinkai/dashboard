@@ -54,8 +54,9 @@ export function ScreenSaver({ minutes, preview, onPreviewEnd }: { minutes: numbe
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     const dpr = Math.min(2, devicePixelRatio || 1);
-    const w = innerWidth;
-    const h = innerHeight;
+    // The canvas's own size (CSS: the whole screen, incl. under Safari's toolbar), not innerHeight.
+    const w = canvas.clientWidth || innerWidth;
+    const h = canvas.clientHeight || innerHeight;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

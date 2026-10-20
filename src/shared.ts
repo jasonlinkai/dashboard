@@ -17,6 +17,7 @@ export interface NewsItem {
 }
 
 export interface BusArrival {
+  city?: string; // TDX city code (older servers didn't send it)
   route: string;
   routeId: string; // also the 5284 (大台北公車) route page id
   stop: string; // stop name as TDX spells it

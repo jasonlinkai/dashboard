@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { observations } from "./cwa";
 import { news, quotes } from "./markets";
-import { bus, checkCreds, stationNames, train } from "./tdx";
+import { MAX_BUS_CITIES, isBusCity } from "../src/bus-cities";
+import { bus, busRoutes, busTrips, checkCreds, stationNames, train } from "./tdx";
 import { type Env, type Freshness, freshness, setPersistentStore, type TdxCreds, tdxCreds } from "./util";
 
 function json(body: unknown, status = 200) {
@@ -23,8 +24,7 @@ function serve(request: Request, env: Env): Promise<Response> {
 // each with its own cache and counter, which together blow through that. So every TDX request goes
 // through one Durable Object: a single shared cache and rate counter, plus durable storage for the
 // daily timetable / station list / route info.
-const BUS_CITIES = new Set(["Taipei", "NewTaipei"]);
-const TDX_PATHS = new Set(["/api/bus", "/api/train", "/api/stations", "/api/tdx-check"]);
+const TDX_PATHS = new Set(["/api/bus", "/api/bus-routes", "/api/bus-trips", "/api/train", "/api/stations", "/api/tdx-check"]);
 
 /** A visitor's own TDX key from the request headers (used for this request only, never stored). */
 function ownCreds(request: Request): TdxCreds | null {
@@ -68,10 +68,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
           .map((p) => p.split(":"))
           .filter((p) => p.length === 3 || p.length === 4)
           .map(([city, route, stop, toward]) => ({ city, route, stop, toward: toward || undefined }))
-          // Each city is one more TDX call a minute; links go to 大台北公車, which covers these two.
-          .filter((x) => BUS_CITIES.has(x.city));
-        return json(await bus(env, queries.slice(0, 10)));
+          .filter((x) => isBusCity(x.city));
+        // Each city is one more TDX call a minute: only the first few cities are queried.
+        const cities = [...new Set(queries.map((x) => x.city))].slice(0, MAX_BUS_CITIES);
+        return json(await bus(env, queries.filter((x) => cities.includes(x.city)).slice(0, 10)));
       }
+      case "/api/bus-routes":
+        return json(await busRoutes(env, q.get("city") ?? ""));
+      case "/api/bus-trips":
+        return json(await busTrips(env, q.get("city") ?? "", q.get("route") ?? ""));
       case "/api/train":
         return json(await train(env, q.get("from") ?? "", q.get("to") ?? "臺北", q.get("type") ?? "區間", Number(q.get("limit") ?? 6)));
       case "/api/tdx-check":

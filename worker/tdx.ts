@@ -1,3 +1,4 @@
+import { type BusRouteInfo, type BusTrip, isBusCity } from "../src/bus-cities";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../src/shared";
 import { type Env, type TdxCreds, cached, rows, taipeiNow, tdxCreds } from "./util";
 
@@ -170,6 +171,7 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
     // dashboard doesn't count it down as if the bus were on its way.
     const status = STOP_STATUS[e.StopStatus] ?? (hasEstimate ? null : "暫無資料");
     return {
+      city,
       route,
       routeId: routeIds[route] ?? String(e.RouteID ?? ""),
       stop: zh(e.StopName),
@@ -203,6 +205,38 @@ export async function bus(env: Env, queries: BusQuery[]): Promise<BusResponse> {
     out.notFound.push(...r.notFound);
   }
   return out;
+}
+
+// ---------- Bus route search (settings screen) ----------
+
+/** Every route in a city, for searching by name. One call per city per day. */
+export async function busRoutes(env: Env, city: string): Promise<BusRouteInfo[]> {
+  if (!isBusCity(city)) throw new Error("不支援的縣市");
+  return cached(`busroutes:${city}`, 86400, async () => {
+    const seen = new Set<string>();
+    return rows(await tdx(env, `/v2/Bus/Route/City/${city}`, { $select: "RouteName,DepartureStopNameZh,DestinationStopNameZh" }))
+      .map((r): BusRouteInfo => ({ name: zh(r.RouteName), from: r.DepartureStopNameZh ?? "", to: r.DestinationStopNameZh ?? "" }))
+      .filter((r) => r.name && !seen.has(r.name) && seen.add(r.name))
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant", { numeric: true }));
+  });
+}
+
+/** A route's trips (each direction / sub-route) with their stops in order. One call per route per day. */
+export async function busTrips(env: Env, city: string, route: string): Promise<BusTrip[]> {
+  if (!isBusCity(city)) throw new Error("不支援的縣市");
+  if (!route || route.length > 20) throw new Error("路線名稱不正確");
+  return cached(`bustrips:${city}:${route}`, 86400, async () =>
+    rows(await tdx(env, `/v2/Bus/StopOfRoute/City/${city}`, { $filter: `RouteName/Zh_tw eq ${quote(route)}` }))
+      .filter((r) => zh(r.RouteName) === route)
+      .map(
+        (r): BusTrip => ({
+          direction: r.Direction,
+          subRoute: zh(r.SubRouteName),
+          stops: ((r.Stops ?? []) as any[]).map((s) => zh(s.StopName)),
+        }),
+      )
+      .filter((t) => t.stops.length > 1),
+  );
 }
 
 // ---------- Train (TRA) ----------

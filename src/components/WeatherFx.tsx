@@ -64,8 +64,9 @@ export function WeatherFx({ scene }: { scene: Scene }) {
     let h = 0;
     const resize = () => {
       const dpr = Math.min(2, devicePixelRatio || 1);
-      w = innerWidth;
-      h = innerHeight;
+      // The canvas's own size (CSS: the whole screen, incl. under Safari's toolbar), not innerHeight.
+      w = canvas.clientWidth || innerWidth;
+      h = canvas.clientHeight || innerHeight;
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
