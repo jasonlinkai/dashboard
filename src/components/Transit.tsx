@@ -102,7 +102,7 @@ export function Bus() {
                       <a
                         key={`${a.direction}-${a.stop}`}
                         className="row link"
-                        href={links.bus(a.routeId, cfg.city, cfg.route)}
+                        href={links.bus(cfg.city, cfg.route)}
                         target="_blank"
                         rel="noopener noreferrer"
                       >

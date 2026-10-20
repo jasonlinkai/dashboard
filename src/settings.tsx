@@ -186,8 +186,9 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
         markets.push(m);
       } else if (isObj(m)) {
         const decimals = m.decimals === undefined ? undefined : m.decimals;
-        if (typeof m.symbol !== "string" || !SYMBOL.test(m.symbol) || !text(m.name, 10)) {
-          return err(`${at}：symbol 只能是 Yahoo 代號（英數與 . ^ = -，20 字內），name 10 字內`);
+        // The name is only displayed (never sent in a query string), so commas are fine here.
+        if (typeof m.symbol !== "string" || !SYMBOL.test(m.symbol) || typeof m.name !== "string" || !m.name.trim() || m.name.length > 24) {
+          return err(`${at}：symbol 只能是 Yahoo 代號（英數與 . ^ = -，20 字內），name 1～24 字`);
         }
         if (decimals !== undefined && !(Number.isInteger(decimals) && (decimals as number) >= 0 && (decimals as number) <= 6)) {
           return err(`${at}：decimals 要是 0～6 的整數`);

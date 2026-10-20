@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { observations } from "./cwa";
-import { news, quotes } from "./markets";
+import { news, quotes, searchSymbols } from "./markets";
 import { MAX_BUS_CITIES, isBusCity } from "../src/bus-cities";
 import { bus, busRoutes, busTrips, checkCreds, stationNames, train } from "./tdx";
 import { type Env, type Freshness, freshness, setPersistentStore, type TdxCreds, tdxCreds } from "./util";
@@ -60,6 +60,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     switch (url.pathname) {
       case "/api/quotes":
         return json(await quotes(list(q.get("symbols")).slice(0, 20)));
+      case "/api/symbol-search":
+        return json(await searchSymbols(q.get("q") ?? ""));
       case "/api/news":
         return json(await news(q.get("topic") ?? "top", list(q.get("sources"))));
       case "/api/bus": {

@@ -28,11 +28,9 @@ export const links = {
   traAlerts: "https://www.railway.gov.tw/tra-tip-web/tip",
   quote: (i: Instrument) => `https://tw.stock.yahoo.com/quote/${encodeURIComponent(i.page ?? i.symbol)}`,
   weather: (p: WeatherPlace) => `https://www.cwa.gov.tw/V8/C/W/Town/Town.html?TID=${p.townId}`,
-  /** 雙北：大台北公車的路線頁；其他縣市沒有統一的公車動態網站，改用 Google 地圖搜尋這條路線 */
-  bus: (routeId: string, city: string, route: string) =>
-    city === "Taipei" || city === "NewTaipei"
-      ? `https://pda5284.gov.taipei/MQS/route.jsp?rid=${routeId}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${BUS_CITY_NAME.get(city) ?? ""} ${route} 公車`)}`,
+  /** 每個縣市都一樣：用 Google 地圖搜尋這條公車路線 */
+  bus: (city: string, route: string) =>
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${BUS_CITY_NAME.get(city) ?? ""} ${route} 公車`)}`,
   /** 臺鐵車次查詢，含停靠站與即時誤點 */
   train: (trainNo: string, date: string) =>
     `https://tip.railway.gov.tw/tra-tip-web/tip/tip001/tip112/querybytrainno?rideDate=${date.replace(/-/g, "/")}&trainNo=${trainNo}`,

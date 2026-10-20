@@ -16,6 +16,14 @@ export interface NewsItem {
   published: number | null; // unix ms
 }
 
+/** A result of the market symbol search (settings screen). */
+export interface SymbolHit {
+  symbol: string;
+  name: string;
+  /** Where it trades / what it is, e.g. 台灣上市 2317, NASDAQ・股票, 常用. */
+  where: string;
+}
+
 export interface BusArrival {
   city?: string; // TDX city code (older servers didn't send it)
   route: string;

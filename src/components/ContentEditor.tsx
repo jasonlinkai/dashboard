@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { BUS_CITY_NAME, type BusRouteInfo, type BusTrip, MAX_BUS_CITIES } from "../bus-cities";
 import { DEFAULT_NEWS, NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
+import type { SymbolHit } from "../shared";
 import { tdxHeaders } from "../tdxKey";
 import { toast } from "../toast";
 import {
@@ -262,7 +263,7 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
           ? `最多 ${LIMITS.weather} 個地點。`
           : duplicate
             ? "已經有同名的地點，請換個顯示名稱。"
-            : "清單是氣象署有測站的鄉鎮區；第一個地點決定整頁的天氣動畫。"}
+            : "全臺 368 個鄉鎮區都可選；沒有氣象署測站的地區，現在溫度改用預報模型並會註明。第一個地點決定整頁的天氣動畫。"}
       </p>
     </>
   );
@@ -274,12 +275,49 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
   const items = s.markets;
   const update = (markets: MarketItem[]) => set({ ...s, markets });
   const used = new Set(items.map(marketSymbol));
-  const available = INSTRUMENT_CATALOG.filter((i) => !used.has(i.symbol));
-  const [pick, setPick] = useState("");
-  const [symbol, setSymbol] = useState("");
-  const [name, setName] = useState("");
-  const fits = (_m?: MarketItem) => items.length < LIMITS.markets;
-  const customOk = /^[A-Za-z0-9.^=\-]{1,20}$/.test(symbol.trim()) && name.trim().length > 0 && !used.has(symbol.trim());
+  const full = items.length >= LIMITS.markets;
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SymbolHit[] | string | null>(null);
+  const [adding, setAdding] = useState("");
+  const [manual, setManual] = useState({ symbol: "", name: "" });
+
+  // Search as you type (debounced): Chinese → Taiwan listings + common names; else Yahoo's search.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return setHits(null);
+    setHits(null);
+    const t = setTimeout(() => {
+      fetch(`/api/symbol-search?q=${encodeURIComponent(q)}`)
+        .then(async (r) => {
+          const body = await r.json().catch(() => null);
+          if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
+          setHits(body as SymbolHit[]);
+        })
+        .catch((e: Error) => setHits(e.message));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  /** Only add symbols that actually return a quote, so a tile never sits there showing "—". */
+  const add = async (h: SymbolHit) => {
+    if (full || used.has(h.symbol)) return;
+    setAdding(h.symbol);
+    try {
+      const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(h.symbol)}`);
+      const [q] = ((await res.json().catch(() => [])) as { price: number }[]) ?? [];
+      if (!q || typeof q.price !== "number") return void toast(`Yahoo 沒有「${h.name}」（${h.symbol}）的報價，無法加入`, "error");
+      const known = INSTRUMENT_CATALOG.some((i) => i.symbol === h.symbol);
+      // Decimals that suit the size of the number (0.2042 JPY, 32.592 USD/TWD, 83,192 BTC).
+      const decimals = q.price < 1 ? 4 : /匯率/.test(h.where) ? 3 : q.price >= 10_000 && /加密/.test(h.where) ? 0 : 2;
+      update([...items, known ? h.symbol : { symbol: h.symbol, name: h.name.slice(0, 24), decimals }]);
+      toast(`已新增「${known ? instrumentOf(h.symbol).name : h.name}」`);
+      setQuery("");
+    } catch {
+      toast("暫時無法確認報價，請稍後再試", "error");
+    } finally {
+      setAdding("");
+    }
+  };
 
   return (
     <>
@@ -302,47 +340,80 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
           );
         })}
       </ul>
-      <div className="ed-add">
-        <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="從清單新增">
-          <option value="">從清單選擇</option>
-          {available.map((i) => (
-            <option key={i.symbol} value={i.symbol} disabled={!fits(i.symbol)}>
-              {i.name}（{i.symbol}）
-            </option>
-          ))}
-        </select>
-        <button
-          className="ed-primary"
-          disabled={!pick || !fits(pick)}
-          onClick={() => (update([...items, pick]), setPick(""), toast(`已新增「${instrumentOf(pick).name}」`))}
-        >
-          新增
-        </button>
-      </div>
-      <div className="ed-add">
-        <input
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          placeholder="Yahoo 代號，如 2317.TW"
-          maxLength={20}
-          aria-label="自訂代號"
-        />
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="顯示名稱" maxLength={10} aria-label="自訂名稱" />
-        <button
-          className="ed-primary"
-          disabled={!customOk || !fits({ symbol: symbol.trim(), name })}
-          onClick={() => (
-            update([...items, { symbol: symbol.trim(), name: name.trim() }]),
-            setSymbol(""),
-            setName(""),
-            toast(`已新增「${name.trim()}」`)
-          )}
-        >
-          新增
-        </button>
-      </div>
+      {full ? (
+        <p className="muted small">最多 {LIMITS.markets} 格，請先刪除一格再新增。</p>
+      ) : (
+        <>
+          <div className="ed-add">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜尋：鴻海、2330、Apple、黃金、日圓、比特幣…"
+              maxLength={30}
+              aria-label="搜尋股票、指數、匯率"
+            />
+          </div>
+          {query.trim() &&
+            (hits === null ? (
+              <p className="muted small">搜尋中…</p>
+            ) : typeof hits === "string" ? (
+              <p className="hint error">搜尋失敗：{hits}</p>
+            ) : !hits.length ? (
+              <p className="muted small">找不到「{query.trim()}」。上櫃股票請用代號搜尋（例如 6488）。</p>
+            ) : (
+              <ul className="pick-list">
+                {hits.map((h) => (
+                  <li key={h.symbol}>
+                    <button className="pick-item" disabled={used.has(h.symbol) || !!adding} onClick={() => add(h)}>
+                      <span className="pick-name">{h.name}</span>
+                      <span className="muted small">
+                        {h.symbol}・{h.where}
+                        {used.has(h.symbol) ? "・已加入" : adding === h.symbol ? "・確認報價中…" : ""}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ))}
+        </>
+      )}
+      {!full && (
+        <div className="ed-manual">
+          <div className="setting-label">搜不到時：直接輸入 Yahoo 代號</div>
+          <div className="ed-add">
+            <input
+              value={manual.symbol}
+              onChange={(e) => setManual({ ...manual, symbol: e.target.value.trim() })}
+              placeholder="代號，如 6488.TWO、AAPL、^SOX"
+              maxLength={20}
+              autoCapitalize="characters"
+              aria-label="Yahoo 代號"
+            />
+            <input
+              value={manual.name}
+              onChange={(e) => setManual({ ...manual, name: e.target.value })}
+              placeholder="顯示名稱（選填）"
+              maxLength={24}
+              aria-label="顯示名稱"
+            />
+            <button
+              className="ed-primary"
+              disabled={!/^[A-Za-z0-9.^=\-]{1,20}$/.test(manual.symbol) || used.has(manual.symbol.toUpperCase()) || !!adding}
+              onClick={() => {
+                const symbol = manual.symbol.toUpperCase();
+                add({ symbol, name: manual.name.trim() || symbol, where: "手動輸入" }).then(() => setManual({ symbol: "", name: "" }));
+              }}
+            >
+              {adding && adding === manual.symbol.toUpperCase() ? "確認中…" : "加入"}
+            </button>
+          </div>
+          <p className="muted small">代號以 Yahoo Finance 為準（上市 .TW、上櫃 .TWO，例如 2330.TW、6488.TWO）；加入前會先確認有報價。</p>
+        </div>
+      )}
       <p className="muted small">
-        目前 {items.length}／{LIMITS.markets} 格。自訂代號以 Yahoo Finance 為準（台股加 .TW、上櫃加 .TWO），找不到時該格會顯示「—」。
+        目前 {items.length}／{LIMITS.markets} 格。中文可搜上市股票、ETF
+        與常用的指數、匯率、商品；上櫃股票請用代號（櫃買中心不開放這個網站讀取名單）。英文名稱或代號可搜全球商品，但每次最多列出約 12
+        筆，找不到時用上方的手動輸入。
       </p>
     </>
   );
@@ -397,13 +468,14 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
       .catch((e: Error) => setRoutes((m) => ({ ...m, [city]: e.message })));
   }, [city, list]);
 
-  const q = query.trim();
+  // Every matching route is listed (no cap), and 台／臺 and letter case don't matter.
+  const fold = (v: string) => v.replace(/台/g, "臺").toLowerCase();
+  const q = fold(query.trim());
   const matches =
     Array.isArray(list) && q
       ? list
-          .filter((r) => r.name.includes(q) || r.from.includes(q) || r.to.includes(q))
-          .sort((a, b) => Number(!a.name.startsWith(q)) - Number(!b.name.startsWith(q)))
-          .slice(0, 30)
+          .filter((r) => fold(r.name).includes(q) || fold(r.from).includes(q) || fold(r.to).includes(q))
+          .sort((a, b) => Number(!fold(a.name).startsWith(q)) - Number(!fold(b.name).startsWith(q)))
       : [];
 
   const pickRoute = (r: BusRouteInfo) => {
@@ -478,25 +550,28 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
                 重試
               </button>
             </p>
-          ) : !q ? (
+          ) : q && !matches.length ? (
             <p className="muted small">
-              輸入路線名稱，或起訖站名（{BUS_CITY_NAME.get(city)}共 {list.length} 條路線）。
+              找不到「{query.trim()}」，可清空搜尋框瀏覽全部 {list.length} 條路線。
             </p>
-          ) : !matches.length ? (
-            <p className="muted small">找不到「{q}」。</p>
           ) : (
-            <ul className="pick-list">
-              {matches.map((r) => (
-                <li key={r.name}>
-                  <button className="pick-item" onClick={() => pickRoute(r)}>
-                    <span className="chip blue-chip">{r.name}</span>
-                    <span className="muted small">
-                      {r.from} ↔ {r.to}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <p className="muted small">
+                {q ? `符合的路線 ${matches.length} 條` : `${BUS_CITY_NAME.get(city)}全部 ${list.length} 條路線（可輸入路線或起訖站名篩選）`}
+              </p>
+              <ul className="pick-list">
+                {(q ? matches : list).map((r) => (
+                  <li key={r.name}>
+                    <button className="pick-item" onClick={() => pickRoute(r)}>
+                      <span className="chip blue-chip">{r.name}</span>
+                      <span className="muted small">
+                        {r.from} ↔ {r.to}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </>
       ) : (
@@ -546,7 +621,8 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         </div>
       )}
       <p className="muted small">
-        資料來自 TDX 的市區公車（公路客運不在內）。雙北的公車點擊後開大台北公車，其他縣市開 Google 地圖搜尋該路線。
+        資料來自 TDX 的市區公車（公路客運不在內）。點看板上的公車會開 Google
+        地圖搜尋該路線。搜尋比對路線名稱與起訖站名（含在其中即可，路線名稱開頭符合的排前面）。
       </p>
     </>
   );
@@ -635,7 +711,7 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
             ? "找不到這個臺鐵車站，請從清單選擇。"
             : dup
               ? "這條路線已經在清單裡了。"
-              : "站名用臺鐵的寫法，例如 臺北、汐科。"}
+              : `可選全部 ${stations.length || ""} 個臺鐵車站（輸入時會列出建議；不含高鐵、捷運），例如 臺北、汐科。`}
       </p>
       <div className="setting">
         <div className="setting-label">車種</div>
