@@ -116,7 +116,7 @@ export function Settings({
               ))}
             </div>
             <div className="muted small">
-              長時間顯示固定畫面可能造成烙印（OLED 螢幕較明顯）。開啟後每隔設定的時間播放 20 秒的全螢幕動畫（點一下可提前結束），
+              長時間顯示固定畫面可能造成烙印（OLED 螢幕較明顯）。開啟後每隔設定的時間，在看板後方播放 20 秒的彩色光帶（看板照常可看），
               平常整個畫面也會每分鐘微移 1～2 像素。{" "}
               <button className="link-btn" onClick={onSaverPreview}>
                 預覽

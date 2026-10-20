@@ -503,12 +503,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* ---------- Screen saver ---------- */
 /* Pixel shift between runs (set by ScreenSaver); invisible to the eye. */
 .app { translate: var(--shift-x, 0) var(--shift-y, 0); }
-.saver { position: fixed; inset: 0; z-index: 100; background: #000; cursor: pointer; }
-.saver canvas { width: 100%; height: 100%; display: block; }
-.saver-hint {
-  position: absolute; left: 0; right: 0; bottom: max(20px, env(safe-area-inset-bottom)); text-align: center;
-  color: rgb(255 255 255 / 0.6); font-size: 14px;
-}
+/* Drawn behind the board (above the weather animation), so the board stays readable meanwhile. */
+.saver { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; }
 .link-btn { border: 0; background: none; padding: 0; color: var(--blue); font: inherit; text-decoration: underline; cursor: pointer; }
 
 /* ---------- Split-flap digits (Flip) ---------- */

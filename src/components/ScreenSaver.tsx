@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
 const RUN_MS = 20_000;
-const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
 
 /**
- * Burn-in protection for a board left on all day. Every `minutes`, a full-screen animation runs
- * for 20 s: colour bands sweep across every pixel and a clock drifts around. Tap to end it early.
+ * Burn-in protection for a board left on all day. Every `minutes`, colour bands sweep across the
+ * whole screen for 20 s, drawn behind the board (like the weather animation) so it stays readable
+ * and usable meanwhile.
  * In between, the whole board shifts by a pixel or two each minute (applied to `.app` via CSS
  * variables), so static text and borders never sit on exactly the same pixels for hours.
  */
@@ -66,8 +66,10 @@ export function ScreenSaver({ minutes, preview, onPreviewEnd }: { minutes: numbe
       const p = (t - t0) / RUN_MS;
       if (p >= 1) return end();
       raf = requestAnimationFrame(frame);
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, w, h);
+      ctx.clearRect(0, 0, w, h);
+      // Fade in and out over the first and last two seconds.
+      const fade = Math.min(1, p * 10, (1 - p) * 10);
+      ctx.globalAlpha = fade;
       // Colour bands sweeping diagonally: every pixel cycles through red, green, blue and white.
       const offset = reduce ? 0 : p * (w + h) * 2;
       const band = Math.max(w, h) / 3;
@@ -83,16 +85,6 @@ export function ScreenSaver({ minutes, preview, onPreviewEnd }: { minutes: numbe
         ctx.lineTo(xx - h, h);
         ctx.fill();
       }
-      // A clock drifting on a slow Lissajous path, so the screen still tells the time.
-      const cx = w / 2 + Math.sin(p * Math.PI * 2) * w * 0.3;
-      const cy = h / 2 + Math.sin(p * Math.PI * 3) * h * 0.25;
-      ctx.font = `700 ${Math.round(Math.min(w, h) / 6)}px system-ui, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillText(timeFmt.format(Date.now()), cx + 3, cy + 3);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(timeFmt.format(Date.now()), cx, cy);
     };
     const end = () => {
       cancelAnimationFrame(raf);
@@ -105,10 +97,5 @@ export function ScreenSaver({ minutes, preview, onPreviewEnd }: { minutes: numbe
   }, [running]);
 
   if (!running) return null;
-  return (
-    <div className="saver" onClick={() => (setRunning(false), onPreviewEnd())} role="button" aria-label="螢幕保護中，點一下結束">
-      <canvas ref={canvasRef} />
-      <div className="saver-hint">螢幕保護中・點一下結束</div>
-    </div>
-  );
+  return <canvas ref={canvasRef} className="saver" aria-hidden />;
 }

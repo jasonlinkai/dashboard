@@ -173,7 +173,8 @@ export function useScrollHint<T extends HTMLElement>() {
   return ref;
 }
 
-const LONG_PRESS_MS = 450;
+// Long enough that resting a finger before scrolling doesn't turn into a drag.
+const LONG_PRESS_MS = 700;
 
 /**
  * Long-press-and-drag reordering for the cards on the board itself (weather cards, market tiles,
@@ -242,7 +243,7 @@ export function useReorder<T extends HTMLElement>(onMove: (from: number, to: num
       if (!item) return;
       if (!active) {
         // Moved before the long press: it's a scroll (or a tap that slipped), not a drag.
-        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) stop();
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) stop();
         return;
       }
       e.preventDefault();

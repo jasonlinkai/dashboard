@@ -10,6 +10,7 @@ import { type Scene, type SceneKind, WeatherFx } from "./components/WeatherFx";
 import { useNow, useWakeLock } from "./hooks";
 import { ScreenSaver } from "./components/ScreenSaver";
 import { useFx, useSaver, useTheme } from "./theme";
+import { toast } from "./toast";
 
 const dateFmt = new Intl.DateTimeFormat("zh-TW", { month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Taipei" });
 const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
@@ -97,7 +98,7 @@ export default function App() {
             wake={wake}
             saver={saver}
             onSaver={setSaver}
-            onSaverPreview={() => (setShowSettings(false), setSaverPreview(true))}
+            onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
             onClose={() => setShowSettings(false)}
           />
         )}
