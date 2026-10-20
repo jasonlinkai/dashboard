@@ -4,7 +4,7 @@ import type React from "react";
 import { REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
 import { type WeatherPlace, placeKey, useSettings } from "../settings";
 import { clock } from "../format";
-import { type Loaded, getJSON, usePolling } from "../hooks";
+import { type Loaded, getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Observation, ObservationResponse } from "../shared";
 import { Section } from "./Section";
 
@@ -127,8 +127,11 @@ class StripGroup {
   private center(el: HTMLDivElement, smooth: boolean) {
     const cell = el.querySelector<HTMLElement>(".wx-now");
     if (!cell || el.clientWidth === 0) return;
-    // Measure on screen: offsetLeft is relative to the page, not to this strip.
-    const delta = cell.getBoundingClientRect().left - el.getBoundingClientRect().left;
+    // Measure on screen: offsetLeft is relative to the page, not to this strip. A card being
+    // dragged is scaled up, so convert screen pixels back to the strip's own pixels.
+    const box = el.getBoundingClientRect();
+    const scale = box.width / el.offsetWidth || 1;
+    const delta = (cell.getBoundingClientRect().left - box.left) / scale;
     this.quiet(el, smooth ? 800 : 100);
     el.scrollTo({ left: el.scrollLeft + delta - (el.clientWidth - cell.offsetWidth) / 2, behavior: smooth ? "smooth" : "auto" });
   }
@@ -170,7 +173,7 @@ function Hourly({ f, group }: { f: Forecast; group: StripGroup }) {
 }
 
 function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; obs?: Observation; group: StripGroup }) {
-  if (!f) return <div className="wx"><div className="wx-name">{loc.name}</div></div>;
+  if (!f) return <div className="wx" data-reorder><div className="wx-name">{loc.name}</div></div>;
   const day = f.current.is_day === 1;
   const [mText, mIcon] = wmo(f.current.weather_code, day);
   const text = obs?.weather ?? mText;
@@ -179,7 +182,7 @@ function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; 
   const humidity = obs?.humidity ?? f.current.relative_humidity_2m;
 
   return (
-    <a className="wx link" href={links.weather(loc)} target="_blank" rel="noopener noreferrer">
+    <a className="wx link" data-reorder href={links.weather(loc)} target="_blank" rel="noopener noreferrer">
       <div className="wx-head">
         <span className="wx-name">{loc.name}</span>
         <span className="wx-icon">{icon}</span>
@@ -206,8 +209,9 @@ function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; 
 }
 
 export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
-  const { settings } = useSettings();
+  const { settings, setSettings } = useSettings();
   const places = settings.weather;
+  const gridRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, weather: moveTo(places, from, to) }));
   const key = places.map((p) => `${p.latitude},${p.longitude}`).join(";");
   const towns = [...new Set(places.map(placeKey))].join(",");
   const forecasts = usePolling(() => loadForecasts(places), REFRESH_SEC.weather, [key]);
@@ -220,6 +224,11 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   const stations = obs.data?.observations ?? [];
   const [group] = useState(() => new StripGroup());
   useEffect(() => () => group.dispose(), [group]);
+  // Moving a card in the DOM (drag to reorder) resets its strip's scroll: bring "now" back.
+  const order = places.map((p) => p.name).join();
+  useEffect(() => {
+    requestAnimationFrame(() => group.centerAll(false));
+  }, [group, order]);
   // Right after the places change, the previous forecasts are still in state; don't mix them up.
   const fresh = forecasts.data?.length === places.length ? forecasts.data : undefined;
 
@@ -234,7 +243,7 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   }, [fxKind?.kind, fxKind?.day]);
   return (
     <Section title="天氣" className="weather" state={forecasts} maxAgeSec={STALE_AFTER_SEC.weather}>
-      <div className="wx-grid" style={{ "--wx": places.length, "--wx-rows-2": Math.ceil(places.length / 2) } as React.CSSProperties}>
+      <div className="wx-grid" ref={gridRef} style={{ "--wx": places.length, "--wx-rows-2": Math.ceil(places.length / 2) } as React.CSSProperties}>
         {places.map((loc, i) => (
           <WeatherCard key={loc.name} loc={loc} f={fresh?.[i]} obs={pickStation(loc, stations)} group={group} />
         ))}

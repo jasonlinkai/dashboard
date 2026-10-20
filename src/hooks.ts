@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "./toast";
 
 /** A fetch result plus how fresh the underlying data is. */
 export interface Loaded<T> {
@@ -171,3 +172,146 @@ export function useScrollHint<T extends HTMLElement>() {
   }, []);
   return ref;
 }
+
+const LONG_PRESS_MS = 450;
+
+/**
+ * Long-press-and-drag reordering for the cards on the board itself (weather cards, market tiles,
+ * train routes). The items are links inside scrolling areas, so a drag only starts after holding
+ * still for a moment; moving earlier is a normal scroll, and the tap after a drag doesn't open the link.
+ * Mark each direct child that can move with `data-reorder`; `onMove(from, to)` gets list indexes.
+ * With `handle`, only a press inside that part of an item (e.g. a route's header) starts a drag.
+ */
+export function useReorder<T extends HTMLElement>(onMove: (from: number, to: number) => void, handle?: string) {
+  const ref = useRef<T>(null);
+  const latest = useRef(onMove);
+  latest.current = onMove;
+
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let item: HTMLElement | null = null;
+    let start = { x: 0, y: 0 };
+    let grab = { x: 0, y: 0 }; // where in the card it was picked up
+    let active = false;
+    let moved = false;
+    let swallowClick = false;
+    const items = () => [...root.children].filter((c): c is HTMLElement => c instanceof HTMLElement && "reorder" in c.dataset);
+
+    /** Keep the lifted card under the pointer, wherever its slot currently is. */
+    const follow = (x: number, y: number) => {
+      if (!item) return;
+      item.style.transform = "";
+      const slot = item.getBoundingClientRect();
+      item.style.transform = `translate(${x - grab.x - slot.left}px, ${y - grab.y - slot.top}px) scale(1.05)`;
+    };
+    const stop = () => {
+      clearTimeout(timer);
+      if (active && item) {
+        item.classList.remove("reordering");
+        item.style.transform = "";
+        root.classList.remove("reorder-active");
+        swallowClick = true; // the click that follows the release
+        setTimeout(() => (swallowClick = false), 400);
+        toast(moved ? "已更新順序" : "順序沒有改變", moved ? "ok" : "info");
+      }
+      active = false;
+      item = null;
+    };
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const el = (e.target as HTMLElement).closest<HTMLElement>("[data-reorder]");
+      if (!el || el.parentElement !== root) return;
+      if (handle && !(e.target as HTMLElement).closest(handle)) return;
+      item = el;
+      start = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(() => {
+        active = true;
+        moved = false;
+        root.classList.add("reorder-active"); // may fold content (train routes): measure after
+        el.classList.add("reordering");
+        const box = el.getBoundingClientRect();
+        grab = { x: Math.min(start.x - box.left, box.width / 2), y: Math.min(start.y - box.top, box.height / 2) };
+        follow(start.x, start.y);
+        navigator.vibrate?.(15);
+        toast("拖到想要的位置後放開", "info");
+      }, LONG_PRESS_MS);
+    };
+    const move = (e: PointerEvent) => {
+      if (!item) return;
+      if (!active) {
+        // Moved before the long press: it's a scroll (or a tap that slipped), not a drag.
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) stop();
+        return;
+      }
+      e.preventDefault();
+      const list = items();
+      // The card under the pointer, other than the one being carried.
+      const to = list.findIndex((c) => {
+        if (c === item) return false;
+        const b = c.getBoundingClientRect();
+        return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
+      });
+      const from = list.indexOf(item);
+      if (to >= 0 && from >= 0) {
+        latest.current(from, to);
+        moved = true;
+      }
+      // Dragging to the edge of a scrolling area brings the rest into reach.
+      const box = root.getBoundingClientRect();
+      if (root.scrollHeight > root.clientHeight) {
+        if (e.clientY < box.top + 30) root.scrollBy(0, -10);
+        else if (e.clientY > box.bottom - 30) root.scrollBy(0, 10);
+      }
+      if (root.scrollWidth > root.clientWidth) {
+        if (e.clientX < box.left + 30) root.scrollBy(-10, 0);
+        else if (e.clientX > box.right - 30) root.scrollBy(10, 0);
+      }
+      // After React has moved the card to its new slot.
+      const x = e.clientX;
+      const y = e.clientY;
+      requestAnimationFrame(() => follow(x, y));
+    };
+    const click = (e: MouseEvent) => {
+      if (!swallowClick) return;
+      e.preventDefault();
+      e.stopPropagation();
+      swallowClick = false;
+    };
+    // Once dragging, the finger must not scroll the page or the list underneath.
+    const touchMove = (e: TouchEvent) => active && e.preventDefault();
+    // Holding a link would otherwise open the link preview / context menu.
+    const menu = (e: Event) => item && e.preventDefault();
+    const noNativeDrag = (e: DragEvent) => e.preventDefault();
+
+    root.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("touchmove", touchMove, { passive: false });
+    root.addEventListener("click", click, true);
+    root.addEventListener("contextmenu", menu);
+    root.addEventListener("dragstart", noNativeDrag);
+    return () => {
+      clearTimeout(timer);
+      root.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("touchmove", touchMove);
+      root.removeEventListener("click", click, true);
+      root.removeEventListener("contextmenu", menu);
+      root.removeEventListener("dragstart", noNativeDrag);
+    };
+  }, []);
+  return ref;
+}
+
+/** Move one item to another index (for useReorder). */
+export const moveTo = <T,>(list: T[], from: number, to: number): T[] => {
+  const out = [...list];
+  const [item] = out.splice(from, 1);
+  out.splice(to, 0, item);
+  return out;
+};

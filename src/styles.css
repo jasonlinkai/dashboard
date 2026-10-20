@@ -157,7 +157,6 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   cursor: grab; touch-action: none; /* the finger drags the row instead of scrolling the page */
 }
 .ed-handle:disabled { opacity: 0.25; cursor: default; }
-.ed-dragging { background: var(--card); box-shadow: 0 4px 14px rgb(0 0 0 / 0.35); position: relative; z-index: 1; }
 .ed-dragging .ed-handle { cursor: grabbing; color: var(--text); }
 .ed-btn { flex: none; width: 32px; height: 30px; border: 0; border-radius: 7px; background: var(--card); color: var(--text); font-size: 14px; }
 .ed-btn:disabled { opacity: 0.3; }
@@ -213,6 +212,25 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .flat { color: var(--muted); }
 .error { color: var(--red); }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; flex: none; }
+
+/* Long-press to reorder cards on the board (useReorder), and drag rows in settings. */
+[data-reorder] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* The lifted card follows the pointer (transform set in JS), above everything else. */
+.reordering, .ed-dragging {
+  position: relative; z-index: 20; transition: none !important; cursor: grabbing;
+  /* Inset ring: scrolling areas clip anything drawn outside the card. */
+  box-shadow: inset 0 0 0 3px var(--blue), 0 18px 40px rgb(0 0 0 / 0.55) !important;
+  background: var(--card) !important; opacity: 1 !important;
+}
+/* Everything else shows where the card can go. */
+.reorder-active > [data-reorder]:not(.reordering),
+.ed-list:has(.ed-dragging) > .ed-row:not(.ed-dragging) {
+  opacity: 0.5; outline: 2px dashed color-mix(in srgb, var(--blue) 70%, transparent); outline-offset: -2px;
+}
+.reorder-active { cursor: grabbing; }
+/* While reordering train routes, show only their headers so every route is the same size. */
+.acc.reorder-active .acc-item > :not(.acc-head) { display: none; }
+.acc.reorder-active .acc-open { flex: none; }
 
 /* Every piece of data is a link to its source page. */
 .link { display: block; border-radius: 10px; transition: background 0.15s, box-shadow 0.15s; }
@@ -475,3 +493,20 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .wx-grid { grid-template-rows: repeat(var(--wx, 4), minmax(100px, 1fr)); }
   .clock { font-size: 34px; }
 }
+
+/* ---------- Toasts ---------- */
+.toasts {
+  position: fixed; left: 0; right: 0; bottom: max(24px, calc(env(safe-area-inset-bottom) + 70px)); z-index: 50;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 16px;
+}
+.toast {
+  display: flex; align-items: center; gap: 8px; max-width: min(520px, 100%); padding: 11px 18px; border-radius: 20px;
+  font-size: 15px; font-weight: 600; color: #fff; box-shadow: 0 8px 28px rgb(0 0 0 / 0.4);
+  animation: toast-in 0.22s ease-out;
+}
+.toast-ok { background: #1f8f4e; }
+.toast-error { background: #c93a3a; }
+.toast-info { background: #2f6fd6; }
+.toast-icon { font-size: 16px; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(0.96); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }

@@ -1,7 +1,7 @@
 import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN_LIMIT, links } from "../config";
 import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
 import { Fragment, useState } from "react";
-import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
+import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
 import { Section } from "./Section";
 
@@ -169,11 +169,16 @@ function TrainList({ trains, from, to, type, now }: { trains: TrainDeparture[]; 
  */
 export function Train() {
   const now = useNow(1000);
-  const [openRaw, setOpen] = useState(0);
-  const { settings } = useSettings();
+  const { settings, setSettings } = useSettings();
   const routes = settings.trains;
-  // The open route may have been removed in settings.
-  const open = Math.min(openRaw, Math.max(0, routes.length - 1));
+  const keyOf = (r: { from: string; to: string }) => `${r.from}-${r.to}`;
+  // Remember the open route itself (not its position), so reordering keeps it open.
+  const [openKey, setOpenKey] = useState<string | null>(() => (routes[0] ? keyOf(routes[0]) : null));
+  const found = routes.findIndex((r) => keyOf(r) === openKey);
+  const open = found >= 0 ? found : 0; // default, or the open route was removed: the first one
+  const setOpen = (i: number) => setOpenKey(keyOf(routes[i]));
+  // Routes are dragged by their header; the open route's trains fold away while dragging (CSS).
+  const accRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, trains: moveTo(routes, from, to) }), ".acc-head");
   const route = routes[open] as (typeof routes)[number] | undefined;
   const q = new URLSearchParams({
     from: route?.from ?? "",
@@ -204,9 +209,9 @@ export function Train() {
           ))}
           {current && current.alerts == null && <p className="hint error">⚠ 暫時無法確認臺鐵營運公告（停駛、通阻），請以臺鐵官網為準</p>}
           {!routes.length && <p className="hint">尚未設定火車路線，可在右上角「設定」新增。</p>}
-          <div className="acc">
+          <div className="acc" ref={accRef}>
             {routes.map((r, i) => (
-              <div key={`${r.from}-${r.to}`} className={`acc-item ${i === open ? "acc-open" : ""}`}>
+              <div key={keyOf(r)} data-reorder className={`acc-item ${i === open ? "acc-open" : ""}`}>
                 <button className="acc-head" aria-expanded={i === open} onClick={() => setOpen(i)}>
                   <span>
                     {station(r.from)} → {station(r.to)}

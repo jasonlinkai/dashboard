@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
+import { toast } from "../toast";
 import {
   BUS_CITIES,
   type BusCity,
@@ -42,6 +43,7 @@ const without = <T,>(list: T[], i: number): T[] => list.filter((_, k) => k !== i
  */
 function Row({
   children,
+  name,
   i,
   count,
   min = 0,
@@ -49,6 +51,8 @@ function Row({
   onRemove,
 }: {
   children: ReactNode;
+  /** For the confirmation bubbles. */
+  name: string;
   i: number;
   count: number;
   min?: number;
@@ -59,20 +63,35 @@ function Row({
   const [dragging, setDragging] = useState(false);
   // Pointer events can arrive several times before React re-renders with the new order.
   const latest = useRef({ i, onMove });
+  const startIndex = useRef(i);
+  const grabY = useRef(0); // where in the row it was picked up
+  const grabAt = useRef(0); // pointer y when picked up
   latest.current = { i, onMove };
 
   // Follow the pointer on window, not on the handle: reordering moves this row's DOM node, which
   // drops pointer capture, and the rest of the drag (and the release) would never arrive.
   useEffect(() => {
     if (!dragging) return;
+    const li = liRef.current;
+    /** Keep the lifted row under the finger, wherever its slot currently is. */
+    const follow = (y: number) => {
+      if (!liRef.current) return;
+      liRef.current.style.transform = "";
+      const slot = liRef.current.getBoundingClientRect();
+      liRef.current.style.transform = `translateY(${y - grabY.current - slot.top}px) scale(1.03)`;
+    };
+    follow(grabAt.current);
     const drag = (e: PointerEvent) => {
       if (!liRef.current?.parentElement) return;
       e.preventDefault();
       const rows = [...liRef.current.parentElement.children] as HTMLElement[];
-      // The row under the pointer (or the last one, when below the list).
-      let to = rows.findIndex((r) => e.clientY < r.getBoundingClientRect().bottom);
-      if (to === -1) to = rows.length - 1;
-      if (to !== latest.current.i) latest.current.onMove(to - latest.current.i);
+      // The row under the pointer, other than the one being carried.
+      const to = rows.findIndex((r) => {
+        if (r === liRef.current) return false;
+        const b = r.getBoundingClientRect();
+        return e.clientY >= b.top && e.clientY <= b.bottom;
+      });
+      if (to >= 0 && to !== latest.current.i) latest.current.onMove(to - latest.current.i);
       // Near the edge of the scrolling settings page: scroll so rows further away can be reached.
       const scroller = liRef.current.closest<HTMLElement>(".settings-body");
       if (scroller) {
@@ -80,8 +99,17 @@ function Row({
         if (e.clientY < box.top + 40) scroller.scrollBy(0, -12);
         else if (e.clientY > box.bottom - 40) scroller.scrollBy(0, 12);
       }
+      const y = e.clientY;
+      requestAnimationFrame(() => follow(y)); // after React has moved the row
     };
-    const end = () => setDragging(false);
+    // Once dragging, the finger must not scroll the settings page underneath.
+    const touchMove = (e: TouchEvent) => e.preventDefault();
+    window.addEventListener("touchmove", touchMove, { passive: false });
+    const end = () => {
+      if (li) li.style.transform = "";
+      setDragging(false);
+      if (latest.current.i !== startIndex.current) toast(`已將「${name}」移到第 ${latest.current.i + 1} 個`);
+    };
     window.addEventListener("pointermove", drag, { passive: false });
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
@@ -89,6 +117,7 @@ function Row({
       window.removeEventListener("pointermove", drag);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
+      window.removeEventListener("touchmove", touchMove);
     };
   }, [dragging]);
 
@@ -100,7 +129,11 @@ function Row({
         disabled={count < 2}
         onPointerDown={(e) => {
           e.preventDefault();
+          startIndex.current = i;
+          grabAt.current = e.clientY;
+          grabY.current = e.clientY - (liRef.current?.getBoundingClientRect().top ?? e.clientY);
           setDragging(true);
+          toast("拖到想要的位置後放開", "info");
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowUp" || e.key === "ArrowDown") {
@@ -112,7 +145,13 @@ function Row({
         ≡
       </button>
       <span className="ed-label">{children}</span>
-      <button className="ed-btn ed-del" onClick={onRemove} disabled={count <= min} aria-label="刪除">
+      <button
+        className="ed-btn ed-del"
+        onClick={() => (onRemove(), toast(`已刪除「${name}」`))}
+        disabled={count <= min}
+        aria-label="刪除"
+        title={count <= min ? `至少要保留 ${min} 個` : undefined}
+      >
         ✕
       </button>
     </li>
@@ -153,6 +192,7 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
   const add = () => {
     if (!picked || !label || duplicate || full) return;
     update([...places, { name: label, county: picked.county, town: picked.town, townId: picked.townId, latitude: picked.latitude, longitude: picked.longitude }]);
+    toast(`已新增「${label}」`);
     setName("");
   };
 
@@ -160,7 +200,7 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
     <>
       <ul className="ed-list">
         {places.map((p, i) => (
-          <Row key={p.name} i={i} count={places.length} min={1} onMove={(by) => update(move(places, i, by))} onRemove={() => update(without(places, i))}>
+          <Row key={p.name} name={p.name} i={i} count={places.length} min={1} onMove={(by) => update(move(places, i, by))} onRemove={() => update(without(places, i))}>
             {p.name}
             <span className="muted small">
               {" "}
@@ -218,6 +258,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
           return (
             <Row
               key={inst.symbol}
+              name={inst.name}
               i={i}
               count={items.length}
               min={1}
@@ -239,7 +280,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
             </option>
           ))}
         </select>
-        <button className="ed-primary" disabled={!pick || !fits(pick)} onClick={() => (update([...items, pick]), setPick(""))}>
+        <button className="ed-primary" disabled={!pick || !fits(pick)} onClick={() => (update([...items, pick]), setPick(""), toast(`已新增「${instrumentOf(pick).name}」`))}>
           新增
         </button>
       </div>
@@ -249,7 +290,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
         <button
           className="ed-primary"
           disabled={!customOk || !fits({ symbol: symbol.trim(), name })}
-          onClick={() => (update([...items, { symbol: symbol.trim(), name: name.trim() }]), setSymbol(""), setName(""))}
+          onClick={() => (update([...items, { symbol: symbol.trim(), name: name.trim() }]), setSymbol(""), setName(""), toast(`已新增「${name.trim()}」`))}
         >
           新增
         </button>
@@ -283,6 +324,7 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
       { city: form.city, route, stop: clean(form.stop), direction: "auto", ...(toward ? { toward } : {}), group: clean(form.group) },
     ]);
     setForm({ ...form, route: "", stop: "", toward: "" });
+    toast(`已新增「${route} ${clean(form.stop)}」，公車區塊下次更新時出現`);
   };
   const field = (k: keyof typeof form) => ({ value: form[k], onChange: (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value }) });
 
@@ -290,7 +332,7 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
     <>
       <ul className="ed-list">
         {stops.map((b, i) => (
-          <Row key={b.route} i={i} count={stops.length} onMove={(by) => update(move(stops, i, by))} onRemove={() => update(without(stops, i))}>
+          <Row key={b.route} name={b.route} i={i} count={stops.length} onMove={(by) => update(move(stops, i, by))} onRemove={() => update(without(stops, i))}>
             {b.route}
             <span className="muted small">
               {" "}
@@ -354,7 +396,7 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
     <>
       <ul className="ed-list">
         {routes.map((r, i) => (
-          <Row key={`${r.from}-${r.to}`} i={i} count={routes.length} onMove={(by) => update(move(routes, i, by))} onRemove={() => update(without(routes, i))}>
+          <Row key={`${r.from}-${r.to}`} name={`${r.from}→${r.to}`} i={i} count={routes.length} onMove={(by) => update(move(routes, i, by))} onRemove={() => update(without(routes, i))}>
             {r.from} → {r.to}
             {i === 0 && <span className="muted small">・預設展開</span>}
           </Row>
@@ -369,7 +411,7 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
             <option key={n} value={n} />
           ))}
         </datalist>
-        <button className="ed-primary" disabled={!ok} onClick={() => (update([...routes, { from: norm(from), to: norm(to) }]), setFrom(""), setTo(""))}>
+        <button className="ed-primary" disabled={!ok} onClick={() => (update([...routes, { from: norm(from), to: norm(to) }]), setFrom(""), setTo(""), toast(`已新增「${norm(from)}→${norm(to)}」`))}>
           新增
         </button>
       </div>
@@ -386,7 +428,7 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         <div className="setting-label">車種</div>
         <div className="segmented" role="radiogroup" aria-label="車種">
           {TRAIN_TYPES.map((t) => (
-            <button key={t} role="radio" aria-checked={s.trainType === t} onClick={() => set({ ...s, trainType: t })}>
+            <button key={t} role="radio" aria-checked={s.trainType === t} onClick={() => (set({ ...s, trainType: t }), toast(`車種改為「${t}」`))}>
               {t}
             </button>
           ))}
@@ -420,7 +462,7 @@ function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         {ids.map((id, i) => {
           const src = NEWS_BY_ID.get(id);
           return (
-            <Row key={id} i={i} count={ids.length} min={1} onMove={(by) => update(move(ids, i, by))} onRemove={() => update(without(ids, i))}>
+            <Row key={id} name={NEWS_BY_ID.get(id)?.name ?? id} i={i} count={ids.length} min={1} onMove={(by) => update(move(ids, i, by))} onRemove={() => update(without(ids, i))}>
               {src?.name ?? id}
               {src?.note && <span className="muted small">・{src.note}</span>}
             </Row>
@@ -437,7 +479,7 @@ function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
             </option>
           ))}
         </select>
-        <button className="ed-primary" disabled={!pick || full} onClick={() => (update([...ids, pick]), setPick(""))}>
+        <button className="ed-primary" disabled={!pick || full} onClick={() => (update([...ids, pick]), setPick(""), toast(`已新增「${NEWS_BY_ID.get(pick)?.name ?? pick}」`))}>
           新增
         </button>
       </div>
@@ -506,6 +548,7 @@ export function ContentEditor() {
   return (
     <div className="setting">
       <div className="setting-label">顯示內容</div>
+      <div className="muted small">也可以直接在看板上長按天氣卡片、行情方塊或火車路線，拖到想要的位置。</div>
       <ul className="ed-sections">
         {SECTIONS.map(([id, label]) => (
           <li key={id}>

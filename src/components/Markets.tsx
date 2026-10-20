@@ -2,7 +2,7 @@ import { type Instrument, QUOTE_LAG_MIN, REFRESH_SEC, STALE_AFTER_SEC, links } f
 import { instrumentOf, useSettings } from "../settings";
 import type React from "react";
 import { clock, fmt, moveClass, signed } from "../format";
-import { getJSON, usePolling } from "../hooks";
+import { getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Quote } from "../shared";
 import { Section } from "./Section";
 
@@ -58,7 +58,7 @@ function Tile({ inst, quote }: { inst: Instrument; quote?: Quote }) {
     if (change != null) delta = `${signed(change * 100, 1)}bp`;
   }
   return (
-    <a className="tile link" href={links.quote(inst)} target="_blank" rel="noopener noreferrer">
+    <a className="tile link" data-reorder href={links.quote(inst)} target="_blank" rel="noopener noreferrer">
       <div className="tile-head">
         <span className="tile-name">{inst.name}</span>
         <span className="muted tiny">{inst.subtitle}</span>
@@ -74,8 +74,9 @@ function Tile({ inst, quote }: { inst: Instrument; quote?: Quote }) {
 }
 
 export function Markets() {
-  const { settings } = useSettings();
+  const { settings, setSettings } = useSettings();
   const items = settings.markets.map(instrumentOf);
+  const tilesRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, markets: moveTo(settings.markets, from, to) }));
   const symbols = items.map((i) => i.symbol).join(",");
   const state = usePolling(() => getJSON<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols)}`), REFRESH_SEC.quotes, [symbols]);
   const bySymbol = new Map(state.data?.map((q) => [q.symbol, q]));
@@ -84,6 +85,7 @@ export function Markets() {
     <Section title="市場行情" className="markets" state={state} maxAgeSec={STALE_AFTER_SEC.quotes}>
       <div
         className="tiles"
+        ref={tilesRef}
         style={{ "--tile-cols": Math.min(n, 6), "--tile-rows-2": Math.ceil(n / 2), "--tile-rows-3": Math.ceil(n / 3) } as React.CSSProperties}
       >
         {items.map((inst) => (
