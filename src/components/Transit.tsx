@@ -102,7 +102,7 @@ const addMin = (hhmm: string, min: number) => {
 };
 
 /** One route's departures. Keyed by route so its scroll position and hint start fresh. */
-function TrainList({ trains, to, now }: { trains: TrainDeparture[]; to: string; now: number }) {
+function TrainList({ trains, from, to, now }: { trains: TrainDeparture[]; from: string; to: string; now: number }) {
   const listRef = useScrollHint<HTMLUListElement>();
   const local = new Date(now + 8 * 3600_000);
   const nowSec = local.getUTCHours() * 3600 + local.getUTCMinutes() * 60 + local.getUTCSeconds();
@@ -118,7 +118,7 @@ function TrainList({ trains, to, now }: { trains: TrainDeparture[]; to: string; 
           <a className="row link" href={links.train(t.trainNo, today)} target="_blank" rel="noopener noreferrer">
             <span className="time">
               {t.departure}
-              {t.platform && !t.cancelled && <span className="platform">{t.platform} 月台</span>}
+              <span className="time-sub">{station(from)}發車</span>
             </span>
             <span className="grow">
               <div>
@@ -141,6 +141,7 @@ function TrainList({ trains, to, now }: { trains: TrainDeparture[]; to: string; 
             </span>
             <span className={`eta ${t.cancelled ? "red" : t.left < 300 ? "red" : ""}`}>
               {t.cancelled ? "停駛" : t.left < 60 ? "即將發車" : `${Math.floor(t.left / 60)} 分`}
+              {t.platform && !t.cancelled && <span className="eta-sub">{t.platform} 月台</span>}
             </span>
           </a>
         </li>
@@ -187,7 +188,7 @@ export function Train() {
                 </button>
                 {i === open &&
                   (current ? (
-                    <TrainList key={i} trains={current.trains} to={r.to} now={now} />
+                    <TrainList key={i} trains={current.trains} from={r.from} to={r.to} now={now} />
                   ) : (
                     <p className="hint">{state.error ?? "載入中…"}</p>
                   ))}

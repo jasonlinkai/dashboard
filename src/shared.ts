@@ -38,7 +38,7 @@ export interface BusResponse {
 export interface TrainDeparture {
   trainNo: string;
   type: string; // 區間 / 區間快
-  departure: string; // HH:mm at the origin station
+  departure: string; // HH:mm leaving the boarding station (e.g. 汐科), not where the train starts
   arrival: string; // HH:mm at the destination
   endingStation: string;
   delayMin: number | null; // null = no live data

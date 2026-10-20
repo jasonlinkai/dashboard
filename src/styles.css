@@ -277,8 +277,14 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .chip { border-radius: 7px; padding: 3px 7px; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .blue-chip { background: color-mix(in srgb, var(--blue) 20%, transparent); color: var(--blue); }
 /* 停駛 trains stay listed (so nobody waits for them) but are struck through. */
-.time .platform { display: block; font-size: 11px; font-weight: 500; color: var(--muted); text-align: center; }
-.list .cancelled .time { text-decoration: line-through; color: var(--muted); }
+/* Small captions under the departure time (汐科發車) and the minutes left (月台). */
+.time-sub, .eta-sub { display: block; font-size: 11px; font-weight: 500; color: var(--muted); text-align: center; text-decoration: none; }
+.eta-sub { text-align: right; }
+/* Fixed-width route badges so stop names line up whatever the route number's length. */
+.bus .chip { flex: none; min-width: 3.9em; box-sizing: border-box; text-align: center; }
+.list .cancelled .time { color: var(--muted); }
+.list .cancelled .time { text-decoration: line-through; }
+.list .cancelled .time-sub { display: none; }
 .alert {
   display: block; flex: none; margin: 0 0 6px; padding: 6px 10px; border-radius: 8px; font-size: 13px;
   color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent);
