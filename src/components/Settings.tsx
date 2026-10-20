@@ -4,6 +4,7 @@ import { toast } from "../toast";
 import { SAVER_OPTIONS, type SaverMinutes, type ThemePref } from "../theme";
 import { Backup } from "./Backup";
 import { ContentEditor } from "./ContentEditor";
+import { TdxKeySetting } from "./TdxKeySetting";
 
 const THEMES: [ThemePref, string, string][] = [
   ["auto", "自動", "跟隨裝置的深淺色設定"],
@@ -124,6 +125,7 @@ export function Settings({
             </div>
           </div>
           <ContentEditor />
+          <TdxKeySetting />
           <Backup theme={theme} fx={fx} onTheme={onTheme} onFx={onFx} />
         </div>
       </div>

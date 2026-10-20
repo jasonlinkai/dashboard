@@ -1,8 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { observations } from "./cwa";
 import { news, quotes } from "./markets";
-import { bus, stationNames, train } from "./tdx";
-import { type Env, type Freshness, freshness, setPersistentStore } from "./util";
+import { bus, checkCreds, stationNames, train } from "./tdx";
+import { type Env, type Freshness, freshness, setPersistentStore, type TdxCreds, tdxCreds } from "./util";
 
 function json(body: unknown, status = 200) {
   const headers = new Headers({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -24,7 +24,15 @@ function serve(request: Request, env: Env): Promise<Response> {
 // through one Durable Object: a single shared cache and rate counter, plus durable storage for the
 // daily timetable / station list / route info.
 const BUS_CITIES = new Set(["Taipei", "NewTaipei"]);
-const TDX_PATHS = new Set(["/api/bus", "/api/train", "/api/stations"]);
+const TDX_PATHS = new Set(["/api/bus", "/api/train", "/api/stations", "/api/tdx-check"]);
+
+/** A visitor's own TDX key from the request headers (used for this request only, never stored). */
+function ownCreds(request: Request): TdxCreds | null {
+  const id = request.headers.get("X-TDX-Id")?.trim();
+  const secret = request.headers.get("X-TDX-Secret")?.trim();
+  if (!id || !secret || id.length > 200 || secret.length > 200) return null;
+  return { id, secret };
+}
 
 export class TdxGate extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -32,7 +40,7 @@ export class TdxGate extends DurableObject<Env> {
     setPersistentStore(ctx.storage);
   }
   fetch(request: Request): Promise<Response> {
-    return serve(request, this.env);
+    return tdxCreds.run(ownCreds(request), () => serve(request, this.env));
   }
 }
 
@@ -66,6 +74,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
       }
       case "/api/train":
         return json(await train(env, q.get("from") ?? "", q.get("to") ?? "臺北", q.get("type") ?? "區間", Number(q.get("limit") ?? 6)));
+      case "/api/tdx-check":
+        return json(await checkCreds(env));
       case "/api/stations":
         return json(await stationNames(env));
       case "/api/observations":

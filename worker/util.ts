@@ -21,6 +21,13 @@ export interface Freshness {
 }
 export const freshness = new AsyncLocalStorage<Freshness>();
 
+/** A visitor's own TDX key (sent with their request, never stored); null = use the site's key. */
+export interface TdxCreds {
+  id: string;
+  secret: string;
+}
+export const tdxCreds = new AsyncLocalStorage<TdxCreds | null>();
+
 // Anything cached for an hour or more is reference data (station lists, timetables), not live data.
 const LIVE_TTL_SEC = 3600;
 

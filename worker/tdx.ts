@@ -1,50 +1,72 @@
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../src/shared";
-import { type Env, cached, rows, taipeiNow } from "./util";
+import { type Env, type TdxCreds, cached, rows, taipeiNow, tdxCreds } from "./util";
 
 const API = "https://tdx.transportdata.tw/api/basic";
 
 // Only settled values are kept across requests: workerd can't resume a request that awaits
 // a promise or timer created by a different (possibly finished) request.
-let token: { value: string; expires: number } | null = null;
+// Everything below is per key: the site's own, or a visitor's own key sent with the request.
+const tokens = new Map<string, { value: string; expires: number }>();
 
-async function accessToken(env: Env): Promise<string> {
-  if (token && token.expires > Date.now()) return token.value;
+function credsFor(env: Env): TdxCreds | null {
+  const own = tdxCreds.getStore();
+  if (own) return own;
+  return env.TDX_CLIENT_ID && env.TDX_CLIENT_SECRET ? { id: env.TDX_CLIENT_ID, secret: env.TDX_CLIENT_SECRET } : null;
+}
+
+async function accessToken(creds: TdxCreds, own: boolean): Promise<string> {
+  const hit = tokens.get(creds.id);
+  if (hit && hit.expires > Date.now() && tokens.get(creds.id + "#secret")?.value === creds.secret) return hit.value;
   const res = await fetch("https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: env.TDX_CLIENT_ID!,
-      client_secret: env.TDX_CLIENT_SECRET!,
-    }),
+    body: new URLSearchParams({ grant_type: "client_credentials", client_id: creds.id, client_secret: creds.secret }),
   });
-  if (!res.ok) throw new Error(`TDX 登入失敗 (${res.status})，請檢查金鑰`);
+  if (!res.ok) throw new Error(own ? "你的 TDX 金鑰無法登入，請到設定檢查" : `TDX 登入失敗 (${res.status})，請檢查金鑰`);
   const body = (await res.json()) as { access_token: string; expires_in: number };
-  token = { value: body.access_token, expires: Date.now() + (body.expires_in - 300) * 1000 };
-  return token.value;
+  const expires = Date.now() + (body.expires_in - 300) * 1000;
+  tokens.set(creds.id, { value: body.access_token, expires });
+  // Remember which secret this token belongs to, so a changed secret is checked again.
+  tokens.set(creds.id + "#secret", { value: creds.secret, expires });
+  return body.access_token;
 }
 
-// The key is limited to 5 calls per minute across *all* TDX endpoints. Stay under it locally
+/** Logs in with the visitor's key without spending any of its per-minute quota. */
+export async function checkCreds(env: Env): Promise<{ ok: true }> {
+  const creds = tdxCreds.getStore();
+  if (!creds) throw new Error("沒有收到金鑰");
+  tokens.delete(creds.id); // always really try
+  await accessToken(creds, true);
+  return { ok: true };
+}
+
+// A key is limited to 5 calls per minute across *all* TDX endpoints. Stay under it locally
 // so we never burn the minute on 429s; callers fall back to their last cached value.
 const BUDGET_PER_MIN = 4;
-const recentCalls: number[] = [];
+const recentCalls = new Map<string, number[]>();
 
 async function tdx(env: Env, path: string, query: Record<string, string> = {}): Promise<unknown> {
+  const creds = credsFor(env);
+  if (!creds) throw new Error("尚未設定 TDX 金鑰");
+  const own = Boolean(tdxCreds.getStore());
   const now = Date.now();
-  while (recentCalls.length && now - recentCalls[0] > 60_000) recentCalls.shift();
-  if (recentCalls.length >= BUDGET_PER_MIN) throw new Error("TDX 每分鐘查詢額度已滿，稍後自動更新");
-  const auth = await accessToken(env);
-  recentCalls.push(now);
+  const recent = recentCalls.get(creds.id) ?? [];
+  while (recent.length && now - recent[0] > 60_000) recent.shift();
+  recentCalls.set(creds.id, recent);
+  const full = own ? "你的 TDX 金鑰每分鐘查詢額度已滿，稍後自動更新" : "TDX 每分鐘查詢額度已滿，稍後自動更新";
+  if (recent.length >= BUDGET_PER_MIN) throw new Error(full);
+  const auth = await accessToken(creds, own);
+  recent.push(now);
   const qs = new URLSearchParams({ ...query, $format: "JSON" });
   const res = await fetch(`${API}${path}?${qs}`, {
     headers: { Authorization: `Bearer ${auth}`, "Accept-Encoding": "br, gzip" },
   });
-  if (res.status === 429) throw new Error("TDX 每分鐘查詢額度已滿，稍後自動更新");
+  if (res.status === 429) throw new Error(full);
   if (!res.ok) throw new Error(`TDX ${res.status}`);
   return res.json();
 }
 
-export const tdxConfigured = (env: Env) => Boolean(env.TDX_CLIENT_ID && env.TDX_CLIENT_SECRET);
+export const tdxConfigured = (env: Env) => Boolean(tdxCreds.getStore() || (env.TDX_CLIENT_ID && env.TDX_CLIENT_SECRET));
 
 const zh = (v: any): string => v?.Zh_tw ?? "";
 const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;

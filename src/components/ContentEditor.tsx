@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
+import { tdxHeaders } from "../tdxKey";
 import { toast } from "../toast";
 import {
   BUS_CITIES,
@@ -17,9 +18,10 @@ import {
   useSettings,
 } from "../settings";
 
+// Same order as the board's tabs on a phone: 行情・天氣・交通（公車、火車）・新聞.
 const SECTIONS = [
-  ["weather", "天氣"],
   ["markets", "行情"],
+  ["weather", "天氣"],
   ["bus", "公車"],
   ["trains", "火車"],
   ["news", "新聞"],
@@ -374,7 +376,7 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   useEffect(() => {
-    fetch("/api/stations")
+    fetch("/api/stations", { headers: tdxHeaders() })
       .then((r) => (r.ok ? r.json() : []))
       .then((names: string[]) => setStations(names))
       .catch(() => {});

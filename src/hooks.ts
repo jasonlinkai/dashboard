@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { tdxHeaders, usesTdx } from "./tdxKey";
 import { toast } from "./toast";
 
 /** A fetch result plus how fresh the underlying data is. */
@@ -91,7 +92,7 @@ export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: numbe
 
 /** Fetches JSON; freshness comes from our Worker's X-Data-Time / X-Data-Stale headers. */
 export async function getJSON<T>(url: string): Promise<Loaded<T>> {
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: usesTdx(url) ? tdxHeaders() : {} });
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
   return {
