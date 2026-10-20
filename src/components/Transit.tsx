@@ -69,9 +69,9 @@ export function Bus() {
                     <a className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
                       <span className="chip blue-chip">{a.route}</span>
                       <span className="grow">
-                        <div>{a.headsign}</div>
+                        <div>{a.stop}</div>
                         <div className="muted small">
-                          {a.stop} 站{a.status && a.estimateSec != null && <span>・{a.status}</span>}
+                          {a.headsign}{a.status && a.estimateSec != null && <span>・{a.status}</span>}
                           {a.lastBus && <span className="red">・末班車</span>}
                           {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (
                             <span className="error">・⚠ 預估已 {Math.floor((now - a.asOf) / 60000)} 分鐘未更新</span>
