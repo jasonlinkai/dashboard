@@ -109,4 +109,4 @@ export const NEWS_BY_ID = new Map(NEWS_SOURCES.map((s) => [s.id, s]));
 /** Sources that publish in this topic, in catalog order. */
 export const sourcesFor = (topic: Topic) => NEWS_SOURCES.filter((s) => s.feeds[topic]?.length);
 
-export const MAX_NEWS_SOURCES = 8;
+export const MAX_NEWS_SOURCES = 12;

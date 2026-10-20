@@ -13,7 +13,6 @@ import {
   type WeatherPlace,
   instrumentOf,
   marketSymbol,
-  tileCount,
   useSettings,
 } from "../settings";
 
@@ -26,16 +25,21 @@ const SECTIONS = [
 ] as const;
 type Section = (typeof SECTIONS)[number][0];
 
+/** Move item i by `by` places (drag can move several at once). */
 const move = <T,>(list: T[], i: number, by: number): T[] => {
-  const j = i + by;
-  if (j < 0 || j >= list.length) return list;
+  const j = Math.max(0, Math.min(list.length - 1, i + by));
+  if (j === i) return list;
   const out = [...list];
-  [out[i], out[j]] = [out[j], out[i]];
+  const [item] = out.splice(i, 1);
+  out.splice(j, 0, item);
   return out;
 };
 const without = <T,>(list: T[], i: number): T[] => list.filter((_, k) => k !== i);
 
-/** One row of an editable list: label, then move up / down / remove. */
+/**
+ * One row of an editable list: drag handle, label, remove. Drag the handle (mouse or touch) to
+ * reorder; with the handle focused, the arrow keys move the row too.
+ */
 function Row({
   children,
   i,
@@ -51,15 +55,63 @@ function Row({
   onMove: (by: number) => void;
   onRemove: () => void;
 }) {
+  const liRef = useRef<HTMLLIElement>(null);
+  const [dragging, setDragging] = useState(false);
+  // Pointer events can arrive several times before React re-renders with the new order.
+  const latest = useRef({ i, onMove });
+  latest.current = { i, onMove };
+
+  // Follow the pointer on window, not on the handle: reordering moves this row's DOM node, which
+  // drops pointer capture, and the rest of the drag (and the release) would never arrive.
+  useEffect(() => {
+    if (!dragging) return;
+    const drag = (e: PointerEvent) => {
+      if (!liRef.current?.parentElement) return;
+      e.preventDefault();
+      const rows = [...liRef.current.parentElement.children] as HTMLElement[];
+      // The row under the pointer (or the last one, when below the list).
+      let to = rows.findIndex((r) => e.clientY < r.getBoundingClientRect().bottom);
+      if (to === -1) to = rows.length - 1;
+      if (to !== latest.current.i) latest.current.onMove(to - latest.current.i);
+      // Near the edge of the scrolling settings page: scroll so rows further away can be reached.
+      const scroller = liRef.current.closest<HTMLElement>(".settings-body");
+      if (scroller) {
+        const box = scroller.getBoundingClientRect();
+        if (e.clientY < box.top + 40) scroller.scrollBy(0, -12);
+        else if (e.clientY > box.bottom - 40) scroller.scrollBy(0, 12);
+      }
+    };
+    const end = () => setDragging(false);
+    window.addEventListener("pointermove", drag, { passive: false });
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointermove", drag);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [dragging]);
+
   return (
-    <li className="ed-row">
+    <li ref={liRef} className={`ed-row ${dragging ? "ed-dragging" : ""}`}>
+      <button
+        className="ed-handle"
+        aria-label="拖曳排序（也可用上下鍵）"
+        disabled={count < 2}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            e.preventDefault();
+            onMove(e.key === "ArrowUp" ? -1 : 1);
+          }
+        }}
+      >
+        ≡
+      </button>
       <span className="ed-label">{children}</span>
-      <button className="ed-btn" onClick={() => onMove(-1)} disabled={i === 0} aria-label="上移">
-        ↑
-      </button>
-      <button className="ed-btn" onClick={() => onMove(1)} disabled={i === count - 1} aria-label="下移">
-        ↓
-      </button>
       <button className="ed-btn ed-del" onClick={onRemove} disabled={count <= min} aria-label="刪除">
         ✕
       </button>
@@ -155,9 +207,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
   const [pick, setPick] = useState("");
   const [symbol, setSymbol] = useState("");
   const [name, setName] = useState("");
-  const tiles = tileCount(items);
-  // Adding one more yield to an existing yield tile doesn't take a new tile.
-  const fits = (m: MarketItem) => tileCount([...items, m]) <= LIMITS.tiles;
+  const fits = (_m?: MarketItem) => items.length < LIMITS.markets;
   const customOk = /^[A-Za-z0-9.^=\-]{1,20}$/.test(symbol.trim()) && name.trim().length > 0 && !used.has(symbol.trim());
 
   return (
@@ -175,7 +225,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
               onRemove={() => update(without(items, i))}
             >
               {inst.name}
-              <span className="muted small"> {inst.symbol}{inst.format.kind === "yield" ? "・與其他殖利率合併成一格" : ""}</span>
+              <span className="muted small"> {inst.symbol}</span>
             </Row>
           );
         })}
@@ -205,7 +255,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
         </button>
       </div>
       <p className="muted small">
-        目前 {tiles}／{LIMITS.tiles} 格。自訂代號以 Yahoo Finance 為準（台股加 .TW、上櫃加 .TWO），找不到時該格會顯示「—」。
+        目前 {items.length}／{LIMITS.markets} 格。自訂代號以 Yahoo Finance 為準（台股加 .TW、上櫃加 .TWO），找不到時該格會顯示「—」。
       </p>
     </>
   );

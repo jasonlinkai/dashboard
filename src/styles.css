@@ -151,6 +151,14 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .ed-list { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); }
 .ed-row { display: flex; align-items: center; gap: 4px; background: var(--card-2); border-radius: 8px; padding: 4px 4px 4px 10px; min-height: 38px; }
 .ed-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.ed-row { padding-left: 2px; }
+.ed-handle {
+  flex: none; width: 34px; height: 30px; border: 0; background: none; color: var(--muted); font-size: 18px;
+  cursor: grab; touch-action: none; /* the finger drags the row instead of scrolling the page */
+}
+.ed-handle:disabled { opacity: 0.25; cursor: default; }
+.ed-dragging { background: var(--card); box-shadow: 0 4px 14px rgb(0 0 0 / 0.35); position: relative; z-index: 1; }
+.ed-dragging .ed-handle { cursor: grabbing; color: var(--text); }
 .ed-btn { flex: none; width: 32px; height: 30px; border: 0; border-radius: 7px; background: var(--card); color: var(--text); font-size: 14px; }
 .ed-btn:disabled { opacity: 0.3; }
 .ed-del { color: var(--red); }
@@ -162,7 +170,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   font: inherit; font-size: 16px; /* 16px keeps iOS from zooming in */
   color: var(--text); background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
 }
-.settings-body textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 13px; resize: vertical; }
+.settings-body textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 16px; resize: vertical; } /* under 16px, iOS zooms the page in */
 .ed-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .ed-actions button, .ed-primary {
   border: 1px solid var(--line); background: var(--card-2); color: var(--text); border-radius: 8px; padding: 7px 12px; font-size: 14px;
@@ -253,6 +261,9 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* ---------- Markets ---------- */
 
 .tiles { flex: 1; min-height: 0; display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; }
+/* More tiles than fit: they keep their size and the tile area scrolls (vertically; sideways on a landscape iPad). */
+.tiles { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; touch-action: pan-y; }
+.tiles::-webkit-scrollbar { display: none; }
 .tile {
   background: color-mix(in srgb, var(--card-2) 55%, transparent); border-radius: 10px; padding: 8px 10px; min-width: 0; min-height: 0;
   display: flex; flex-direction: column; overflow: hidden;
@@ -272,7 +283,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 
 /* ---------- Weather ---------- */
 
-.wx-grid { flex: 1; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
+.wx-grid { flex: 1; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(105px, 1fr); }
 /* With more places than fit (up to 6 can be set), cards keep a readable height and the list scrolls. */
 .wx-grid { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; }
 .wx-grid::-webkit-scrollbar { display: none; }
@@ -337,9 +348,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 /* Train routes: an accordion; the open route's list takes the remaining height and scrolls. */
-.acc { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.acc { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.acc::-webkit-scrollbar { display: none; }
 .acc-item { flex: none; display: flex; flex-direction: column; min-height: 0; }
-.acc-open { flex: 1; }
+/* With many routes the headers scroll, but the open route keeps room for a few trains. */
+.acc-open { flex: 1 0 220px; }
 .acc-head {
   display: flex; align-items: center; justify-content: space-between; width: 100%; flex: none;
   border: 0; border-radius: 8px; padding: 6px 10px; background: var(--card-2); color: var(--muted);
@@ -373,7 +386,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grid[data-tab="transit"] > .bus,
 .grid[data-tab="transit"] > .train { display: flex; }
 .grid[data-tab="transit"] { grid-template-rows: auto minmax(0, 1fr); }
-.grid[data-tab="markets"] .tiles { grid-template-rows: repeat(var(--tile-rows-2, 3), minmax(0, 1fr)); }
+.grid[data-tab="markets"] .tiles { grid-template-rows: repeat(var(--tile-rows-2, 3), minmax(150px, 1fr)); }
 .grid[data-tab="markets"] .tile-price { font-size: 24px; }
 
 .tabbar { flex: none; display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 4px; }
@@ -409,7 +422,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .grid[data-tab="transit"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .grid[data-tab="weather"] .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(var(--wx-rows-2, 2), minmax(115px, 1fr)); }
   .grid[data-tab="weather"] .wx-temp { font-size: 28px; }
-  .grid[data-tab="markets"] .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(var(--tile-rows-3, 2), minmax(0, 1fr)); }
+  .grid[data-tab="markets"] .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(var(--tile-rows-3, 2), minmax(105px, 1fr)); }
   .grid[data-tab="markets"] .tile-price { font-size: 20px; }
   .tabbar button { flex-direction: row; justify-content: center; gap: 6px; padding: 3px 0; }
   .tab-icon { font-size: 15px; }
@@ -429,11 +442,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .grid > .bus { grid-area: bus; }
   .grid > .train { grid-area: train; }
   .grid > .news { grid-area: news; }
-  .grid[data-tab] .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: 124px; }
+  .grid[data-tab] .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: 124px; max-height: calc(2 * 124px + 8px); }
   .grid[data-tab] .tile-price { font-size: 21px; }
   /* Weather 2×2 so each card is wide enough for 12 hourly columns. */
   /* The weather card grows with its content here, so it never needs to scroll. */
-  .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; overflow: visible; }
+  .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: 120px; max-height: calc(2 * 120px + 8px); }
   .clock { font-size: 34px; }
 }
 
@@ -453,7 +466,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .grid > .bus { grid-area: bus; }
   .grid > .train { grid-area: train; }
   .grid > .news { grid-area: news; }
-  .grid[data-tab] .tiles { grid-template-columns: repeat(var(--tiles, 6), minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: clamp(100px, 15vh, 150px); }
+  .grid[data-tab] .tiles {
+    grid-auto-flow: column; grid-template-columns: none; grid-template-rows: clamp(100px, 15vh, 150px);
+    grid-auto-columns: calc((100% - (var(--tile-cols, 6) - 1) * 8px) / var(--tile-cols, 6));
+    overflow-x: auto; overflow-y: hidden; touch-action: pan-x;
+  }
   .grid[data-tab] .tile-price { font-size: clamp(19px, 1.8vw, 26px); }
   .wx-grid { grid-template-rows: repeat(var(--wx, 4), minmax(100px, 1fr)); }
   .clock { font-size: 34px; }

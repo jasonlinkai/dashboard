@@ -70,6 +70,7 @@ export function Bus() {
       ) : (
         <ul className="list scroll" ref={listRef}>
           {!stops.length && <li className="hint">尚未設定公車，可在右上角「設定」新增。</li>}
+          {state.error && !state.data && <li className="hint error">{state.error}</li>}
           {groups.map((g) => (
             <Fragment key={g.group}>
               <li className="list-group">{g.group}</li>

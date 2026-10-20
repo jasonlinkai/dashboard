@@ -62,7 +62,7 @@ export const trainTypeKeyword = (t: TrainType) => (t === "全部" ? "" : t);
 const price = (decimals: number, prefix?: string) => ({ kind: "price" as const, decimals, ...(prefix ? { prefix } : {}) });
 const yieldOf = (symbol: string, name: string): Instrument => ({ symbol, name, subtitle: "殖利率", format: { kind: "yield" }, feedDelayMin: 15 });
 
-/** Market tiles to choose from. Yields are drawn together in one tile. */
+/** Market tiles to choose from. */
 export const INSTRUMENT_CATALOG: Instrument[] = [
   { symbol: "^TWII", name: "台股加權", subtitle: "TAIEX", format: price(2) },
   { symbol: "2330.TW", name: "台積電", subtitle: "2330", format: price(2) },
@@ -88,7 +88,7 @@ export const INSTRUMENT_CATALOG: Instrument[] = [
 ];
 const CATALOG_BY_SYMBOL = new Map(INSTRUMENT_CATALOG.map((i) => [i.symbol, i]));
 
-export const LIMITS = { weather: 6, tiles: 6, bus: 6, trains: 5, news: MAX_NEWS_SOURCES };
+export const LIMITS = { weather: 10, markets: 12, bus: 10, trains: 8, news: MAX_NEWS_SOURCES };
 
 // ---------- Defaults (what the dashboard shipped with) ----------
 
@@ -131,12 +131,6 @@ export function instrumentOf(m: MarketItem): Instrument {
   const known = CATALOG_BY_SYMBOL.get(m.symbol);
   return { ...(known ?? { subtitle: m.symbol, format: price(m.decimals ?? 2) }), symbol: m.symbol, name: m.name } as Instrument;
 }
-
-/** Tiles on screen: every yield shares one tile. */
-export const tileCount = (markets: MarketItem[]) => {
-  const kinds = markets.map((m) => instrumentOf(m).format.kind);
-  return kinds.filter((k) => k !== "yield").length + (kinds.includes("yield") ? 1 : 0);
-};
 
 export const placeKey = (p: WeatherPlace) => `${p.county}/${p.town}`;
 
@@ -209,8 +203,7 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     });
     const syms = markets.map(marketSymbol);
     if (new Set(syms).size !== syms.length) err("markets 有重複的代號");
-    const tiles = tileCount(markets);
-    if (tiles < 1 || tiles > LIMITS.tiles) err(`markets 要有 1～${LIMITS.tiles} 個方塊（美債殖利率合併算 1 個），目前 ${tiles} 個`);
+    if (markets.length < 1 || markets.length > LIMITS.markets) err(`markets 要有 1～${LIMITS.markets} 個，目前 ${markets.length} 個`);
   }
 
   const bus: BusStop[] = [];

@@ -1,5 +1,5 @@
 import { type Instrument, QUOTE_LAG_MIN, REFRESH_SEC, STALE_AFTER_SEC, links } from "../config";
-import { instrumentOf, tileCount, useSettings } from "../settings";
+import { instrumentOf, useSettings } from "../settings";
 import type React from "react";
 import { clock, fmt, moveClass, signed } from "../format";
 import { getJSON, usePolling } from "../hooks";
@@ -52,6 +52,10 @@ function Tile({ inst, quote }: { inst: Instrument; quote?: Quote }) {
     if (change != null && quote.previousClose) {
       delta = `${signed(change, decimals)}  ${signed((change / quote.previousClose) * 100, 2)}%`;
     }
+  } else if (quote) {
+    // Yields: the level in %, the move in basis points.
+    price = `${fmt(quote.price, 3)}%`;
+    if (change != null) delta = `${signed(change * 100, 1)}bp`;
   }
   return (
     <a className="tile link" href={links.quote(inst)} target="_blank" rel="noopener noreferrer">
@@ -61,40 +65,11 @@ function Tile({ inst, quote }: { inst: Instrument; quote?: Quote }) {
       </div>
       <div className="tile-price">{price}</div>
       <div className="tile-foot">
-        <span className={`tile-delta ${cls}`}>{delta || " "}</span>
+        <span className={`tile-delta ${cls}`}>{delta || " "}</span>
         <TradeTime q={quote} feedDelayMin={inst.feedDelayMin} />
       </div>
       <Sparkline points={quote?.points ?? []} baseline={quote?.previousClose ?? null} className={cls} />
     </a>
-  );
-}
-
-/** All treasury yields share one tile so the market row fits on one line on an iPad in landscape. */
-function YieldTile({ items, quotes }: { items: Instrument[]; quotes: Map<string, Quote> }) {
-  const latest = items.map((i) => quotes.get(i.symbol)).reduce<Quote | undefined>(
-    (a, q) => (q && (!a || q.marketTime > a.marketTime) ? q : a),
-    undefined,
-  );
-  return (
-    <div className="tile">
-      <div className="tile-head">
-        <span className="tile-name">美債殖利率</span>
-        <TradeTime q={latest} feedDelayMin={Math.max(0, ...items.map((i) => i.feedDelayMin ?? 0))} />
-      </div>
-      <div className="yields">
-        {items.map((inst) => {
-          const q = quotes.get(inst.symbol);
-          const change = q?.previousClose != null ? q.price - q.previousClose : null;
-          return (
-            <a key={inst.symbol} className="yield-row link" href={links.quote(inst)} target="_blank" rel="noopener noreferrer">
-              <span className="muted">{inst.name.replace("美債", "").trim()}</span>
-              <span className="num">{q ? `${fmt(q.price, 3)}%` : "—"}</span>
-              <span className={`num small ${moveClass(change)}`}>{change != null ? `${signed(change * 100, 1)}bp` : ""}</span>
-            </a>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -104,23 +79,16 @@ export function Markets() {
   const symbols = items.map((i) => i.symbol).join(",");
   const state = usePolling(() => getJSON<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols)}`), REFRESH_SEC.quotes, [symbols]);
   const bySymbol = new Map(state.data?.map((q) => [q.symbol, q]));
-  const yields = items.filter((i) => i.format.kind === "yield");
-  const firstYield = items.findIndex((i) => i.format.kind === "yield");
-  const tiles = tileCount(settings.markets);
+  const n = items.length;
   return (
     <Section title="市場行情" className="markets" state={state} maxAgeSec={STALE_AFTER_SEC.quotes}>
       <div
         className="tiles"
-        style={{ "--tiles": tiles, "--tile-rows-2": Math.ceil(tiles / 2), "--tile-rows-3": Math.ceil(tiles / 3) } as React.CSSProperties}
+        style={{ "--tile-cols": Math.min(n, 6), "--tile-rows-2": Math.ceil(n / 2), "--tile-rows-3": Math.ceil(n / 3) } as React.CSSProperties}
       >
-        {/* Yields share one tile, placed where the first yield is in the list. */}
-        {items.map((inst, i) =>
-          inst.format.kind !== "yield" ? (
-            <Tile key={inst.symbol} inst={inst} quote={bySymbol.get(inst.symbol)} />
-          ) : i === firstYield ? (
-            <YieldTile key="yields" items={yields} quotes={bySymbol} />
-          ) : null,
-        )}
+        {items.map((inst) => (
+          <Tile key={inst.symbol} inst={inst} quote={bySymbol.get(inst.symbol)} />
+        ))}
       </div>
     </Section>
   );

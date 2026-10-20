@@ -62,7 +62,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
           .map(([city, route, stop, toward]) => ({ city, route, stop, toward: toward || undefined }))
           // Each city is one more TDX call a minute; links go to 大台北公車, which covers these two.
           .filter((x) => BUS_CITIES.has(x.city));
-        return json(await bus(env, queries.slice(0, 6)));
+        return json(await bus(env, queries.slice(0, 10)));
       }
       case "/api/train":
         return json(await train(env, q.get("from") ?? "", q.get("to") ?? "臺北", q.get("type") ?? "區間", Number(q.get("limit") ?? 6)));

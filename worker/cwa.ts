@@ -3,7 +3,7 @@ import { type Env, cached, fetchJSON } from "./util";
 
 // Without a list, the original two cities (keeps older pages working).
 const DEFAULT_TOWNS = ["臺北市/中正區", "臺北市/南港區", "臺北市/內湖區", "新北市/汐止區"];
-const MAX_TOWNS = 6;
+const MAX_TOWNS = 10;
 const DATASETS = ["O-A0003-001", "O-A0001-001"]; // manned stations first, then automatic ones
 
 /** CWA uses -99 / -999 / "-99" style sentinels for missing values. */
