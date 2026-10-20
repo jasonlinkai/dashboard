@@ -4,6 +4,7 @@ import type React from "react";
 import { clock, fmt, moveClass, signed } from "../format";
 import { getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Quote } from "../shared";
+import { Flip } from "./Flip";
 import { Section } from "./Section";
 
 function Sparkline({ points, baseline, className }: { points: number[]; baseline: number | null; className: string }) {
@@ -63,9 +64,9 @@ function Tile({ inst, quote }: { inst: Instrument; quote?: Quote }) {
         <span className="tile-name">{inst.name}</span>
         <span className="muted tiny">{inst.subtitle}</span>
       </div>
-      <div className="tile-price">{price}</div>
+      <Flip className="tile-price" value={price} />
       <div className="tile-foot">
-        <span className={`tile-delta ${cls}`}>{delta || " "}</span>
+        <Flip className={`tile-delta ${cls}`} value={delta || " "} />
         <TradeTime q={quote} feedDelayMin={inst.feedDelayMin} />
       </div>
       <Sparkline points={quote?.points ?? []} baseline={quote?.previousClose ?? null} className={cls} />

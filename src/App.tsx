@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Flip } from "./components/Flip";
 import { Markets } from "./components/Markets";
 import { News } from "./components/News";
 import { Reliability } from "./components/Reliability";
@@ -7,7 +8,8 @@ import { Bus, Train } from "./components/Transit";
 import { Weather } from "./components/Weather";
 import { type Scene, type SceneKind, WeatherFx } from "./components/WeatherFx";
 import { useNow, useWakeLock } from "./hooks";
-import { useFx, useTheme } from "./theme";
+import { ScreenSaver } from "./components/ScreenSaver";
+import { useFx, useSaver, useTheme } from "./theme";
 
 const dateFmt = new Intl.DateTimeFormat("zh-TW", { month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Taipei" });
 const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
@@ -38,6 +40,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(() => location.hash === "#settings");
   const [theme, setTheme] = useTheme();
   const [fx, setFx] = useFx();
+  const [saver, setSaver] = useSaver();
+  const [saverPreview, setSaverPreview] = useState(false);
   const [scene, setScene] = useState<Scene | null>(null);
   // "?fx=rain" (or clear, cloudy, overcast, fog, drizzle, heavy, storm, snow; "&night" for night)
   // previews an animation regardless of the real weather.
@@ -56,7 +60,7 @@ export default function App() {
       {fx && shown && <WeatherFx scene={shown} />}
       <div className="app">
         <header className="top">
-          <div className="clock">{timeFmt.format(now)}</div>
+          <Flip className="clock" value={timeFmt.format(now)} />
           <div className="date">{dateFmt.format(now)}</div>
           <button className="info-btn" onClick={() => setShowInfo(true)} aria-label="資料可靠度說明" title="資料可靠度說明">
             i
@@ -85,9 +89,20 @@ export default function App() {
         </nav>
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
         {showSettings && (
-          <Settings theme={theme} onTheme={setTheme} fx={fx} onFx={setFx} wake={wake} onClose={() => setShowSettings(false)} />
+          <Settings
+            theme={theme}
+            onTheme={setTheme}
+            fx={fx}
+            onFx={setFx}
+            wake={wake}
+            saver={saver}
+            onSaver={setSaver}
+            onSaverPreview={() => (setShowSettings(false), setSaverPreview(true))}
+            onClose={() => setShowSettings(false)}
+          />
         )}
       </div>
+      <ScreenSaver minutes={saver} preview={saverPreview} onPreviewEnd={() => setSaverPreview(false)} />
     </>
   );
 }

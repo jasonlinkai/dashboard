@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useSettings } from "../settings";
 import { toast } from "../toast";
+import { SAVER_OPTIONS, type SaverMinutes, type ThemePref } from "../theme";
 import { Backup } from "./Backup";
 import { ContentEditor } from "./ContentEditor";
-import type { ThemePref } from "../theme";
 
 const THEMES: [ThemePref, string, string][] = [
   ["auto", "自動", "跟隨裝置的深淺色設定"],
@@ -17,6 +17,9 @@ export function Settings({
   fx,
   onFx,
   wake,
+  saver,
+  onSaver,
+  onSaverPreview,
   onClose,
 }: {
   theme: ThemePref;
@@ -24,6 +27,9 @@ export function Settings({
   fx: boolean;
   onFx: (on: boolean) => void;
   wake: { supported: boolean; enabled: boolean; toggle: () => void };
+  saver: SaverMinutes;
+  onSaver: (m: SaverMinutes) => void;
+  onSaverPreview: () => void;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -93,6 +99,28 @@ export function Settings({
               {wake.supported
                 ? "開啟後，看板開著時螢幕不會自動關閉（適合放在桌上或牆上）；切到其他 App 或鎖定螢幕後就會恢復，回來時自動重新開啟。"
                 : "這個瀏覽器不支援螢幕常亮（需要 iOS／iPadOS 16.4 以上的 Safari 或新版 Chrome）。"}
+            </div>
+          </div>
+          <div className="setting">
+            <div className="setting-label">螢幕保護</div>
+            <div className="segmented" role="radiogroup" aria-label="螢幕保護">
+              {SAVER_OPTIONS.map((m) => (
+                <button
+                  key={m}
+                  role="radio"
+                  aria-checked={saver === m}
+                  onClick={() => (onSaver(m), toast(m ? `螢幕保護：每 ${m} 分鐘播放一次` : "已關閉螢幕保護"))}
+                >
+                  {m ? `${m} 分` : "關"}
+                </button>
+              ))}
+            </div>
+            <div className="muted small">
+              長時間顯示固定畫面可能造成烙印（OLED 螢幕較明顯）。開啟後每隔設定的時間播放 20 秒的全螢幕動畫（點一下可提前結束），
+              平常整個畫面也會每分鐘微移 1～2 像素。{" "}
+              <button className="link-btn" onClick={onSaverPreview}>
+                預覽
+              </button>
             </div>
           </div>
           <ContentEditor />

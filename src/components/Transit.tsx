@@ -3,6 +3,7 @@ import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
 import { useState } from "react";
 import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
+import { Flip } from "./Flip";
 import { Section } from "./Section";
 
 const NOT_CONFIGURED = <p className="hint">尚未設定 TDX 金鑰，請參考 README。</p>;
@@ -108,7 +109,7 @@ export function Bus() {
                             )}
                           </div>
                         </span>
-                        <span className={`eta ${e.cls}`}>{e.text}</span>
+                        <Flip className={`eta ${e.cls}`} value={e.text} />
                       </a>
                     );
                   })
@@ -168,7 +169,7 @@ function TrainList({ trains, from, to, type, now }: { trains: TrainDeparture[]; 
               </div>
             </span>
             <span className={`eta ${t.cancelled ? "red" : t.left < 300 ? "red" : ""}`}>
-              {t.cancelled ? "停駛" : t.left < 60 ? "即將發車" : `${Math.floor(t.left / 60)} 分`}
+              <Flip value={t.cancelled ? "停駛" : t.left < 60 ? "即將發車" : `${Math.floor(t.left / 60)} 分`} />
               {t.platform && !t.cancelled && <span className="eta-sub">{t.platform} 月台</span>}
             </span>
           </a>
@@ -190,12 +191,19 @@ export function Train() {
   const keyOf = (r: { from: string; to: string }) => `${r.from}-${r.to}`;
   // Remember the open route itself (not its position), so reordering keeps it open.
   const [openKey, setOpenKey] = useState<string | null>(() => (routes[0] ? keyOf(routes[0]) : null));
+  const [collapsed, setCollapsed] = useState(false);
   const found = routes.findIndex((r) => keyOf(r) === openKey);
-  const open = found >= 0 ? found : 0; // default, or the open route was removed: the first one
-  const setOpen = (i: number) => setOpenKey(keyOf(routes[i]));
+  // -1 = all folded (by tapping the open route); otherwise default / removed route → the first one.
+  const open = collapsed ? -1 : found >= 0 ? found : 0;
+  const setOpen = (i: number) => {
+    if (i === open) return setCollapsed(true); // tap the open route again to fold it
+    setCollapsed(false);
+    setOpenKey(keyOf(routes[i]));
+  };
   // Long-press anywhere on a route to drag it; the open route's trains fold away while dragging (CSS).
   const accRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, trains: moveTo(routes, from, to) }));
-  const route = routes[open] as (typeof routes)[number] | undefined;
+  // Nothing is fetched while every route is folded.
+  const route = open >= 0 ? (routes[open] as (typeof routes)[number] | undefined) : undefined;
   const q = new URLSearchParams({
     from: route?.from ?? "",
     to: route?.to ?? "",
@@ -225,6 +233,7 @@ export function Train() {
           ))}
           {current && current.alerts == null && <p className="hint error">⚠ 暫時無法確認臺鐵營運公告（停駛、通阻），請以臺鐵官網為準</p>}
           {!routes.length && <p className="hint">尚未設定火車路線，可在右上角「設定」新增。</p>}
+          {routes.length > 0 && open < 0 && <p className="hint">點一條路線查看班次。</p>}
           <div className="acc" ref={accRef}>
             {routes.map((r, i) => (
               <div key={keyOf(r)} data-reorder className={`acc-item ${i === open ? "acc-open" : ""}`}>

@@ -503,3 +503,25 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .toast-icon { font-size: 16px; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(0.96); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+/* ---------- Screen saver ---------- */
+/* Pixel shift between runs (set by ScreenSaver); invisible to the eye. */
+.app { translate: var(--shift-x, 0) var(--shift-y, 0); }
+.saver { position: fixed; inset: 0; z-index: 100; background: #000; cursor: pointer; }
+.saver canvas { width: 100%; height: 100%; display: block; }
+.saver-hint {
+  position: absolute; left: 0; right: 0; bottom: max(20px, env(safe-area-inset-bottom)); text-align: center;
+  color: rgb(255 255 255 / 0.6); font-size: 14px;
+}
+.link-btn { border: 0; background: none; padding: 0; color: var(--blue); font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* ---------- Split-flap digits (Flip) ---------- */
+.clock { display: block; }
+.flip-ch { display: inline-block; white-space: pre; }
+.flipping { animation: flip 0.5s cubic-bezier(0.3, 1.4, 0.5, 1); transform-origin: 50% 55%; backface-visibility: hidden; }
+@keyframes flip {
+  0% { transform: perspective(240px) rotateX(-95deg); opacity: 0.2; filter: brightness(1.6); }
+  60% { transform: perspective(240px) rotateX(12deg); opacity: 1; }
+  100% { transform: none; filter: none; }
+}
+@media (prefers-reduced-motion: reduce) { .flipping { animation: none; } }

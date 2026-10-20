@@ -53,3 +53,23 @@ export function useTheme() {
   }, [pref]);
   return [pref, setPref] as const;
 }
+
+/** Screen saver interval in minutes; 0 = off. */
+export const SAVER_OPTIONS = [0, 15, 30, 60] as const;
+export type SaverMinutes = (typeof SAVER_OPTIONS)[number];
+
+export function useSaver() {
+  const [minutes, setMinutes] = useState<SaverMinutes>(() => {
+    try {
+      const v = Number(localStorage.getItem("saver"));
+      if ((SAVER_OPTIONS as readonly number[]).includes(v)) return v as SaverMinutes;
+    } catch {}
+    return 0;
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("saver", String(minutes));
+    } catch {}
+  }, [minutes]);
+  return [minutes, setMinutes] as const;
+}

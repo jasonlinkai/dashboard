@@ -6,6 +6,7 @@ import { type WeatherPlace, placeKey, useSettings } from "../settings";
 import { clock } from "../format";
 import { type Loaded, getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Observation, ObservationResponse } from "../shared";
+import { Flip } from "./Flip";
 import { Section } from "./Section";
 
 interface Forecast {
@@ -194,7 +195,7 @@ function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; 
       </div>
       <div className="wx-main">
         <div className="wx-temp">
-          {Math.round(temp)}°
+          <Flip value={`${Math.round(temp)}°`} />
           <span className="wx-range">
             <span className="red">↑{Math.round(f.daily.temperature_2m_max[0])}°</span>
             <span className="blue">↓{Math.round(f.daily.temperature_2m_min[0])}°</span>
