@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
 import {
   BUS_CITIES,
@@ -399,25 +400,84 @@ function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
 
 // ---------- Container ----------
 
+/** One-line summary of what a section currently shows, for the list in the main settings page. */
+function summary(section: Section, s: Settings): string {
+  switch (section) {
+    case "weather":
+      return s.weather.map((p) => p.name).join("、");
+    case "markets":
+      return s.markets.map((m) => instrumentOf(m).name).join("、");
+    case "bus":
+      return s.bus.map((b) => b.route).join("、") || "未設定";
+    case "trains":
+      return s.trains.map((t) => `${t.from}→${t.to}`).join("、") || "未設定";
+    case "news":
+      return TOPICS.map(([id, label]) => `${label} ${s.news[id].length}`).join("・") + " 個來源";
+  }
+}
+
+/** Second-level page over the settings dialog. Esc / 返回 / tapping outside close only this page. */
+function SubPage({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const backRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    backRef.current?.focus();
+    // Capture phase on window runs before the settings dialog's own Esc handler, which would close everything.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return createPortal(
+    <div className="modal-backdrop sub-backdrop" onClick={(e) => (e.stopPropagation(), onClose())}>
+      <div className="modal modal-settings" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+        <header className="modal-head">
+          <button ref={backRef} className="sub-back" onClick={onClose}>
+            ‹ 返回
+          </button>
+          <h2>{title}</h2>
+        </header>
+        <div className="settings-body">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+const TITLES: Record<Section, string> = { weather: "天氣地點", markets: "市場行情", bus: "公車", trains: "火車", news: "新聞來源" };
+
 export function ContentEditor() {
   const { settings, setSettings } = useSettings();
-  const [section, setSection] = useState<Section>("weather");
+  const [open, setOpen] = useState<Section | null>(null);
+  const close = useCallback(() => setOpen(null), []);
   const props = { s: settings, set: setSettings };
   return (
     <div className="setting">
       <div className="setting-label">顯示內容</div>
-      <div className="tabs ed-tabs" role="tablist">
+      <ul className="ed-sections">
         {SECTIONS.map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={section === id} onClick={() => setSection(id)}>
-            {label}
-          </button>
+          <li key={id}>
+            <button className="ed-section" onClick={() => setOpen(id)}>
+              <span className="ed-section-name">{label}</span>
+              <span className="ed-section-sum muted small">{summary(id, settings)}</span>
+              <span className="ed-section-chev" aria-hidden>
+                ›
+              </span>
+            </button>
+          </li>
         ))}
-      </div>
-      {section === "weather" && <WeatherEditor {...props} />}
-      {section === "markets" && <MarketsEditor {...props} />}
-      {section === "bus" && <BusEditor {...props} />}
-      {section === "trains" && <TrainsEditor {...props} />}
-      {section === "news" && <NewsEditor {...props} />}
+      </ul>
+      {open && (
+        <SubPage title={TITLES[open]} onClose={close}>
+          {open === "weather" && <WeatherEditor {...props} />}
+          {open === "markets" && <MarketsEditor {...props} />}
+          {open === "bus" && <BusEditor {...props} />}
+          {open === "trains" && <TrainsEditor {...props} />}
+          {open === "news" && <NewsEditor {...props} />}
+        </SubPage>
+      )}
     </div>
   );
 }

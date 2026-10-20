@@ -119,12 +119,16 @@ const LEGEND: [ReactNode, string][] = [
 export function Reliability({ onClose }: { onClose: () => void }) {
   const { settings } = useSettings();
   const closeRef = useRef<HTMLButtonElement>(null);
+  // The page re-renders every second (clock, countdowns) and passes a new onClose each time, so
+  // keep it in a ref: re-running this effect would pull focus away from whatever input is in use.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
