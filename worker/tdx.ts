@@ -144,7 +144,9 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
     const toward = towardOf.get(`${route}|${e.StopUID}`);
     const next = hhmm(e.NextBusTime);
     const hasEstimate = typeof e.EstimateTime === "number";
-    const status = hasEstimate ? null : (STOP_STATUS[e.StopStatus] ?? "暫無資料");
+    // TDX often sends an estimate together with 尚未發車 (from the timetable): keep both, so the
+    // dashboard doesn't count it down as if the bus were on its way.
+    const status = STOP_STATUS[e.StopStatus] ?? (hasEstimate ? null : "暫無資料");
     return {
       route,
       routeId: routeIds[route] ?? String(e.RouteID ?? ""),

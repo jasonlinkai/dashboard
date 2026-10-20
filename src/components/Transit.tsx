@@ -22,13 +22,29 @@ function wanted(a: BusArrival, all: BusArrival[]): boolean {
 // TDX re-estimates about once a minute; older than this and the countdown may be off.
 const BUS_STALE_MS = BUS_ESTIMATE_STALE_MIN * 60_000;
 
-/** Seconds left, counted down locally from when TDX made the estimate. */
-const busLeft = (a: BusArrival, now: number) => (a.estimateSec == null ? null : a.estimateSec - (now - a.asOf) / 1000);
+// Same wording and thresholds as the 5284 / 大台北公車 app.
+const ARRIVING_SEC = 60; // 進站中
+const NEAR_SEC = 180; // 將到站
 
-function eta(left: number | null, status: string | null): { text: string; cls: string } {
-  if (left == null) return { text: status ?? "—", cls: "muted" };
-  if (left <= 30) return { text: "即將進站", cls: "red" };
-  return { text: countdown(left), cls: left < 180 ? "red" : "" };
+/**
+ * Seconds left, counted down locally from when TDX made the estimate. Only fresh data may say
+ * the bus is arriving: a bus held at a stop or in traffic keeps the same estimate, so the local
+ * countdown stops at the 進站中 threshold instead of running past it.
+ */
+function busLeft(a: BusArrival, now: number): number | null {
+  if (a.estimateSec == null) return null;
+  if (a.status) return a.estimateSec; // not on its way yet (尚未發車): don't count down
+  const left = a.estimateSec - (now - a.asOf) / 1000;
+  return a.estimateSec < ARRIVING_SEC ? a.estimateSec : Math.max(ARRIVING_SEC, left);
+}
+
+function eta(a: BusArrival, left: number | null): { text: string; cls: string } {
+  if (left == null) return { text: a.status ?? "—", cls: "muted" };
+  // Not departed yet: the estimate comes from the timetable, so give it as approximate minutes.
+  if (a.status) return { text: `約 ${Math.max(1, Math.round(left / 60))} 分`, cls: "muted" };
+  if (left < ARRIVING_SEC) return { text: "進站中", cls: "red" };
+  if (left < NEAR_SEC) return { text: "將到站", cls: "red" };
+  return { text: countdown(left), cls: "" };
 }
 
 export function Bus() {
@@ -55,7 +71,7 @@ export function Bus() {
             <Fragment key={g.group}>
               <li className="list-group">{g.group}</li>
               {g.rows.map((a) => {
-                const e = eta(busLeft(a, now), a.status);
+                const e = eta(a, busLeft(a, now));
                 return (
                   <li key={`${a.route}-${a.direction}-${a.stop}`}>
                     <a className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
@@ -64,6 +80,7 @@ export function Bus() {
                         <div>{a.headsign}</div>
                         <div className="muted small">
                           {a.stop} 站
+                          {a.status && a.estimateSec != null && <span>・{a.status}</span>}
                           {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (
                             <span className="error">・⚠ 預估已 {Math.floor((now - a.asOf) / 60000)} 分鐘未更新</span>
                           )}
