@@ -223,9 +223,6 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   opacity: 0.5; outline: 2px dashed color-mix(in srgb, var(--blue) 70%, transparent); outline-offset: -2px;
 }
 .reorder-active { cursor: grabbing; }
-/* While reordering train routes, show only their headers so every route is the same size. */
-.acc.reorder-active .acc-item > :not(.acc-head) { display: none; }
-.acc.reorder-active .acc-open { flex: none; }
 
 /* Every piece of data is a link to its source page. */
 .link { display: block; border-radius: 10px; transition: background 0.15s, box-shadow 0.15s; }
@@ -358,20 +355,18 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   display: block; flex: none; margin: 0 0 6px; padding: 6px 10px; border-radius: 8px; font-size: 13px;
   color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent);
 }
-/* Train routes: an accordion; the open route's list takes the remaining height and scrolls. */
-.acc { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-.acc::-webkit-scrollbar { display: none; }
-.acc-item { flex: none; display: flex; flex-direction: column; min-height: 0; }
-/* With many routes the headers scroll, but the open route keeps room for a few trains. */
-.acc-open { flex: 1 0 220px; }
-.acc-head {
-  display: flex; align-items: center; justify-content: space-between; width: 100%; flex: none;
-  border: 0; border-radius: 8px; padding: 6px 10px; background: var(--card-2); color: var(--muted);
-  font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer;
+/* Train routes: one row of chips that scrolls sideways; the selected route's trains list below. */
+.route-tabs-wrap { flex: none; margin-bottom: 4px; }
+.route-tabs {
+  display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; overscroll-behavior: contain;
+  scrollbar-width: none; padding: 2px 0;
 }
-.acc-open > .acc-head { color: var(--text); }
-.acc-chev { font-size: 18px; line-height: 1; transition: transform 0.15s; }
-.acc-open .acc-chev { transform: rotate(90deg); }
+.route-tabs::-webkit-scrollbar { display: none; }
+.route-tab {
+  flex: none; border: 0; border-radius: 999px; padding: 7px 14px; background: var(--card-2); color: var(--muted);
+  font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.route-tab[aria-selected="true"] { background: var(--blue); color: #fff; }
 .eta { font-size: 18px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .time { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
@@ -396,7 +391,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grid[data-tab="news"] > .news,
 .grid[data-tab="transit"] > .bus,
 .grid[data-tab="transit"] > .train { display: flex; }
-.grid[data-tab="transit"] { grid-template-rows: auto minmax(0, 1fr); }
+/* Bus takes what it needs, but at most half: a long bus list scrolls instead of squeezing the trains. */
+.grid[data-tab="transit"] { grid-template-rows: fit-content(50%) minmax(0, 1fr); }
 .grid[data-tab="markets"] .tiles { grid-template-rows: repeat(var(--tile-rows-2, 3), minmax(150px, 1fr)); }
 .grid[data-tab="markets"] .tile-price { font-size: 24px; }
 
@@ -525,3 +521,23 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   100% { transform: none; filter: none; }
 }
 @media (prefers-reduced-motion: reduce) { .flipping { animation: none; } }
+
+/* ---------- Scroll cue (scrollCues.ts) ---------- */
+[data-cue]::after {
+  content: ""; position: absolute; left: var(--cue-x); top: var(--cue-y); z-index: 3; pointer-events: none;
+  width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
+  background: color-mix(in srgb, var(--blue) 88%, transparent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    center / 16px no-repeat;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  animation: cue-bob 1.6s ease-in-out infinite;
+  --cue-rot: 0deg;
+}
+[data-cue="up"]::after { --cue-rot: 180deg; }
+[data-cue="right"]::after { --cue-rot: -90deg; }
+[data-cue="left"]::after { --cue-rot: 90deg; }
+@keyframes cue-bob {
+  0%, 100% { transform: rotate(var(--cue-rot)) translateY(-2px); opacity: 0.85; }
+  50% { transform: rotate(var(--cue-rot)) translateY(3px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { [data-cue]::after { animation: none; transform: rotate(var(--cue-rot)); } }

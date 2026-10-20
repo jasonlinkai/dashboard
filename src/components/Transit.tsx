@@ -1,6 +1,6 @@
 import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN_LIMIT, links } from "../config";
 import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
 import { Flip } from "./Flip";
@@ -200,7 +200,11 @@ export function Train() {
     setCollapsed(false);
     setOpenKey(keyOf(routes[i]));
   };
-  // Long-press anywhere on a route to drag it; the open route's trains fold away while dragging (CSS).
+  // Keep the selected route's chip in view (the row scrolls sideways).
+  useEffect(() => {
+    accRef.current?.querySelector(".route-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [open]);
+  // Long-press a route to drag it sideways.
   const accRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, trains: moveTo(routes, from, to) }));
   // Nothing is fetched while every route is folded.
   const route = open >= 0 ? (routes[open] as (typeof routes)[number] | undefined) : undefined;
@@ -233,27 +237,24 @@ export function Train() {
           ))}
           {current && current.alerts == null && <p className="hint error">⚠ 暫時無法確認臺鐵營運公告（停駛、通阻），請以臺鐵官網為準</p>}
           {!routes.length && <p className="hint">尚未設定火車路線，可在右上角「設定」新增。</p>}
-          {routes.length > 0 && open < 0 && <p className="hint">點一條路線查看班次。</p>}
-          <div className="acc" ref={accRef}>
-            {routes.map((r, i) => (
-              <div key={keyOf(r)} data-reorder className={`acc-item ${i === open ? "acc-open" : ""}`}>
-                <button className="acc-head" aria-expanded={i === open} onClick={() => setOpen(i)}>
-                  <span>
-                    {station(r.from)} → {station(r.to)}
-                  </span>
-                  <span className="acc-chev" aria-hidden>
-                    ›
-                  </span>
+          {/* Routes as one sideways-scrolling row; the trains below are the only vertical list, so the
+              two never fight over the same swipe. Tap the selected route again to fold the list. */}
+          <div className="route-tabs-wrap">
+            <div className="route-tabs" ref={accRef} role="tablist">
+              {routes.map((r, i) => (
+                <button key={keyOf(r)} data-reorder role="tab" className="route-tab" aria-selected={i === open} onClick={() => setOpen(i)}>
+                  {station(r.from)} → {station(r.to)}
                 </button>
-                {i === open &&
-                  (current ? (
-                    <TrainList key={i} trains={current.trains} from={r.from} to={r.to} type={trainTypeKeyword(settings.trainType)} now={now} />
-                  ) : (
-                    <p className="hint">{state.error ?? "載入中…"}</p>
-                  ))}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+          {route &&
+            (current ? (
+              <TrainList key={open} trains={current.trains} from={route.from} to={route.to} type={trainTypeKeyword(settings.trainType)} now={now} />
+            ) : (
+              <p className="hint">{state.error ?? "載入中…"}</p>
+            ))}
+          {routes.length > 0 && open < 0 && <p className="hint">點上方的路線查看班次。</p>}
         </>
       )}
     </Section>

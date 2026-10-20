@@ -391,7 +391,7 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         {routes.map((r, i) => (
           <Row key={`${r.from}-${r.to}`} name={`${r.from}→${r.to}`} i={i} count={routes.length} onMove={(by) => update(move(routes, i, by))} onRemove={() => update(without(routes, i))}>
             {r.from} → {r.to}
-            {i === 0 && <span className="muted small">・預設展開</span>}
+            {i === 0 && <span className="muted small">・預設顯示</span>}
           </Row>
         ))}
       </ul>
