@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Flip } from "./components/Flip";
 import { Markets } from "./components/Markets";
 import { News } from "./components/News";
@@ -11,6 +11,9 @@ import { useNow, useWakeLock } from "./hooks";
 import { ScreenSaver } from "./components/ScreenSaver";
 import { useFx, useSaver, useTheme } from "./theme";
 import { toast } from "./toast";
+
+// Leaflet only loads when the parking search is opened.
+const Parking = lazy(() => import("./components/Parking"));
 
 const dateFmt = new Intl.DateTimeFormat("zh-TW", { month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Taipei" });
 const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
@@ -39,6 +42,7 @@ export default function App() {
   // "#info" in the URL opens the reliability notes directly (handy for sharing the explanation).
   const [showInfo, setShowInfo] = useState(() => location.hash === "#info");
   const [showSettings, setShowSettings] = useState(() => location.hash === "#settings");
+  const [showParking, setShowParking] = useState(() => location.hash === "#parking");
   const [theme, setTheme] = useTheme();
   const [fx, setFx] = useFx();
   const [saver, setSaver] = useSaver();
@@ -63,6 +67,9 @@ export default function App() {
         <header className="top">
           <Flip className="clock" value={timeFmt.format(now)} />
           <div className="date">{dateFmt.format(now)}</div>
+          <button className="icon-btn pk-open" onClick={() => setShowParking(true)} aria-label="停車場搜尋" title="停車場搜尋">
+            P
+          </button>
           <button className="info-btn" onClick={() => setShowInfo(true)} aria-label="資料可靠度說明" title="資料可靠度說明">
             i
           </button>
@@ -87,7 +94,16 @@ export default function App() {
               {label}
             </button>
           ))}
+          <button onClick={() => setShowParking(true)}>
+            <span className="tab-icon">🅿️</span>
+            停車
+          </button>
         </nav>
+        {showParking && (
+          <Suspense fallback={<div className="parking pk-loading">載入地圖中…</div>}>
+            <Parking onClose={() => setShowParking(false)} />
+          </Suspense>
+        )}
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
         {showSettings && (
           <Settings

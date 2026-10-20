@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { observations } from "./cwa";
 import { news, quotes, searchSymbols } from "./markets";
+import { geocode, parking } from "./parking";
 import { MAX_BUS_CITIES, isBusCity } from "../src/bus-cities";
 import { bus, busRoutes, busTrips, checkCreds, stationNames, train } from "./tdx";
 import { type Env, type Freshness, freshness, setPersistentStore, type TdxCreds, tdxCreds } from "./util";
@@ -24,7 +25,7 @@ function serve(request: Request, env: Env): Promise<Response> {
 // each with its own cache and counter, which together blow through that. So every TDX request goes
 // through one Durable Object: a single shared cache and rate counter, plus durable storage for the
 // daily timetable / station list / route info.
-const TDX_PATHS = new Set(["/api/bus", "/api/bus-routes", "/api/bus-trips", "/api/train", "/api/stations", "/api/tdx-check"]);
+const TDX_PATHS = new Set(["/api/bus", "/api/bus-routes", "/api/bus-trips", "/api/train", "/api/stations", "/api/tdx-check", "/api/parking", "/api/geocode"]);
 
 /** A visitor's own TDX key from the request headers (used for this request only, never stored). */
 function ownCreds(request: Request): TdxCreds | null {
@@ -81,6 +82,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
         return json(await busTrips(env, q.get("city") ?? "", q.get("route") ?? ""));
       case "/api/train":
         return json(await train(env, q.get("from") ?? "", q.get("to") ?? "臺北", q.get("type") ?? "區間", Number(q.get("limit") ?? 6)));
+      case "/api/parking":
+        return json(await parking(env, Number(q.get("lat")), Number(q.get("lon")), Number(q.get("r") ?? 500)));
+      case "/api/geocode":
+        return json(await geocode(env, q.get("q") ?? ""));
       case "/api/tdx-check":
         return json(await checkCreds(env));
       case "/api/stations":

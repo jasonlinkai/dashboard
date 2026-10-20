@@ -81,3 +81,61 @@ export interface ObservationResponse {
   configured: boolean;
   observations: Observation[];
 }
+
+// ---------- Parking ----------
+
+/** A place from the geocoder (address or landmark). */
+export interface GeoHit {
+  name: string;
+  address: string;
+  lat: number;
+  lon: number;
+}
+
+/** Free / total spaces of one kind; total is null when the source doesn't say. */
+export type SpaceCount = { available: number; total: number | null } | null;
+
+export interface ParkingLot {
+  id: string;
+  city: string; // TDX city code
+  name: string;
+  lat: number;
+  lon: number;
+  address: string;
+  /** TDX's Description, e.g. 「平面型停車場，小型車20格」 */
+  description: string;
+  /** The rate exactly as published ("" = not provided). */
+  fare: string;
+  /** Read from `fare` when its wording is clear; null = can't tell (always show `fare` too). */
+  fareEstimate: import("./parking-fare").FareEstimate | null;
+  /** Straight-line distance from the search point, metres. */
+  distance: number;
+  /**
+   * ok: the live feed has this car park. none: it isn't in the live feed (no live spaces).
+   * unavailable: the live feed couldn't be fetched right now.
+   */
+  live: "ok" | "none" | "unavailable";
+  car: SpaceCount;
+  scooter: SpaceCount;
+  /** Free spaces with no breakdown by vehicle type. */
+  spaces: SpaceCount;
+  serviceStatus: number | null;
+  /** When the car park reported its count (ISO). */
+  liveTime: string | null;
+}
+
+export interface ParkingResponse {
+  center: { lat: number; lon: number };
+  radius: number;
+  cities: {
+    city: string;
+    name: string;
+    /** empty: TDX has no car park list for this city (e.g. 新北市 at the time of writing). */
+    lots: "ok" | "empty" | "error";
+    /** none: TDX has no live spaces for this city at all. */
+    live: "ok" | "none" | "error";
+    liveTime: string | null;
+    error?: string;
+  }[];
+  lots: ParkingLot[];
+}

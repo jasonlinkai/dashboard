@@ -28,5 +28,5 @@ export function tdxHeaders(k: TdxKey | null = loadTdxKey()): Record<string, stri
   return k ? { "X-TDX-Id": k.id, "X-TDX-Secret": k.secret } : {};
 }
 
-const TDX_API = /^\/api\/(bus|train|stations|tdx-check)/;
+const TDX_API = /^\/api\/(bus|train|stations|tdx-check|parking|geocode)/;
 export const usesTdx = (url: string) => TDX_API.test(url);

@@ -577,3 +577,92 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .rel-sources dd { margin: 0; color: var(--muted); }
 .rel-sources a { color: var(--blue); text-decoration: underline; }
 @media (max-width: 639px) { .rel-sources dl > div { grid-template-columns: 1fr; gap: 0; } }
+
+/* ---------- Parking search (full screen) ---------- */
+
+.pk-open { padding: 0; font: 700 15px/1 -apple-system, BlinkMacSystemFont, sans-serif; }
+.parking {
+  position: fixed; inset: 0; z-index: 20; background: var(--bg); color: var(--text);
+  display: flex; flex-direction: column; gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+}
+.pk-loading { align-items: center; justify-content: center; color: var(--muted); }
+.pk-head { display: flex; align-items: center; flex: none; }
+.pk-head h2 { margin: 0; font-size: 19px; flex: 1; }
+.pk-search { display: flex; gap: 6px; flex: none; }
+/* 16px keeps iOS from zooming the page when the field is focused. */
+.pk-search input {
+  flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
+}
+.pk-btn {
+  flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 10px; padding: 8px 12px; font-size: 14px; white-space: nowrap;
+}
+.pk-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+.pk-btn:disabled { opacity: 0.55; }
+.pk-hits {
+  flex: none; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+}
+.pk-hits li > .muted { display: block; padding: 4px 8px; }
+.pk-hits button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; border: 0; background: none; text-align: left; padding: 7px 8px; border-radius: 8px; }
+.pk-hits button:active { background: var(--press); }
+.pk-controls { display: flex; gap: 8px; flex: none; flex-wrap: wrap; }
+.pk-controls .segmented { flex: 1 1 220px; }
+.pk-controls .segmented button { padding: 6px 0; }
+.pk-body { flex: 1; min-height: 0; display: grid; gap: 8px; grid-template-rows: minmax(200px, 42%) minmax(0, 1fr); }
+@media (min-width: 900px) { .pk-body { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1.4fr) minmax(340px, 1fr); padding-bottom: max(12px, env(safe-area-inset-bottom)); } }
+.pk-map { border-radius: 12px; border: 1px solid var(--line); overflow: hidden; background: var(--card-2); min-height: 0; }
+.pk-list {
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.pk-summary { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; font-size: 14px; padding: 2px 2px 6px; }
+.pk-note { margin: 0 0 6px; font-size: 13px; line-height: 1.45; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; }
+.pk-note.warn { color: var(--accent); }
+.pk-lots { display: grid; gap: 6px; }
+.pk-lot { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.pk-lot.open { border-color: var(--blue); }
+.pk-lot-main { display: flex; align-items: flex-start; gap: 9px; width: 100%; border: 0; background: none; text-align: left; padding: 9px 11px; }
+.pk-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; background: var(--muted); }
+.pk-dot.ok { background: var(--green); }
+.pk-dot.low { background: var(--accent); }
+.pk-dot.full { background: var(--red); }
+.pk-lot-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pk-lot-name { font-weight: 600; font-size: 15px; }
+.pk-live, .pk-fare { font-size: 13px; }
+.pk-live.unknown { color: var(--muted); }
+.pk-live.full { color: var(--red); }
+.pk-live b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.pk-live.ok b { color: var(--green); }
+.pk-live.low b { color: var(--accent); }
+.pk-fare { color: var(--muted); }
+.pk-dist { flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.pk-detail { padding: 0 11px 11px 30px; font-size: 13px; line-height: 1.5; display: grid; gap: 4px; }
+.pk-detail p { margin: 0; }
+.pk-detail p b { color: var(--muted); font-weight: 600; margin-right: 8px; }
+.pk-fare-full { white-space: pre-line; }
+.pk-nav { display: block; text-align: center; margin-top: 6px; }
+.pk-source { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 10px 2px 0; }
+
+/* Map pins */
+.pk-pin {
+  transform: translate(-50%, -50%); min-width: 26px; height: 22px; padding: 0 5px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center; white-space: nowrap;
+  font: 700 12px/1 -apple-system, BlinkMacSystemFont, sans-serif; color: #fff;
+  background: #7d8590; border: 2px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+.pk-pin.ok { background: #1f9d5a; }
+.pk-pin.low { background: #c98a12; }
+.pk-pin.full { background: #d93636; }
+.pk-pin.sel { outline: 3px solid #1a73e8; transform: translate(-50%, -50%) scale(1.25); }
+.pk-dest {
+  width: 18px; height: 18px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: #1a73e8; border: 3px solid #fff; box-shadow: 0 0 0 4px rgb(26 115 232 / 0.3), 0 1px 4px rgb(0 0 0 / 0.4);
+}
+.pk-map .leaflet-popup-content { font-size: 13px; line-height: 1.5; margin: 9px 12px; }
+.pk-popup-nav { color: #1a73e8 !important; font-weight: 600; }
+.pk-dot.old { background: none; border: 2px solid var(--muted); }
+.pk-pin.old { background: #9aa3ad; }
+.pk-tag { margin-left: 6px; font-size: 11px; font-weight: 600; padding: 1px 5px; border-radius: 5px; background: var(--card-2); color: var(--muted); vertical-align: 2px; }

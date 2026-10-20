@@ -1,0 +1,530 @@
+// Full-screen car park search: pick a destination (search, my location, or tap the map), see the
+// TDX car parks within a radius on a map and in a sortable list, and hand off to Google Maps.
+// Loaded on demand (Leaflet is ~150 KB), so the board itself stays light.
+
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getJSON } from "../hooks";
+import type { GeoHit, ParkingLot, ParkingResponse, SpaceCount } from "../shared";
+import { toast } from "../toast";
+
+const RADII = [300, 500, 1000, 2000] as const;
+type Radius = (typeof RADII)[number];
+type Sort = "distance" | "fare" | "spaces";
+interface Dest {
+  lat: number;
+  lon: number;
+  label: string;
+}
+
+const REFRESH_SEC = 120; // the server refreshes live spaces at most every 2 minutes
+/** A car park's own count older than this is marked as possibly out of date. */
+const LIVE_OLD_MIN = 15;
+const STORE = "parking.v1";
+
+function load(): { dest: Dest | null; radius: Radius; sort: Sort } {
+  try {
+    const v = JSON.parse(localStorage.getItem(STORE) ?? "{}");
+    const dest =
+      v.dest && Number.isFinite(v.dest.lat) && Number.isFinite(v.dest.lon) && typeof v.dest.label === "string" ? (v.dest as Dest) : null;
+    return { dest, radius: RADII.includes(v.radius) ? v.radius : 500, sort: ["distance", "fare", "spaces"].includes(v.sort) ? v.sort : "distance" };
+  } catch {
+    return { dest: null, radius: 500, sort: "distance" };
+  }
+}
+
+const fmtDistance = (m: number) => (m < 1000 ? `${m} 公尺` : `${(m / 1000).toFixed(1)} 公里`);
+const hm = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
+const navUrl = (p: { lat: number; lon: number }) =>
+  `https://www.google.com/maps/dir/?api=1&destination=${p.lat.toFixed(6)},${p.lon.toFixed(6)}&travelmode=driving`;
+
+/** The count to show and compare: cars when broken down, else the undivided total. */
+const mainCount = (p: ParkingLot): SpaceCount => p.car ?? p.spaces;
+
+/** old: there is a count, but it is too old to trust, so it isn't coloured as good or bad. */
+type Level = "ok" | "low" | "full" | "old" | "unknown";
+function level(p: ParkingLot, now = Date.now()): Level {
+  const c = mainCount(p);
+  if (p.live !== "ok" || !c) return "unknown";
+  const age = liveAgeMin(p, now);
+  if (age == null || age > LIVE_OLD_MIN) return "old";
+  if (c.available === 0) return "full";
+  if (c.available <= 5 || (c.total && c.available / c.total < 0.1)) return "low";
+  return "ok";
+}
+
+function liveAgeMin(p: ParkingLot, now: number): number | null {
+  const t = p.liveTime ? Date.parse(p.liveTime) : NaN;
+  return Number.isFinite(t) ? Math.max(0, Math.round((now - t) / 60000)) : null;
+}
+
+function fareText(p: ParkingLot): string {
+  const e = p.fareEstimate;
+  const r = (x: { min: number; max: number }) => (x.min === x.max ? `${x.min}` : `${x.min}–${x.max}`);
+  if (e?.hourly) return `約 ${r(e.hourly)} 元/時`;
+  if (e?.perEntry) return `約 ${r(e.perEntry)} 元/次`;
+  if (!p.fare) return "未提供費率";
+  if (/現場/.test(p.fare) && p.fare.length < 12) return "費率依現場公告";
+  return "費率見說明";
+}
+
+function sortLots(lots: ParkingLot[], sort: Sort): ParkingLot[] {
+  const list = [...lots];
+  if (sort === "fare") {
+    // Hourly estimates first (cheapest first), then flat per-entry, then unknown — each by distance.
+    const key = (p: ParkingLot) => p.fareEstimate?.hourly?.min ?? (p.fareEstimate?.perEntry ? 1e6 + p.fareEstimate.perEntry.min : Infinity);
+    list.sort((a, b) => key(a) - key(b) || a.distance - b.distance);
+  } else if (sort === "spaces") {
+    // Known free spaces, most first; car parks without live data go last.
+    const key = (p: ParkingLot) => (p.live === "ok" ? (mainCount(p)?.available ?? -1) : -1);
+    list.sort((a, b) => key(b) - key(a) || a.distance - b.distance);
+  }
+  return list;
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+export default function Parking({ onClose }: { onClose: () => void }) {
+  const saved = useMemo(load, []);
+  const [dest, setDest] = useState<Dest | null>(saved.dest);
+  const [radius, setRadius] = useState<Radius>(saved.radius);
+  const [sort, setSort] = useState<Sort>(saved.sort);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<GeoHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [data, setData] = useState<ParkingResponse | null>(null);
+  const [stale, setStale] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ dest, radius, sort }));
+    } catch {}
+  }, [dest, radius, sort]);
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Fetch for the current destination, then refresh live spaces every 2 minutes while visible.
+  useEffect(() => {
+    if (!dest) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = async (first: boolean) => {
+      if (!first && document.visibilityState !== "visible") {
+        timer = setTimeout(() => run(false), 10_000);
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await getJSON<ParkingResponse>(`/api/parking?lat=${dest.lat.toFixed(6)}&lon=${dest.lon.toFixed(6)}&r=${radius}`);
+        if (!active) return;
+        setData(res.data);
+        setStale(res.stale);
+        setError(null);
+        setNow(Date.now());
+      } catch (e) {
+        if (!active) return;
+        setError(e instanceof Error ? e.message : String(e));
+        if (first) setData(null);
+      } finally {
+        if (active) setLoading(false);
+        if (active) timer = setTimeout(() => run(false), REFRESH_SEC * 1000);
+      }
+    };
+    setSelected(null);
+    run(true);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [dest, radius]);
+
+  const lots = useMemo(() => sortLots(data?.lots ?? [], sort), [data, sort]);
+
+  const search = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    setSearching(true);
+    try {
+      const res = await getJSON<GeoHit[]>(`/api/geocode?q=${encodeURIComponent(q)}`);
+      if (!res.data.length) {
+        setHits(null);
+        toast("找不到這個地點，換個說法，或直接在地圖上點選位置", "error");
+      } else if (res.data.length === 1) {
+        choose(res.data[0]);
+      } else setHits(res.data);
+    } catch (err) {
+      toast(`搜尋失敗：${err instanceof Error ? err.message : err}`, "error");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const choose = (h: GeoHit) => {
+    setHits(null);
+    setDest({ lat: h.lat, lon: h.lon, label: h.name || h.address });
+    toast(`目的地：${h.name || h.address}`, "info");
+  };
+
+  const locate = () => {
+    if (!("geolocation" in navigator)) return toast("這個瀏覽器無法取得位置", "error");
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        setHits(null);
+        setDest({ lat: pos.coords.latitude, lon: pos.coords.longitude, label: "目前位置" });
+        toast("已改用目前位置", "info");
+      },
+      (err) => {
+        setLocating(false);
+        toast(err.code === err.PERMISSION_DENIED ? "沒有位置權限，請在瀏覽器設定允許，或改用搜尋" : "無法取得目前位置", "error");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  };
+
+  const pickOnMap = (lat: number, lon: number) => {
+    setHits(null);
+    setDest({ lat, lon, label: "地圖上選的位置" });
+    toast("已設為目的地", "info");
+  };
+
+  const select = (id: string, from: "map" | "list") => {
+    setSelected(id);
+    if (from === "map") document.getElementById(`lot-${id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+
+  // "No live feed" only matters for a city that has car parks in range.
+  const problems = (data?.cities ?? []).filter(
+    (c) => c.lots !== "ok" || (c.live !== "ok" && data!.lots.some((p) => p.city === c.city)),
+  );
+  const noLiveAtAll = data && data.lots.length > 0 && data.lots.every((p) => p.live !== "ok");
+
+  return (
+    <div className="parking" role="dialog" aria-modal="true" aria-labelledby="parking-title">
+      <header className="pk-head">
+        <h2 id="parking-title">停車場搜尋</h2>
+        <button className="modal-close" onClick={onClose} aria-label="關閉">
+          ✕
+        </button>
+      </header>
+
+      <form className="pk-search" onSubmit={search}>
+        <input
+          type="search"
+          enterKeyHint="search"
+          placeholder="目的地：地址或地標，例如 台北101"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="目的地"
+        />
+        <button type="submit" className="pk-btn primary" disabled={searching || !query.trim()}>
+          {searching ? "搜尋中…" : "搜尋"}
+        </button>
+        <button type="button" className="pk-btn" onClick={locate} disabled={locating} title="用目前位置">
+          {locating ? "定位中…" : "📍 目前位置"}
+        </button>
+      </form>
+
+      {hits && (
+        <ul className="pk-hits" aria-label="搜尋結果">
+          <li className="muted small">找到多個地點，請選擇：</li>
+          {hits.map((h, i) => (
+            <li key={i}>
+              <button onClick={() => choose(h)}>
+                <b>{h.name}</b>
+                {h.address && h.address !== h.name && <span className="muted small">{h.address}</span>}
+              </button>
+            </li>
+          ))}
+          <li>
+            <button className="muted small" onClick={() => setHits(null)}>
+              都不是，關閉（也可以直接在地圖上點選位置）
+            </button>
+          </li>
+        </ul>
+      )}
+
+      <div className="pk-controls">
+        <div className="segmented" role="radiogroup" aria-label="搜尋半徑">
+          {RADII.map((r) => (
+            <button key={r} role="radio" aria-checked={radius === r} onClick={() => setRadius(r)}>
+              {r < 1000 ? `${r}m` : `${r / 1000}km`}
+            </button>
+          ))}
+        </div>
+        <div className="segmented" role="radiogroup" aria-label="排序">
+          {(
+            [
+              ["distance", "距離"],
+              ["fare", "費率"],
+              ["spaces", "空位"],
+            ] as const
+          ).map(([k, label]) => (
+            <button key={k} role="radio" aria-checked={sort === k} onClick={() => setSort(k)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="pk-body">
+        <ParkingMap dest={dest} radius={radius} lots={lots} selected={selected} onSelect={(id) => select(id, "map")} onPick={pickOnMap} />
+
+        <div className="pk-list">
+          {!dest && <p className="pk-note">輸入目的地、按「目前位置」，或直接在地圖上點一下，就會列出附近的停車場。</p>}
+          {dest && (
+            <div className="pk-summary">
+              <span>
+                <b>{dest.label}</b> 半徑 {fmtDistance(radius)}內
+                {data && !loading && <> ・{data.lots.length} 個停車場</>}
+                {loading && " ・載入中…"}
+              </span>
+              {data && (
+                <span className="muted tiny">
+                  更新於 {hm.format(now)}
+                  {stale && <span className="red">・即時資料延遲</span>}
+                </span>
+              )}
+            </div>
+          )}
+          {error && (
+            <p className="pk-note red">
+              ⚠ {error}
+              {data ? "（顯示上次結果）" : ""}
+            </p>
+          )}
+          {problems.map((c) => (
+            <p key={c.city} className="pk-note warn">
+              {c.lots === "empty"
+                ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的停車場不會出現在結果中`
+                : c.lots === "error"
+                ? `⚠ ${c.name}停車場資料暫時無法取得（${c.error ?? ""}）`
+                : c.live === "error"
+                  ? `⚠ ${c.name}即時空位暫時無法取得，以下不顯示空位（${c.error ?? ""}）`
+                  : `${c.name}目前沒有提供即時空位資料`}
+            </p>
+          ))}
+          {data && !loading && data.lots.length === 0 && !error && (
+            <p className="pk-note">
+              這個範圍內沒有找到停車場。可以加大半徑。
+              {" 注意：TDX 的停車場清單並未涵蓋所有停車場，沒列出不代表附近沒有停車場。"}
+            </p>
+          )}
+          {noLiveAtAll && <p className="pk-note">這附近的停車場都沒有即時空位資料，空位請以現場為準。</p>}
+
+          <ol className="pk-lots">
+            {lots.map((p) => (
+              <LotItem key={p.id} lot={p} now={now} open={selected === p.id} onToggle={() => setSelected(selected === p.id ? null : p.id)} />
+            ))}
+          </ol>
+
+          <p className="pk-source">
+            停車場與即時空位：交通部 TDX 運輸資料流通服務（政府資料開放授權條款－第1版）・地圖：內政部國土測繪中心・距離為直線距離・費率由業者公告文字推估，實際以現場為準
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SpaceLine({ lot, now }: { lot: ParkingLot; now: number }) {
+  if (lot.live === "unavailable") return <span className="pk-live unknown">即時空位暫時無法取得</span>;
+  if (lot.live === "none") return <span className="pk-live unknown">無即時空位資料</span>;
+  const c = mainCount(lot);
+  const age = liveAgeMin(lot, now);
+  const time = lot.liveTime ? hm.format(new Date(lot.liveTime)) : null;
+  const old = age != null && age > LIVE_OLD_MIN;
+  const closed = lot.serviceStatus != null && lot.serviceStatus !== 1;
+  return (
+    <span className={`pk-live ${level(lot, now)}`}>
+      {c ? (
+        <>
+          {lot.car ? "汽車" : "空位"} {c.available === 0 ? "已滿" : <>剩 <b>{c.available}</b></>}
+          {c.total != null && <span className="muted"> / {c.total}</span>}
+        </>
+      ) : (
+        "汽車空位未提供"
+      )}
+      {lot.scooter && <span className="muted">・機車剩 {lot.scooter.available}</span>}
+      {time && (
+        <span className={old ? "red" : "muted"}>
+          ・{time}
+          {old && `（${age! >= 120 ? `${Math.round(age! / 60)} 小時` : `${age} 分鐘`}前，可能已過時）`}
+        </span>
+      )}
+      {closed && <span className="red">・來源標示非營業中</span>}
+    </span>
+  );
+}
+
+function LotItem({ lot, now, open, onToggle }: { lot: ParkingLot; now: number; open: boolean; onToggle: () => void }) {
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (open) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [open]);
+  return (
+    <li id={`lot-${lot.id}`} ref={ref} className={`pk-lot ${open ? "open" : ""}`}>
+      <button className="pk-lot-main" onClick={onToggle} aria-expanded={open}>
+        <span className={`pk-dot ${level(lot, now)}`} aria-hidden />
+
+        <span className="pk-lot-text">
+          <span className="pk-lot-name">
+            {lot.name}
+            {/機車/.test(lot.name) && !/汽車/.test(lot.name) && <span className="pk-tag">機車</span>}
+          </span>
+          <SpaceLine lot={lot} now={now} />
+          <span className="pk-fare">{fareText(lot)}</span>
+        </span>
+        <span className="pk-dist">{fmtDistance(lot.distance)}</span>
+      </button>
+      {open && (
+        <div className="pk-detail">
+          {lot.address && (
+            <p>
+              <b>地址</b>
+              {lot.address}
+            </p>
+          )}
+          <p>
+            <b>費率</b>
+            <span className="pk-fare-full">{lot.fare || "資料來源未提供"}</span>
+          </p>
+          {lot.fareEstimate && <p className="muted tiny">「{fareText(lot)}」是從上面的文字推估的小型車臨停費率，實際以現場公告為準。</p>}
+          {lot.description && (
+            <p>
+              <b>說明</b>
+              {lot.description}
+            </p>
+          )}
+          <a className="pk-btn primary pk-nav" href={navUrl(lot)} target="_blank" rel="noopener noreferrer">
+            用 Google 地圖導航
+          </a>
+        </div>
+      )}
+    </li>
+  );
+}
+
+// ---------- Map ----------
+
+const TILE_URL = "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}";
+const TILE_ATTR = '<a href="https://maps.nlsc.gov.tw/" target="_blank" rel="noopener">© 內政部國土測繪中心</a>';
+const TAIWAN: L.LatLngExpression = [23.7, 120.95];
+
+function lotIcon(p: ParkingLot, selected: boolean) {
+  const c = mainCount(p);
+  const text = p.live === "ok" && c ? (c.available > 999 ? "999+" : String(c.available)) : "P";
+  return L.divIcon({
+    className: "",
+    html: `<div class="pk-pin ${level(p)}${selected ? " sel" : ""}">${text}</div>`,
+    iconSize: [0, 0],
+  });
+}
+
+function ParkingMap({
+  dest,
+  radius,
+  lots,
+  selected,
+  onSelect,
+  onPick,
+}: {
+  dest: Dest | null;
+  radius: number;
+  lots: ParkingLot[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+  onPick: (lat: number, lon: number) => void;
+}) {
+  const el = useRef<HTMLDivElement>(null);
+  const map = useRef<L.Map | null>(null);
+  const layer = useRef<L.LayerGroup | null>(null);
+  const markers = useRef(new Map<string, L.Marker>());
+  const fitted = useRef("");
+  /** The circle to keep in view until the user moves the map themselves. */
+  const fitTo = useRef<L.LatLngBounds | null>(null);
+  const cb = useRef({ onSelect, onPick });
+  cb.current = { onSelect, onPick };
+
+  useEffect(() => {
+    const m = L.map(el.current!, { zoomControl: true, attributionControl: true }).setView(TAIWAN, 7);
+    L.tileLayer(TILE_URL, { maxZoom: 19, maxNativeZoom: 19, attribution: TILE_ATTR }).addTo(m);
+    m.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
+    m.on("click", (e: L.LeafletMouseEvent) => cb.current.onPick(e.latlng.lat, e.latlng.lng));
+    m.on("dragstart", () => (fitTo.current = null));
+    layer.current = L.layerGroup().addTo(m);
+    map.current = m;
+    // The panel lays out after mount (and the phone rotates): tell Leaflet its real size, and
+    // re-zoom to the search circle, which may have been fitted while the map was still 0×0.
+    const ro = new ResizeObserver(() => {
+      m.invalidateSize();
+      if (fitTo.current) m.fitBounds(fitTo.current, { padding: [12, 12], animate: false });
+    });
+    ro.observe(el.current!);
+    return () => {
+      ro.disconnect();
+      m.remove();
+      map.current = null;
+    };
+  }, []);
+
+  // Destination, radius and car parks.
+  useEffect(() => {
+    const m = map.current;
+    const g = layer.current;
+    if (!m || !g) return;
+    g.clearLayers();
+    markers.current.clear();
+    if (!dest) return;
+    const circle = L.circle([dest.lat, dest.lon], { radius, color: "#5aa9ff", weight: 1.5, fillOpacity: 0.06, interactive: false }).addTo(g);
+    L.marker([dest.lat, dest.lon], {
+      icon: L.divIcon({ className: "", html: '<div class="pk-dest" title="目的地"></div>', iconSize: [0, 0] }),
+      interactive: false,
+      zIndexOffset: 1000,
+    }).addTo(g);
+    for (const p of lots) {
+      const mk = L.marker([p.lat, p.lon], { icon: lotIcon(p, false), title: p.name, riseOnHover: true })
+        .bindPopup(
+          `<b>${esc(p.name)}</b><br>${esc(fmtDistance(p.distance))}・${esc(fareText(p))}<br><a class="pk-popup-nav" href="${navUrl(p)}" target="_blank" rel="noopener noreferrer">Google 地圖導航 ›</a>`,
+          { closeButton: false, autoPanPadding: [20, 20] },
+        )
+        .on("click", () => cb.current.onSelect(p.id))
+        .addTo(g);
+      markers.current.set(p.id, mk);
+    }
+    // Zoom to the circle only when the search changes, not on every 2-minute refresh.
+    const key = `${dest.lat},${dest.lon},${radius}`;
+    if (fitted.current !== key) {
+      fitted.current = key;
+      fitTo.current = circle.getBounds();
+      m.invalidateSize();
+      m.fitBounds(fitTo.current, { padding: [12, 12] });
+    }
+  }, [dest, radius, lots]);
+
+  useEffect(() => {
+    for (const [id, mk] of markers.current) {
+      const p = lots.find((x) => x.id === id);
+      if (!p) continue;
+      mk.setIcon(lotIcon(p, id === selected));
+      mk.setZIndexOffset(id === selected ? 900 : 0);
+      if (id === selected && !mk.isPopupOpen()) mk.openPopup();
+    }
+  }, [selected, lots]);
+
+  return <div ref={el} className="pk-map" aria-label="停車場地圖，點地圖可設定目的地" />;
+}

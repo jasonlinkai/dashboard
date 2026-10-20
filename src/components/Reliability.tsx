@@ -110,13 +110,15 @@ function blocks(settings: Settings): Block[] {
 
 /** Who the data comes from and on what terms (the licences require crediting the source). */
 const SOURCES: [name: string, href: string, use: string, licence: string][] = [
-  ["交通部 TDX 運輸資料流通服務", "https://tdx.transportdata.tw/", "公車到站、臺鐵時刻／即時／營運公告", "政府資料開放授權條款－第 1 版"],
+  ["交通部 TDX 運輸資料流通服務", "https://tdx.transportdata.tw/", "公車到站、臺鐵時刻／即時／營運公告、停車場與即時空位、地點搜尋", "政府資料開放授權條款－第 1 版"],
   ["中央氣象署開放資料", "https://opendata.cwa.gov.tw/", "測站實測、鄉鎮清單與座標", "政府資料開放授權條款－第 1 版"],
   ["臺灣證券交易所 OpenAPI", "https://openapi.twse.com.tw/", "上市股票、ETF 中文名稱", "政府資料開放授權條款－第 1 版"],
   ["Open-Meteo", "https://open-meteo.com/", "天氣預報（逐時、高低溫、降雨機率）", "CC BY 4.0，免費 API 限非商業使用"],
   ["Yahoo Finance", "https://finance.yahoo.com/", "行情報價與走勢", "非官方介面，僅供個人參考，報價以券商為準"],
   ["各新聞媒體", "https://www.cna.com.tw/", "新聞標題與連結（RSS、TVBS 網站地圖）", "版權屬各媒體；只顯示標題並連回原文"],
-  ["Google 地圖", "https://www.google.com/maps", "公車路線連結", "僅開啟搜尋連結"],
+  ["內政部國土測繪中心 電子地圖", "https://maps.nlsc.gov.tw/", "停車場搜尋的底圖", "政府資料開放授權條款－第 1 版，標示來源"],
+  ["Leaflet", "https://leafletjs.com/", "互動地圖元件", "BSD-2-Clause 開源授權"],
+  ["Google 地圖", "https://www.google.com/maps", "公車路線、停車場導航連結", "僅開啟網址連結，不使用 API"],
 ];
 
 const LEGEND: [ReactNode, string][] = [

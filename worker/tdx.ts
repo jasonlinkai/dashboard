@@ -46,7 +46,8 @@ export async function checkCreds(env: Env): Promise<{ ok: true }> {
 const BUDGET_PER_MIN = 4;
 const recentCalls = new Map<string, number[]>();
 
-async function tdx(env: Env, path: string, query: Record<string, string> = {}): Promise<unknown> {
+/** `path` is under /api/basic unless it starts with /api/ (e.g. /api/advanced/V3/Map/...). */
+export async function tdx(env: Env, path: string, query: Record<string, string> = {}): Promise<unknown> {
   const creds = credsFor(env);
   if (!creds) throw new Error("尚未設定 TDX 金鑰");
   const own = Boolean(tdxCreds.getStore());
@@ -59,7 +60,7 @@ async function tdx(env: Env, path: string, query: Record<string, string> = {}): 
   const auth = await accessToken(creds, own);
   recent.push(now);
   const qs = new URLSearchParams({ ...query, $format: "JSON" });
-  const res = await fetch(`${API}${path}?${qs}`, {
+  const res = await fetch(`${path.startsWith("/api/") ? API.replace("/api/basic", "") : API}${path}?${qs}`, {
     headers: { Authorization: `Bearer ${auth}`, "Accept-Encoding": "br, gzip" },
   });
   if (res.status === 429) throw new Error(full);
