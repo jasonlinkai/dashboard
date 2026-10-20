@@ -58,11 +58,6 @@ export default function App() {
         <header className="top">
           <div className="clock">{timeFmt.format(now)}</div>
           <div className="date">{dateFmt.format(now)}</div>
-          {wake.supported && (
-            <button className={`pill ${wake.enabled ? "on" : ""}`} onClick={wake.toggle} title="開啟後螢幕不會自動關閉">
-              {wake.enabled ? "☀︎ 螢幕常亮" : "☾ 自動休眠"}
-            </button>
-          )}
           <button className="info-btn" onClick={() => setShowInfo(true)} aria-label="資料可靠度說明" title="資料可靠度說明">
             i
           </button>
@@ -90,7 +85,7 @@ export default function App() {
         </nav>
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
         {showSettings && (
-          <Settings theme={theme} onTheme={setTheme} fx={fx} onFx={setFx} onClose={() => setShowSettings(false)} />
+          <Settings theme={theme} onTheme={setTheme} fx={fx} onFx={setFx} wake={wake} onClose={() => setShowSettings(false)} />
         )}
       </div>
     </>

@@ -27,8 +27,8 @@ export interface BusStop {
   direction: 0 | 1 | "auto";
   /** 只看會開往這一站的車（取代 direction）；環狀線同一站經過兩次時，用它選對邊 */
   toward?: string;
-  /** 列表分組標題；同組的排在一起，依設定順序 */
-  group: string;
+  /** 舊版的分組標題；已不使用，匯入時忽略 */
+  group?: string;
 }
 
 export interface TrainRoute {
@@ -102,11 +102,11 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   markets: ["^TWII", "^IXIC", "BTC-USD", "GC=F", "TWD=X", "^IRX", "^FVX", "^TNX", "^TYX"],
   bus: [
-    { city: "NewTaipei", route: "藍23", stop: "忠孝里", direction: "auto", group: "往台北" },
-    { city: "NewTaipei", route: "藍39", stop: "樟樹實中", direction: "auto", group: "往台北" },
+    { city: "NewTaipei", route: "藍23", stop: "忠孝里", direction: "auto" },
+    { city: "NewTaipei", route: "藍39", stop: "樟樹實中", direction: "auto" },
     // 站名可以寫簡稱：TDX 上是「汐科站北站」、「南港行政中心(南港車站)」
-    { city: "NewTaipei", route: "F913", stop: "汐科站北站", direction: "auto", toward: "日月光社區", group: "往日月光社區" },
-    { city: "NewTaipei", route: "590", stop: "南港車站", direction: "auto", toward: "日月光社區", group: "往日月光社區" },
+    { city: "NewTaipei", route: "F913", stop: "汐科站北站", direction: "auto", toward: "日月光社區" },
+    { city: "NewTaipei", route: "590", stop: "南港車站", direction: "auto", toward: "日月光社區" },
   ],
   trains: [
     { from: "汐科", to: "臺北" },
@@ -214,7 +214,7 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
       const at = `bus[${i}]`;
       if (!isObj(b)) return err(`${at} 必須是物件`);
       if (!BUS_CITIES.some(([id]) => id === b.city)) return err(`${at}：city 只能是 ${BUS_CITIES.map(([id]) => id).join(" 或 ")}`);
-      if (!text(b.route, 12) || !text(b.stop, 24) || !text(b.group, 12)) return err(`${at}：route、stop、group 必填（不能含 , 或 :）`);
+      if (!text(b.route, 12) || !text(b.stop, 24)) return err(`${at}：route、stop 必填（不能含 , 或 :）`);
       const direction = b.direction ?? "auto";
       if (direction !== "auto" && direction !== 0 && direction !== 1) return err(`${at}：direction 只能是 "auto"、0 或 1`);
       if (b.toward !== undefined && !text(b.toward, 24)) return err(`${at}：toward 不能是空字串，也不能含 , 或 :`);
@@ -224,7 +224,6 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
         stop: b.stop as string,
         direction,
         ...(b.toward ? { toward: b.toward as string } : {}),
-        group: b.group as string,
       });
     });
     const routes = bus.map((b) => b.route);

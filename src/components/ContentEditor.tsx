@@ -309,19 +309,18 @@ const busLabel = (b: BusStop) => `${b.stop}${b.toward ? `，往${b.toward}` : ""
 function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
   const stops = s.bus;
   const update = (bus: BusStop[]) => set({ ...s, bus });
-  const groups = [...new Set(stops.map((b) => b.group))];
-  const [form, setForm] = useState({ city: "NewTaipei" as BusCity, route: "", stop: "", toward: "", group: groups[0] ?? "往台北" });
+  const [form, setForm] = useState({ city: "NewTaipei" as BusCity, route: "", stop: "", toward: "" });
   const clean = (v: string) => v.trim().replace(/[,:]/g, "");
   const route = clean(form.route);
   const dup = stops.some((b) => b.route === route);
-  const ok = route && clean(form.stop) && clean(form.group) && !dup && stops.length < LIMITS.bus;
+  const ok = route && clean(form.stop) && !dup && stops.length < LIMITS.bus;
 
   const add = () => {
     if (!ok) return;
     const toward = clean(form.toward);
     update([
       ...stops,
-      { city: form.city, route, stop: clean(form.stop), direction: "auto", ...(toward ? { toward } : {}), group: clean(form.group) },
+      { city: form.city, route, stop: clean(form.stop), direction: "auto", ...(toward ? { toward } : {}) },
     ]);
     setForm({ ...form, route: "", stop: "", toward: "" });
     toast(`已新增「${route} ${clean(form.stop)}」，公車區塊下次更新時出現`);
@@ -336,7 +335,7 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
             {b.route}
             <span className="muted small">
               {" "}
-              {busLabel(b)}・{b.group}
+              {busLabel(b)}
             </span>
           </Row>
         ))}
@@ -352,12 +351,6 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         <input {...field("route")} placeholder="路線，如 藍23" maxLength={12} aria-label="路線" />
         <input {...field("stop")} placeholder="上車站，如 忠孝里" maxLength={24} aria-label="上車站" />
         <input {...field("toward")} placeholder="開往哪一站（選填）" maxLength={24} aria-label="開往" />
-        <input {...field("group")} placeholder="分組標題" maxLength={12} list="bus-groups" aria-label="分組" />
-        <datalist id="bus-groups">
-          {groups.map((g) => (
-            <option key={g} value={g} />
-          ))}
-        </datalist>
         <button className="ed-primary" onClick={add} disabled={!ok}>
           新增
         </button>

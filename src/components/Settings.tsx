@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useSettings } from "../settings";
+import { toast } from "../toast";
 import { Backup } from "./Backup";
 import { ContentEditor } from "./ContentEditor";
 import type { ThemePref } from "../theme";
@@ -15,12 +16,14 @@ export function Settings({
   onTheme,
   fx,
   onFx,
+  wake,
   onClose,
 }: {
   theme: ThemePref;
   onTheme: (t: ThemePref) => void;
   fx: boolean;
   onFx: (on: boolean) => void;
+  wake: { supported: boolean; enabled: boolean; toggle: () => void };
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -67,6 +70,30 @@ export function Settings({
               ))}
             </div>
             <div className="muted small">依照{settings.weather[0]?.name}（天氣的第一個地點）現在的天氣，在整個畫面背景顯示晴、雲、雨、雷等動畫。系統開啟「減少動態效果」時不會播放。</div>
+          </div>
+          <div className="setting">
+            <div className="setting-label">螢幕常亮</div>
+            <div className="segmented" role="radiogroup" aria-label="螢幕常亮">
+              {([true, false] as const).map((v) => (
+                <button
+                  key={String(v)}
+                  role="radio"
+                  aria-checked={wake.enabled === v}
+                  disabled={!wake.supported}
+                  onClick={() => {
+                    if (wake.enabled !== v) wake.toggle();
+                    toast(v ? "已開啟螢幕常亮" : "已關閉螢幕常亮，螢幕會照系統設定自動休眠");
+                  }}
+                >
+                  {v ? "開" : "關"}
+                </button>
+              ))}
+            </div>
+            <div className="muted small">
+              {wake.supported
+                ? "開啟後，看板開著時螢幕不會自動關閉（適合放在桌上或牆上）；切到其他 App 或鎖定螢幕後就會恢復，回來時自動重新開啟。"
+                : "這個瀏覽器不支援螢幕常亮（需要 iOS／iPadOS 16.4 以上的 Safari 或新版 Chrome）。"}
+            </div>
           </div>
           <ContentEditor />
           <Backup theme={theme} fx={fx} onTheme={onTheme} onFx={onFx} />

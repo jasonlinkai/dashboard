@@ -1,6 +1,6 @@
 import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN_LIMIT, links } from "../config";
 import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
 import { Section } from "./Section";
@@ -51,55 +51,71 @@ export function Bus() {
     REFRESH_SEC.bus,
     [routes],
   );
+  const { setSettings } = useSettings();
   const listRef = useScrollHint<HTMLUListElement>();
+  // Long-press a stop to drag it; the list is in the order set by the user.
+  const dragRef = useReorder<HTMLUListElement>((from, to) => setSettings({ ...settings, bus: moveTo(stops, from, to) }));
   const all = state.data?.arrivals ?? [];
-  const rows = all.filter((a) => wanted(a, all, stops));
-  // Groups in config order (往台北 first), soonest bus first within a group.
-  const groups = [...new Set(stops.map((s) => s.group))]
-    .map((group) => ({
-      group,
-      rows: rows
-        .filter((a) => stops.find((s) => s.route === a.route)?.group === group)
-        .sort((a, b) => (a.estimateSec ?? 1e9) - (b.estimateSec ?? 1e9)),
-    }))
-    .filter((g) => g.rows.length);
+  const notFound = new Set(state.data?.notFound ?? []);
   return (
     <Section title="公車" className="bus" state={state} maxAgeSec={STALE_AFTER_SEC.bus}>
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (
-        <ul className="list scroll" ref={listRef}>
+        <ul
+          className="list scroll"
+          ref={(el) => {
+            listRef.current = el;
+            dragRef.current = el;
+          }}
+        >
           {!stops.length && <li className="hint">尚未設定公車，可在右上角「設定」新增。</li>}
           {state.error && !state.data && <li className="hint error">{state.error}</li>}
-          {groups.map((g) => (
-            <Fragment key={g.group}>
-              <li className="list-group">{g.group}</li>
-              {g.rows.map((a) => {
-                const e = eta(a);
-                return (
-                  <li key={`${a.route}-${a.direction}-${a.stop}`}>
-                    <a className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
-                      <span className="chip blue-chip">{a.route}</span>
-                      <span className="grow">
-                        <div>{a.stop}</div>
-                        <div className="muted small">
-                          {a.headsign}{a.status && a.estimateSec != null && <span>・{a.status}</span>}
-                          {a.lastBus && <span className="red">・末班車</span>}
-                          {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (
-                            <span className="error">・⚠ 預估已 {Math.floor((now - a.asOf) / 60000)} 分鐘未更新</span>
-                          )}
-                        </div>
-                      </span>
-                      <span className={`eta ${e.cls}`}>{e.text}</span>
-                    </a>
-                  </li>
-                );
-              })}
-            </Fragment>
-          ))}
-          {state.data?.notFound.map((p) => (
-            <li key={p} className="hint error">找不到站牌：{p.replace(":", " ")}</li>
-          ))}
+          {/* One item per configured stop (it can show both directions), in the user's order. */}
+          {stops.map((cfg) => {
+            const rows = all
+              .filter((a) => a.route === cfg.route && wanted(a, all, stops))
+              .sort((a, b) => (a.estimateSec ?? 1e9) - (b.estimateSec ?? 1e9));
+            return (
+              <li key={cfg.route} data-reorder className="bus-stop">
+                {notFound.has(`${cfg.route}:${cfg.stop}`) ? (
+                  <div className="row">
+                    <span className="chip blue-chip">{cfg.route}</span>
+                    <span className="grow hint error">找不到站牌：{cfg.stop}</span>
+                  </div>
+                ) : !rows.length ? (
+                  <div className="row">
+                    <span className="chip blue-chip">{cfg.route}</span>
+                    <span className="grow">
+                      <div>{cfg.stop}</div>
+                    </span>
+                    <span className="eta muted">{state.data ? "暫無資料" : "—"}</span>
+                  </div>
+                ) : (
+                  rows.map((a) => {
+                    const e = eta(a);
+                    return (
+                      <a key={`${a.direction}-${a.stop}`} className="row link" href={links.bus(a.routeId)} target="_blank" rel="noopener noreferrer">
+                        <span className="chip blue-chip">{a.route}</span>
+                        <span className="grow">
+                          <div>{a.stop}</div>
+                          <div className="muted small">
+                            {a.headsign}
+                            {a.status && a.estimateSec != null && <span>・{a.status}</span>}
+                            {a.lastBus && <span className="red">・末班車</span>}
+                            {a.estimateSec != null && now - a.asOf > BUS_STALE_MS && (
+                              <span className="error">・⚠ 預估已 {Math.floor((now - a.asOf) / 60000)} 分鐘未更新</span>
+                            )}
+                          </div>
+                        </span>
+                        <span className={`eta ${e.cls}`}>{e.text}</span>
+                      </a>
+                    );
+                  })
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </Section>
@@ -177,8 +193,8 @@ export function Train() {
   const found = routes.findIndex((r) => keyOf(r) === openKey);
   const open = found >= 0 ? found : 0; // default, or the open route was removed: the first one
   const setOpen = (i: number) => setOpenKey(keyOf(routes[i]));
-  // Routes are dragged by their header; the open route's trains fold away while dragging (CSS).
-  const accRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, trains: moveTo(routes, from, to) }), ".acc-head");
+  // Long-press anywhere on a route to drag it; the open route's trains fold away while dragging (CSS).
+  const accRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, trains: moveTo(routes, from, to) }));
   const route = routes[open] as (typeof routes)[number] | undefined;
   const q = new URLSearchParams({
     from: route?.from ?? "",

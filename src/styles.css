@@ -91,11 +91,6 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .top { display: flex; align-items: baseline; gap: 12px; padding: 0 4px; flex: none; }
 .clock { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; line-height: 1.1; }
 .date { color: var(--muted); font-size: 15px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pill {
-  border: 1px solid var(--line); background: var(--card); border-radius: 999px;
-  padding: 5px 12px; font-size: 13px; color: var(--muted); align-self: center; white-space: nowrap;
-}
-.pill.on { color: var(--accent); border-color: var(--accent); }
 .info-btn {
   width: 30px; height: 30px; flex: none; align-self: center; border-radius: 50%;
   border: 1px solid var(--line); background: var(--card); color: var(--muted);
@@ -344,10 +339,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .list { flex: 1; min-height: 0; }
 .row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; margin: 0 -6px; }
 .list li + li { border-top: 1px solid var(--line); }
-/* Sub-heading inside a list (公車: 往台北 / 往日月光社區). */
-.list .list-group { color: var(--muted); font-size: 12px; font-weight: 600; padding: 8px 0 2px; }
-.list .list-group:first-child { padding-top: 0; }
-.list .list-group + li { border-top: 0; }
+/* A bus stop showing both directions: two rows in one draggable item. */
+.bus-stop > .row + .row { border-top: 1px solid var(--line); }
 .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .grow > div { overflow: hidden; text-overflow: ellipsis; }
 .chip { border-radius: 7px; padding: 3px 7px; font-weight: 700; font-size: 14px; white-space: nowrap; }
