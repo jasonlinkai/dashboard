@@ -184,6 +184,12 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pick-item:disabled { opacity: 0.45; cursor: default; }
 .pick-item .chip { flex: none; min-width: 3.9em; text-align: center; }
 .pick-item .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* TDX key: why it helps, how to get one. */
+.key-why { font-size: 13px; line-height: 1.55; background: var(--card-2); border-radius: 8px; padding: 8px 12px; }
+.key-why p { margin: 0 0 6px; }
+.key-why p:last-child { margin-bottom: 0; }
+.key-why ul { margin: 0 0 6px; padding-left: 1.2em; list-style: disc; }
+.key-why b { color: var(--text); }
 .ed-examples { margin: 0; display: grid; gap: 2px; font-size: 13px; }
 .ed-examples > div { display: grid; grid-template-columns: 6em 1fr; gap: 6px; }
 .ed-examples dt { color: var(--muted); }
