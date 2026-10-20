@@ -1,21 +1,10 @@
 import { type ReactNode, useEffect, useRef } from "react";
-import {
-  BUS_ESTIMATE_STALE_MIN,
-  INSTRUMENTS,
-  LOCATIONS,
-  QUOTE_LAG_MIN,
-  REFRESH_SEC,
-  STALE_AFTER_SEC,
-  STATION_MAX_AGE_MIN,
-  TRAINS,
-} from "../config";
+import { BUS_ESTIMATE_STALE_MIN, QUOTE_LAG_MIN, REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN } from "../config";
+import { NEWS_BY_ID, TOPICS } from "../news-sources";
+import { type Settings, instrumentOf, useSettings } from "../settings";
 
 const dur = (sec: number) => (sec < 60 ? `${sec} 秒` : `${Math.round(sec / 60)} 分鐘`);
 
-const delayedYields = INSTRUMENTS.filter((i) => i.format.kind === "yield" && i.feedDelayMin);
-const yieldDelay = Math.max(0, ...delayedYields.map((i) => i.feedDelayMin ?? 0));
-const fixedStations = LOCATIONS.filter((l) => l.cwa.station).map((l) => `${l.name}→${l.cwa.station}站`);
-const townStations = LOCATIONS.filter((l) => !l.cwa.station).map((l) => l.name);
 
 interface Block {
   title: string;
@@ -25,7 +14,14 @@ interface Block {
 }
 
 // Keep this honest: say what is verified, what is a known limitation, and what is not verified.
-const BLOCKS: Block[] = [
+// Built from the current settings, so it describes what is actually on screen.
+function blocks(settings: Settings): Block[] {
+  const yieldDelay = Math.max(0, ...settings.markets.map(instrumentOf).map((i) => (i.format.kind === "yield" ? (i.feedDelayMin ?? 0) : 0)));
+  const fixedStations = settings.weather.filter((l) => l.station).map((l) => `${l.name}→${l.station}站`);
+  const townStations = settings.weather.filter((l) => !l.station).map((l) => l.name);
+  const newsLine = (topic: (typeof TOPICS)[number]) =>
+    `${topic[1]}：${settings.news[topic[0]].map((id) => NEWS_BY_ID.get(id)?.name ?? id).join("、")}`;
+  return [
   {
     title: "市場行情",
     source: "Yahoo Finance 的公開網頁介面（非官方 API，未經交易所授權，可能隨時變更或中斷）",
@@ -50,9 +46,10 @@ const BLOCKS: Block[] = [
     ),
     refresh: `每 ${dur(REFRESH_SEC.weather)}；測站約每 10 分鐘一筆，發布會晚幾分鐘；超過 ${dur(STALE_AFTER_SEC.weather)} 未更新即警示`,
     notes: [
-      `使用的測站：${fixedStations.join("、")}${townStations.length ? `；${townStations.join("、")}用同區測站` : ""}。南港區只有國道旁的「國三S016K」，可能和住宅區有落差。`,
+      `使用的測站：${[...fixedStations, ...(townStations.length ? [`${townStations.join("、")}用同區測站`] : [])].join("；")}。同區沒有一般測站時會用國道旁的測站（例如南港區只有「國三S016K」），可能和住宅區有落差。`,
       `測站超過 ${STATION_MAX_AGE_MIN} 分鐘沒新資料就改用模型數值，卡片底部會註明。`,
-      "模型格點約數公里，內湖、南港、汐止在同一格點，三區預報幾乎相同；只有現在溫度（實測）會不同。",
+      "模型格點約數公里，相鄰的區（例如內湖、南港、汐止）預報幾乎相同；只有現在溫度（實測）會不同。",
+      "第一個地點的天氣決定整頁的天氣動畫。地點可在設定新增、刪除、排序。",
       "高低溫是預報值不是實測，也不是氣象署官方預報；點卡片可開氣象署鄉鎮預報對照。",
     ],
   },
@@ -71,7 +68,7 @@ const BLOCKS: Block[] = [
     ],
   },
   {
-    title: `火車（${TRAINS.map((t) => `${t.from}→${t.to}`.replace(/臺/g, "台")).join("、")}）`,
+    title: settings.trains.length ? `火車（${settings.trains.map((t) => `${t.from}→${t.to}`.replace(/臺/g, "台")).join("、")}）` : "火車",
     source: "交通部 TDX：臺鐵每日時刻表＋列車即時位置（誤點）＋車站即時看板（停駛、月台）＋營運公告",
     refresh: `時刻表每天抓一次；誤點每 ${dur(REFRESH_SEC.train)}；超過 ${dur(STALE_AFTER_SEC.train)} 未更新即警示`,
     notes: [
@@ -88,29 +85,28 @@ const BLOCKS: Block[] = [
     title: "新聞",
     source: (
       <>
-        多家媒體 RSS 混合：
-        <br />
-        綜合：中央社、TVBS、ETtoday、公視、新頭殼、BBC 中文、德國之聲
-        <br />
-        財經：中央社、TVBS、經濟日報、ETtoday、CNBC
-        <br />
-        國際：中央社、TVBS、BBC 中文、德國之聲、Al Jazeera
-        <br />
-        科技：中央社、TVBS、iThome、科技新報、INSIDE、TechCrunch
+        多家媒體 RSS 混合（可在設定調整來源與順序）：
+        {TOPICS.map((t) => (
+          <span key={t[0]}>
+            <br />
+            {newsLine(t)}
+          </span>
+        ))}
       </>
     ),
     refresh: `每 ${dur(REFRESH_SEC.news)}；超過 ${dur(STALE_AFTER_SEC.news)} 未更新即警示`,
     notes: [
-      "各家輪流排列：先列每家最新的一則（依時間排），再列每家第二新的，以此類推；每家最多 8 則，避免單一媒體洗版；超過 36 小時的不列。不是編輯挑選的頭條，也沒有判斷重要性。",
+      "各家輪流排列：先列每家最新的一則（依設定裡的來源順序），再列每家第二新的，以此類推；每家最多 8 則，避免單一媒體洗版；超過 36 小時的不列。不是編輯挑選的頭條，也沒有判斷重要性。",
       "多家媒體轉載同一則中央社稿件時，標題相同的只留一則（標題被改寫就無法辨識）。",
       "某家來源暫時連不上時，其他來源照常顯示。",
       "TVBS 沒有 RSS，改讀它提供給 Google 新聞的網站地圖，依網址分類（政治、社會、生活、國際、財經、科技…）放進各分頁。",
-      "外媒標題照原文顯示：德國之聲是簡體中文，Al Jazeera、CNBC、TechCrunch 是英文，不做翻譯或轉換。",
+      "外媒標題照原文顯示（簡體中文或英文），不做翻譯或轉換。",
       "Google 新聞、中時、風傳媒、關鍵評論會拒絕來自 Cloudflare 機房的請求，聯合新聞網的 RSS 目前是空的，所以沒有收錄。",
       "「X 小時前」是 RSS 裡的發布時間。",
     ],
   },
 ];
+}
 
 const LEGEND: [ReactNode, string][] = [
   ["◯ 0:24 後更新", "下一次向後端要資料的倒數；倒數本身不代表資料是新的。"],
@@ -121,6 +117,7 @@ const LEGEND: [ReactNode, string][] = [
 ];
 
 export function Reliability({ onClose }: { onClose: () => void }) {
+  const { settings } = useSettings();
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -150,7 +147,7 @@ export function Reliability({ onClose }: { onClose: () => void }) {
               ))}
             </dl>
           </section>
-          {BLOCKS.map((b) => (
+          {blocks(settings).map((b) => (
             <section key={b.title} className="rel-block">
               <h3>{b.title}</h3>
               <p>

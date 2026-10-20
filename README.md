@@ -55,10 +55,13 @@ npm run deploy
 
 ## 修改設定
 
-全部都在 [`src/config.ts`](src/config.ts)：
+**顯示內容**（天氣地點、行情、公車、火車、新聞來源與順序）在畫面右上角「設定 → 顯示內容」調整，
+存在各裝置的瀏覽器裡；可在「備份與還原」匯出／匯入 JSON 檔，或複製／貼上。匯入時會檢查格式與上限
+（天氣 6 個地點、行情 6 格、公車 6 條且限雙北、火車 5 條、新聞每分頁 8 個來源），新聞只能用
+[`src/news-sources.ts`](src/news-sources.ts) 裡的來源代號。預設值在 [`src/settings.tsx`](src/settings.tsx)。
 
-- `LOCATIONS`：天氣地點與對應的氣象署行政區
-- `INSTRUMENTS`：行情項目（Yahoo Finance 代號）
-- `BUS_STOPS`：公車路線、上車站、方向（`"auto"` 會自動選往台北的方向；選錯的話改成 `0` 或 `1`；設定 `toward` 則只看會開往該站的車）、分組標題 `group`
-- `TRAINS`：火車路線（上車站、下車站），`TRAIN_TYPE`：車種
+天氣地點清單 `src/data/towns.json` 由 `python3 scripts/gen-towns.py` 從氣象署資料產生。
+
+其他固定設定在 [`src/config.ts`](src/config.ts)：
+
 - `RED_IS_UP`：紅漲綠跌

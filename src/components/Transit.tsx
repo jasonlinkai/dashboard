@@ -1,4 +1,5 @@
-import { BUS_ESTIMATE_STALE_MIN, BUS_STOPS, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAINS, TRAIN_LIMIT, TRAIN_TYPE, links } from "../config";
+import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN_LIMIT, links } from "../config";
+import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
 import { Fragment, useState } from "react";
 import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
@@ -7,8 +8,8 @@ import { Section } from "./Section";
 const NOT_CONFIGURED = <p className="hint">尚未設定 TDX 金鑰，請參考 README。</p>;
 
 /** Keep the configured direction; "auto" keeps whichever direction heads toward Taipei. */
-function wanted(a: BusArrival, all: BusArrival[]): boolean {
-  const cfg = BUS_STOPS.find((s) => s.route === a.route);
+function wanted(a: BusArrival, all: BusArrival[], stops: BusStop[]): boolean {
+  const cfg = stops.find((s) => s.route === a.route);
   if (!cfg) return false;
   if (cfg.toward) return true; // the backend already kept only buses heading there
   if (cfg.direction !== "auto") return a.direction === cfg.direction;
@@ -39,17 +40,26 @@ function eta(a: BusArrival): { text: string; cls: string } {
 
 export function Bus() {
   const now = useNow(1000);
-  const routes = BUS_STOPS.map((s) => [s.city, s.route, s.stop, ...(s.toward ? [s.toward] : [])].join(":")).join(",");
-  const state = usePolling(() => getJSON<BusResponse>(`/api/bus?routes=${encodeURIComponent(routes)}`), REFRESH_SEC.bus);
+  const { settings } = useSettings();
+  const stops = settings.bus;
+  const routes = stops.map((s) => [s.city, s.route, s.stop, ...(s.toward ? [s.toward] : [])].join(":")).join(",");
+  const state = usePolling(
+    () =>
+      routes
+        ? getJSON<BusResponse>(`/api/bus?routes=${encodeURIComponent(routes)}`)
+        : Promise.resolve({ data: { configured: true, arrivals: [], notFound: [] }, dataTime: Date.now(), stale: false }),
+    REFRESH_SEC.bus,
+    [routes],
+  );
   const listRef = useScrollHint<HTMLUListElement>();
   const all = state.data?.arrivals ?? [];
-  const rows = all.filter((a) => wanted(a, all));
+  const rows = all.filter((a) => wanted(a, all, stops));
   // Groups in config order (往台北 first), soonest bus first within a group.
-  const groups = [...new Set(BUS_STOPS.map((s) => s.group))]
+  const groups = [...new Set(stops.map((s) => s.group))]
     .map((group) => ({
       group,
       rows: rows
-        .filter((a) => BUS_STOPS.find((s) => s.route === a.route)?.group === group)
+        .filter((a) => stops.find((s) => s.route === a.route)?.group === group)
         .sort((a, b) => (a.estimateSec ?? 1e9) - (b.estimateSec ?? 1e9)),
     }))
     .filter((g) => g.rows.length);
@@ -59,6 +69,7 @@ export function Bus() {
         NOT_CONFIGURED
       ) : (
         <ul className="list scroll" ref={listRef}>
+          {!stops.length && <li className="hint">尚未設定公車，可在右上角「設定」新增。</li>}
           {groups.map((g) => (
             <Fragment key={g.group}>
               <li className="list-group">{g.group}</li>
@@ -102,7 +113,7 @@ const addMin = (hhmm: string, min: number) => {
 };
 
 /** One route's departures. Keyed by route so its scroll position and hint start fresh. */
-function TrainList({ trains, from, to, now }: { trains: TrainDeparture[]; from: string; to: string; now: number }) {
+function TrainList({ trains, from, to, type, now }: { trains: TrainDeparture[]; from: string; to: string; type: string; now: number }) {
   const listRef = useScrollHint<HTMLUListElement>();
   const local = new Date(now + 8 * 3600_000);
   const nowSec = local.getUTCHours() * 3600 + local.getUTCMinutes() * 60 + local.getUTCSeconds();
@@ -146,7 +157,7 @@ function TrainList({ trains, from, to, now }: { trains: TrainDeparture[]; from: 
           </a>
         </li>
       ))}
-      {!rows.length && <li className="hint">今天已經沒有{TRAIN_TYPE}車了</li>}
+      {!rows.length && <li className="hint">今天已經沒有{type}車了</li>}
     </ul>
   );
 }
@@ -157,12 +168,28 @@ function TrainList({ trains, from, to, now }: { trains: TrainDeparture[]; from: 
  */
 export function Train() {
   const now = useNow(1000);
-  const [open, setOpen] = useState(0);
-  const route = TRAINS[open];
-  const q = new URLSearchParams({ from: route.from, to: route.to, type: TRAIN_TYPE, limit: String(TRAIN_LIMIT) });
-  const state = usePolling(() => getJSON<TrainResponse>(`/api/train?${q}`), REFRESH_SEC.train, [open]);
+  const [openRaw, setOpen] = useState(0);
+  const { settings } = useSettings();
+  const routes = settings.trains;
+  // The open route may have been removed in settings.
+  const open = Math.min(openRaw, Math.max(0, routes.length - 1));
+  const route = routes[open] as (typeof routes)[number] | undefined;
+  const q = new URLSearchParams({
+    from: route?.from ?? "",
+    to: route?.to ?? "",
+    type: trainTypeKeyword(settings.trainType),
+    limit: String(TRAIN_LIMIT),
+  }).toString();
+  const state = usePolling(
+    () =>
+      route
+        ? getJSON<TrainResponse>(`/api/train?${q}`)
+        : Promise.resolve({ data: { configured: true, from: "", to: "", trains: [], alerts: [] }, dataTime: Date.now(), stale: false }),
+    REFRESH_SEC.train,
+    [q],
+  );
   // Right after switching, the previous route's answer is still in state; don't show it here.
-  const current = state.data && state.data.from === route.from && state.data.to === route.to ? state.data : undefined;
+  const current = route && state.data && state.data.from === route.from && state.data.to === route.to ? state.data : undefined;
   return (
     <Section title="火車" className="train" state={state} maxAgeSec={STALE_AFTER_SEC.train}>
       {state.data && !state.data.configured ? (
@@ -175,8 +202,9 @@ export function Train() {
             </a>
           ))}
           {current && current.alerts == null && <p className="hint error">⚠ 暫時無法確認臺鐵營運公告（停駛、通阻），請以臺鐵官網為準</p>}
+          {!routes.length && <p className="hint">尚未設定火車路線，可在右上角「設定」新增。</p>}
           <div className="acc">
-            {TRAINS.map((r, i) => (
+            {routes.map((r, i) => (
               <div key={`${r.from}-${r.to}`} className={`acc-item ${i === open ? "acc-open" : ""}`}>
                 <button className="acc-head" aria-expanded={i === open} onClick={() => setOpen(i)}>
                   <span>
@@ -188,7 +216,7 @@ export function Train() {
                 </button>
                 {i === open &&
                   (current ? (
-                    <TrainList key={i} trains={current.trains} from={r.from} to={r.to} now={now} />
+                    <TrainList key={i} trains={current.trains} from={r.from} to={r.to} type={trainTypeKeyword(settings.trainType)} now={now} />
                   ) : (
                     <p className="hint">{state.error ?? "載入中…"}</p>
                   ))}

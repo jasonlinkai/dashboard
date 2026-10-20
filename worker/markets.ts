@@ -1,3 +1,4 @@
+import { type FeedSpec, NEWS_BY_ID, MAX_NEWS_SOURCES, TOPICS, type Topic } from "../src/news-sources";
 import type { NewsItem, Quote } from "../src/shared";
 import { UA, cached, fetchJSON } from "./util";
 
@@ -30,57 +31,11 @@ export async function quotes(symbols: string[]): Promise<Quote[]> {
   return settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
 }
 
-// Several Taiwanese outlets' RSS / Atom feeds, mixed so no single newsroom sets the agenda.
-// All of these were checked to answer requests from Cloudflare's network (Google News, 中時,
-// 風傳媒 and 關鍵評論 don't; 聯合新聞網's news feeds come back empty), and each item shows its outlet.
-interface Feed {
+// Several outlets' RSS / Atom feeds (catalog in src/news-sources.ts), mixed so no single newsroom
+// sets the agenda; each item shows its outlet.
+interface Feed extends FeedSpec {
   source: string;
-  url: string;
-  /** Google News sitemap instead of RSS; keep only these sections (first path segment of the link). */
-  sections?: string[];
 }
-const CNA = (feed: string): Feed => ({ source: "中央社", url: `https://feeds.feedburner.com/rsscna/${feed}` });
-// TVBS has no RSS; its Google News sitemap (last ~2 days, every section) is the next best thing.
-const TVBS = (...sections: string[]): Feed => ({ source: "TVBS", url: "https://news.tvbs.com.tw/sitemap/news-sitemap", sections });
-const feedOf = (source: string, url: string): Feed => ({ source, url });
-// Foreign outlets are shown as published (德國之聲 in simplified Chinese, the rest in English).
-const BBC_ZH = feedOf("BBC 中文", "https://feeds.bbci.co.uk/zhongwen/trad/rss.xml");
-const DW_ZH = feedOf("德國之聲", "https://rss.dw.com/xml/rss-chi-all");
-const TOPICS: Record<string, Feed[]> = {
-  top: [
-    CNA("politics"),
-    CNA("social"),
-    CNA("lifehealth"),
-    TVBS("politics", "local", "life", "world", "china", "money"),
-    feedOf("ETtoday", "https://feeds.feedburner.com/ettoday/realtime"),
-    feedOf("公視", "https://news.pts.org.tw/xml/newsfeed.xml"),
-    feedOf("新頭殼", "https://newtalk.tw/rss/all"),
-    BBC_ZH,
-    DW_ZH,
-  ],
-  business: [
-    CNA("finance"),
-    TVBS("money"),
-    feedOf("經濟日報", "https://money.udn.com/rssfeed/news/1001/5591?ch=money"),
-    feedOf("ETtoday", "https://feeds.feedburner.com/ettoday/finance"),
-    feedOf("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
-  ],
-  world: [
-    CNA("intworld"),
-    TVBS("world", "china"),
-    BBC_ZH,
-    DW_ZH,
-    feedOf("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
-  ],
-  tech: [
-    CNA("technology"),
-    TVBS("tech"),
-    feedOf("iThome", "https://www.ithome.com.tw/rss"),
-    feedOf("科技新報", "https://technews.tw/feed/"),
-    feedOf("INSIDE", "https://www.inside.com.tw/feed/rss"),
-    feedOf("TechCrunch", "https://techcrunch.com/feed/"),
-  ],
-};
 // A busy feed (some list 100 items) would otherwise fill the whole list by itself.
 const PER_SOURCE = 8;
 // Slow feeds would otherwise put day-old stories near the top once outlets take turns.
@@ -140,9 +95,30 @@ async function feed({ source, url, sections }: Feed): Promise<NewsItem[]> {
 // Outlets often run the same wire story word for word; compare titles without spaces/punctuation.
 const titleKey = (t: string) => t.replace(/[\s\p{P}\p{S}]/gu, "");
 
-export function news(topic: string): Promise<NewsItem[]> {
-  const feeds = TOPICS[topic] ?? TOPICS.top;
-  return cached(`news:${topic}`, 300, async () => {
+/** Default outlets per topic, in priority order (the settings screen starts from these). */
+export const DEFAULT_NEWS: Record<Topic, string[]> = {
+  top: ["cna", "tvbs", "ettoday", "pts", "newtalk", "bbc-zh", "dw-zh"],
+  business: ["cna", "tvbs", "udn-money", "ettoday", "cnbc"],
+  world: ["cna", "tvbs", "bbc-zh", "dw-zh", "aljazeera"],
+  tech: ["cna", "tvbs", "ithome", "technews", "inside", "techcrunch"],
+};
+
+/**
+ * `sources` are catalog ids in the user's order; unknown ids, and outlets that don't cover this
+ * topic, are ignored. Only catalog URLs are ever fetched.
+ */
+export function news(topicParam: string, sourceIds: string[]): Promise<NewsItem[]> {
+  const topic: Topic = TOPICS.some(([id]) => id === topicParam) ? (topicParam as Topic) : "top";
+  const ids = [...new Set(sourceIds.length ? sourceIds : DEFAULT_NEWS[topic])]
+    .filter((id) => NEWS_BY_ID.get(id)?.feeds[topic]?.length)
+    .slice(0, MAX_NEWS_SOURCES);
+  if (!ids.length) return Promise.resolve([]);
+  const feeds: Feed[] = ids.flatMap((id) => {
+    const src = NEWS_BY_ID.get(id)!;
+    return src.feeds[topic]!.map((f) => ({ ...f, source: src.name }));
+  });
+  const order = new Map(ids.map((id, i) => [NEWS_BY_ID.get(id)!.name, i]));
+  return cached(`news:${topic}:${ids.join(",")}`, 300, async () => {
     const settled = await Promise.allSettled(feeds.map(feed));
     const ok = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     if (!ok.length) throw (settled[0] as PromiseRejectedResult).reason;
@@ -150,8 +126,8 @@ export function news(topic: string): Promise<NewsItem[]> {
     const perSource = new Map<string, number>();
     const byTime = (a: NewsItem, b: NewsItem) => (b.published ?? 0) - (a.published ?? 0);
     // Rank each story within its outlet, then list round by round (every outlet's newest, then
-    // every outlet's second newest …), newest first within a round, so outlets alternate
-    // instead of whoever publishes most often filling the top.
+    // every outlet's second newest …) in the user's outlet order, so outlets alternate instead of
+    // whoever publishes most often filling the top.
     const ranked = ok
       .flat()
       .filter((n) => n.published == null || Date.now() - n.published < MAX_AGE_MS)
@@ -169,7 +145,7 @@ export function news(topic: string): Promise<NewsItem[]> {
       })
       .filter(({ rank }) => rank < PER_SOURCE);
     return ranked
-      .sort((a, b) => a.rank - b.rank || byTime(a.n, b.n))
+      .sort((a, b) => a.rank - b.rank || (order.get(a.n.source) ?? 99) - (order.get(b.n.source) ?? 99))
       .map(({ n }) => n)
       .slice(0, 40);
   });

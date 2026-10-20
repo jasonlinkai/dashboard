@@ -1,0 +1,423 @@
+import { type ReactNode, useEffect, useState } from "react";
+import { NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
+import {
+  BUS_CITIES,
+  type BusCity,
+  type BusStop,
+  INSTRUMENT_CATALOG,
+  LIMITS,
+  type MarketItem,
+  type Settings,
+  TRAIN_TYPES,
+  type WeatherPlace,
+  instrumentOf,
+  marketSymbol,
+  tileCount,
+  useSettings,
+} from "../settings";
+
+const SECTIONS = [
+  ["weather", "天氣"],
+  ["markets", "行情"],
+  ["bus", "公車"],
+  ["trains", "火車"],
+  ["news", "新聞"],
+] as const;
+type Section = (typeof SECTIONS)[number][0];
+
+const move = <T,>(list: T[], i: number, by: number): T[] => {
+  const j = i + by;
+  if (j < 0 || j >= list.length) return list;
+  const out = [...list];
+  [out[i], out[j]] = [out[j], out[i]];
+  return out;
+};
+const without = <T,>(list: T[], i: number): T[] => list.filter((_, k) => k !== i);
+
+/** One row of an editable list: label, then move up / down / remove. */
+function Row({
+  children,
+  i,
+  count,
+  min = 0,
+  onMove,
+  onRemove,
+}: {
+  children: ReactNode;
+  i: number;
+  count: number;
+  min?: number;
+  onMove: (by: number) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <li className="ed-row">
+      <span className="ed-label">{children}</span>
+      <button className="ed-btn" onClick={() => onMove(-1)} disabled={i === 0} aria-label="上移">
+        ↑
+      </button>
+      <button className="ed-btn" onClick={() => onMove(1)} disabled={i === count - 1} aria-label="下移">
+        ↓
+      </button>
+      <button className="ed-btn ed-del" onClick={onRemove} disabled={count <= min} aria-label="刪除">
+        ✕
+      </button>
+    </li>
+  );
+}
+
+// ---------- 天氣 ----------
+
+interface Town {
+  county: string;
+  town: string;
+  townId: string;
+  latitude: number;
+  longitude: number;
+}
+
+/** 汐止區 → 汐止, but keep two-character names like 東區 / 北區 whole. */
+const shortName = (town: string) => (town.length > 2 ? town.replace(/[區鎮鄉市]$/, "") : town);
+
+function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+  const [towns, setTowns] = useState<Town[] | null>(null);
+  const [county, setCounty] = useState("新北市");
+  const [townId, setTownId] = useState("");
+  const [name, setName] = useState("");
+  useEffect(() => {
+    // ~35 KB, only needed here.
+    import("../data/towns.json").then((m) => setTowns(m.default as Town[]));
+  }, []);
+  const counties = [...new Set(towns?.map((t) => t.county))];
+  const inCounty = towns?.filter((t) => t.county === county) ?? [];
+  const picked = inCounty.find((t) => t.townId === townId);
+  const places = s.weather;
+  const update = (weather: WeatherPlace[]) => set({ ...s, weather });
+  const full = places.length >= LIMITS.weather;
+  const label = name.trim() || (picked ? shortName(picked.town) : "");
+  const duplicate = places.some((p) => p.name === label);
+
+  const add = () => {
+    if (!picked || !label || duplicate || full) return;
+    update([...places, { name: label, county: picked.county, town: picked.town, townId: picked.townId, latitude: picked.latitude, longitude: picked.longitude }]);
+    setName("");
+  };
+
+  return (
+    <>
+      <ul className="ed-list">
+        {places.map((p, i) => (
+          <Row key={p.name} i={i} count={places.length} min={1} onMove={(by) => update(move(places, i, by))} onRemove={() => update(without(places, i))}>
+            {p.name}
+            <span className="muted small">
+              {" "}
+              {p.county}
+              {p.town}
+              {i === 0 ? "・天氣動畫依此地" : ""}
+            </span>
+          </Row>
+        ))}
+      </ul>
+      <div className="ed-add">
+        <select value={county} onChange={(e) => (setCounty(e.target.value), setTownId(""))} aria-label="縣市">
+          {counties.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+        <select value={townId} onChange={(e) => setTownId(e.target.value)} aria-label="鄉鎮區">
+          <option value="">{towns ? "選擇鄉鎮區" : "載入中…"}</option>
+          {inCounty.map((t) => (
+            <option key={t.townId} value={t.townId}>
+              {t.town}
+            </option>
+          ))}
+        </select>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={picked ? shortName(picked.town) : "顯示名稱"} maxLength={8} aria-label="顯示名稱" />
+        <button className="ed-primary" onClick={add} disabled={!picked || !label || duplicate || full}>
+          新增
+        </button>
+      </div>
+      <p className="muted small">
+        {full ? `最多 ${LIMITS.weather} 個地點。` : duplicate ? "已經有同名的地點，請換個顯示名稱。" : "清單是氣象署有測站的鄉鎮區；第一個地點決定整頁的天氣動畫。"}
+      </p>
+    </>
+  );
+}
+
+// ---------- 行情 ----------
+
+function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+  const items = s.markets;
+  const update = (markets: MarketItem[]) => set({ ...s, markets });
+  const used = new Set(items.map(marketSymbol));
+  const available = INSTRUMENT_CATALOG.filter((i) => !used.has(i.symbol));
+  const [pick, setPick] = useState("");
+  const [symbol, setSymbol] = useState("");
+  const [name, setName] = useState("");
+  const tiles = tileCount(items);
+  // Adding one more yield to an existing yield tile doesn't take a new tile.
+  const fits = (m: MarketItem) => tileCount([...items, m]) <= LIMITS.tiles;
+  const customOk = /^[A-Za-z0-9.^=\-]{1,20}$/.test(symbol.trim()) && name.trim().length > 0 && !used.has(symbol.trim());
+
+  return (
+    <>
+      <ul className="ed-list">
+        {items.map((m, i) => {
+          const inst = instrumentOf(m);
+          return (
+            <Row
+              key={inst.symbol}
+              i={i}
+              count={items.length}
+              min={1}
+              onMove={(by) => update(move(items, i, by))}
+              onRemove={() => update(without(items, i))}
+            >
+              {inst.name}
+              <span className="muted small"> {inst.symbol}{inst.format.kind === "yield" ? "・與其他殖利率合併成一格" : ""}</span>
+            </Row>
+          );
+        })}
+      </ul>
+      <div className="ed-add">
+        <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="從清單新增">
+          <option value="">從清單選擇</option>
+          {available.map((i) => (
+            <option key={i.symbol} value={i.symbol} disabled={!fits(i.symbol)}>
+              {i.name}（{i.symbol}）
+            </option>
+          ))}
+        </select>
+        <button className="ed-primary" disabled={!pick || !fits(pick)} onClick={() => (update([...items, pick]), setPick(""))}>
+          新增
+        </button>
+      </div>
+      <div className="ed-add">
+        <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Yahoo 代號，如 2317.TW" maxLength={20} aria-label="自訂代號" />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="顯示名稱" maxLength={10} aria-label="自訂名稱" />
+        <button
+          className="ed-primary"
+          disabled={!customOk || !fits({ symbol: symbol.trim(), name })}
+          onClick={() => (update([...items, { symbol: symbol.trim(), name: name.trim() }]), setSymbol(""), setName(""))}
+        >
+          新增
+        </button>
+      </div>
+      <p className="muted small">
+        目前 {tiles}／{LIMITS.tiles} 格。自訂代號以 Yahoo Finance 為準（台股加 .TW、上櫃加 .TWO），找不到時該格會顯示「—」。
+      </p>
+    </>
+  );
+}
+
+// ---------- 公車 ----------
+
+const busLabel = (b: BusStop) => `${b.stop}${b.toward ? `，往${b.toward}` : ""}`;
+
+function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+  const stops = s.bus;
+  const update = (bus: BusStop[]) => set({ ...s, bus });
+  const groups = [...new Set(stops.map((b) => b.group))];
+  const [form, setForm] = useState({ city: "NewTaipei" as BusCity, route: "", stop: "", toward: "", group: groups[0] ?? "往台北" });
+  const clean = (v: string) => v.trim().replace(/[,:]/g, "");
+  const route = clean(form.route);
+  const dup = stops.some((b) => b.route === route);
+  const ok = route && clean(form.stop) && clean(form.group) && !dup && stops.length < LIMITS.bus;
+
+  const add = () => {
+    if (!ok) return;
+    const toward = clean(form.toward);
+    update([
+      ...stops,
+      { city: form.city, route, stop: clean(form.stop), direction: "auto", ...(toward ? { toward } : {}), group: clean(form.group) },
+    ]);
+    setForm({ ...form, route: "", stop: "", toward: "" });
+  };
+  const field = (k: keyof typeof form) => ({ value: form[k], onChange: (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value }) });
+
+  return (
+    <>
+      <ul className="ed-list">
+        {stops.map((b, i) => (
+          <Row key={b.route} i={i} count={stops.length} onMove={(by) => update(move(stops, i, by))} onRemove={() => update(without(stops, i))}>
+            {b.route}
+            <span className="muted small">
+              {" "}
+              {busLabel(b)}・{b.group}
+            </span>
+          </Row>
+        ))}
+      </ul>
+      <div className="ed-add ed-grid">
+        <select {...field("city")} aria-label="縣市">
+          {BUS_CITIES.map(([id, label]) => (
+            <option key={id} value={id}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <input {...field("route")} placeholder="路線，如 藍23" maxLength={12} aria-label="路線" />
+        <input {...field("stop")} placeholder="上車站，如 忠孝里" maxLength={24} aria-label="上車站" />
+        <input {...field("toward")} placeholder="開往哪一站（選填）" maxLength={24} aria-label="開往" />
+        <input {...field("group")} placeholder="分組標題" maxLength={12} list="bus-groups" aria-label="分組" />
+        <datalist id="bus-groups">
+          {groups.map((g) => (
+            <option key={g} value={g} />
+          ))}
+        </datalist>
+        <button className="ed-primary" onClick={add} disabled={!ok}>
+          新增
+        </button>
+      </div>
+      <p className="muted small">
+        {stops.length >= LIMITS.bus
+          ? `最多 ${LIMITS.bus} 條。`
+          : dup
+            ? "這條路線已經在清單裡了。"
+            : "站名可以寫簡稱（例如 樟樹實中）。沒填「開往哪一站」時自動選往台北的方向；環狀線請填開往的站名。站名找不到時，公車區塊會顯示「找不到站牌」。"}
+      </p>
+    </>
+  );
+}
+
+// ---------- 火車 ----------
+
+function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+  const routes = s.trains;
+  const [stations, setStations] = useState<string[]>([]);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  useEffect(() => {
+    fetch("/api/stations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((names: string[]) => setStations(names))
+      .catch(() => {});
+  }, []);
+  const norm = (v: string) => v.trim().replace(/台/g, "臺").replace(/車?站$/, "");
+  const known = (v: string) => !stations.length || stations.includes(norm(v));
+  const dup = routes.some((r) => r.from === norm(from) && r.to === norm(to));
+  const ok = norm(from) && norm(to) && norm(from) !== norm(to) && known(from) && known(to) && !dup && routes.length < LIMITS.trains;
+  const update = (trains: Settings["trains"]) => set({ ...s, trains });
+
+  return (
+    <>
+      <ul className="ed-list">
+        {routes.map((r, i) => (
+          <Row key={`${r.from}-${r.to}`} i={i} count={routes.length} onMove={(by) => update(move(routes, i, by))} onRemove={() => update(without(routes, i))}>
+            {r.from} → {r.to}
+            {i === 0 && <span className="muted small">・預設展開</span>}
+          </Row>
+        ))}
+      </ul>
+      <div className="ed-add">
+        <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="上車站" list="tra-stations" maxLength={8} aria-label="上車站" />
+        <span className="muted">→</span>
+        <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="下車站" list="tra-stations" maxLength={8} aria-label="下車站" />
+        <datalist id="tra-stations">
+          {stations.map((n) => (
+            <option key={n} value={n} />
+          ))}
+        </datalist>
+        <button className="ed-primary" disabled={!ok} onClick={() => (update([...routes, { from: norm(from), to: norm(to) }]), setFrom(""), setTo(""))}>
+          新增
+        </button>
+      </div>
+      <p className="muted small">
+        {routes.length >= LIMITS.trains
+          ? `最多 ${LIMITS.trains} 條。`
+          : (from && !known(from)) || (to && !known(to))
+            ? "找不到這個臺鐵車站，請從清單選擇。"
+            : dup
+              ? "這條路線已經在清單裡了。"
+              : "站名用臺鐵的寫法，例如 臺北、汐科。"}
+      </p>
+      <div className="setting">
+        <div className="setting-label">車種</div>
+        <div className="segmented" role="radiogroup" aria-label="車種">
+          {TRAIN_TYPES.map((t) => (
+            <button key={t} role="radio" aria-checked={s.trainType === t} onClick={() => set({ ...s, trainType: t })}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="muted small">「區間」也包含區間快車。</div>
+      </div>
+    </>
+  );
+}
+
+// ---------- 新聞 ----------
+
+function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+  const [topic, setTopic] = useState<Topic>("top");
+  const ids = s.news[topic];
+  const update = (list: string[]) => set({ ...s, news: { ...s.news, [topic]: list } });
+  const available = sourcesFor(topic).filter((src) => !ids.includes(src.id));
+  const [pick, setPick] = useState("");
+  const full = ids.length >= LIMITS.news;
+
+  return (
+    <>
+      <div className="tabs ed-tabs" role="tablist">
+        {TOPICS.map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={topic === id} onClick={() => (setTopic(id), setPick(""))}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <ul className="ed-list">
+        {ids.map((id, i) => {
+          const src = NEWS_BY_ID.get(id);
+          return (
+            <Row key={id} i={i} count={ids.length} min={1} onMove={(by) => update(move(ids, i, by))} onRemove={() => update(without(ids, i))}>
+              {src?.name ?? id}
+              {src?.note && <span className="muted small">・{src.note}</span>}
+            </Row>
+          );
+        })}
+      </ul>
+      <div className="ed-add">
+        <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="新增來源">
+          <option value="">{available.length ? "選擇來源" : "沒有其他來源"}</option>
+          {available.map((src) => (
+            <option key={src.id} value={src.id}>
+              {src.name}
+              {src.note ? `（${src.note}）` : ""}
+            </option>
+          ))}
+        </select>
+        <button className="ed-primary" disabled={!pick || full} onClick={() => (update([...ids, pick]), setPick(""))}>
+          新增
+        </button>
+      </div>
+      <p className="muted small">
+        {full ? `每個分頁最多 ${LIMITS.news} 個來源。` : "排在前面的來源，在每一輪都排在前面。來源只能從清單選，不能填任意網址。"}
+      </p>
+    </>
+  );
+}
+
+// ---------- Container ----------
+
+export function ContentEditor() {
+  const { settings, setSettings } = useSettings();
+  const [section, setSection] = useState<Section>("weather");
+  const props = { s: settings, set: setSettings };
+  return (
+    <div className="setting">
+      <div className="setting-label">顯示內容</div>
+      <div className="tabs ed-tabs" role="tablist">
+        {SECTIONS.map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={section === id} onClick={() => setSection(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {section === "weather" && <WeatherEditor {...props} />}
+      {section === "markets" && <MarketsEditor {...props} />}
+      {section === "bus" && <BusEditor {...props} />}
+      {section === "trains" && <TrainsEditor {...props} />}
+      {section === "news" && <NewsEditor {...props} />}
+    </div>
+  );
+}

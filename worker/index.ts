@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { observations } from "./cwa";
 import { news, quotes } from "./markets";
-import { bus, train } from "./tdx";
+import { bus, stationNames, train } from "./tdx";
 import { type Env, type Freshness, freshness, setPersistentStore } from "./util";
 
 function json(body: unknown, status = 200) {
@@ -23,7 +23,8 @@ function serve(request: Request, env: Env): Promise<Response> {
 // each with its own cache and counter, which together blow through that. So every TDX request goes
 // through one Durable Object: a single shared cache and rate counter, plus durable storage for the
 // daily timetable / station list / route info.
-const TDX_PATHS = new Set(["/api/bus", "/api/train"]);
+const BUS_CITIES = new Set(["Taipei", "NewTaipei"]);
+const TDX_PATHS = new Set(["/api/bus", "/api/train", "/api/stations"]);
 
 export class TdxGate extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -52,19 +53,23 @@ async function handle(request: Request, env: Env): Promise<Response> {
       case "/api/quotes":
         return json(await quotes(list(q.get("symbols")).slice(0, 20)));
       case "/api/news":
-        return json(await news(q.get("topic") ?? "top"));
+        return json(await news(q.get("topic") ?? "top", list(q.get("sources"))));
       case "/api/bus": {
         // routes=NewTaipei:藍23:忠孝里,NewTaipei:F913:汐科站北:日月光社區 (optional 4th: heading toward)
         const queries = list(q.get("routes"))
           .map((p) => p.split(":"))
           .filter((p) => p.length === 3 || p.length === 4)
-          .map(([city, route, stop, toward]) => ({ city, route, stop, toward: toward || undefined }));
+          .map(([city, route, stop, toward]) => ({ city, route, stop, toward: toward || undefined }))
+          // Each city is one more TDX call a minute; links go to 大台北公車, which covers these two.
+          .filter((x) => BUS_CITIES.has(x.city));
         return json(await bus(env, queries.slice(0, 6)));
       }
       case "/api/train":
         return json(await train(env, q.get("from") ?? "", q.get("to") ?? "臺北", q.get("type") ?? "區間", Number(q.get("limit") ?? 6)));
+      case "/api/stations":
+        return json(await stationNames(env));
       case "/api/observations":
-        return json(await observations(env));
+        return json(await observations(env, list(q.get("towns"))));
     }
     if (url.pathname.startsWith("/api/")) return json({ error: "not found" }, 404);
     return env.ASSETS.fetch(request);

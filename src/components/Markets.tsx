@@ -1,4 +1,6 @@
-import { INSTRUMENTS, type Instrument, QUOTE_LAG_MIN, REFRESH_SEC, STALE_AFTER_SEC, links } from "../config";
+import { type Instrument, QUOTE_LAG_MIN, REFRESH_SEC, STALE_AFTER_SEC, links } from "../config";
+import { instrumentOf, tileCount, useSettings } from "../settings";
+import type React from "react";
 import { clock, fmt, moveClass, signed } from "../format";
 import { getJSON, usePolling } from "../hooks";
 import type { Quote } from "../shared";
@@ -97,18 +99,28 @@ function YieldTile({ items, quotes }: { items: Instrument[]; quotes: Map<string,
 }
 
 export function Markets() {
-  const symbols = INSTRUMENTS.map((i) => i.symbol).join(",");
-  const state = usePolling(() => getJSON<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols)}`), REFRESH_SEC.quotes);
+  const { settings } = useSettings();
+  const items = settings.markets.map(instrumentOf);
+  const symbols = items.map((i) => i.symbol).join(",");
+  const state = usePolling(() => getJSON<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols)}`), REFRESH_SEC.quotes, [symbols]);
   const bySymbol = new Map(state.data?.map((q) => [q.symbol, q]));
-  const prices = INSTRUMENTS.filter((i) => i.format.kind !== "yield");
-  const yields = INSTRUMENTS.filter((i) => i.format.kind === "yield");
+  const yields = items.filter((i) => i.format.kind === "yield");
+  const firstYield = items.findIndex((i) => i.format.kind === "yield");
+  const tiles = tileCount(settings.markets);
   return (
     <Section title="市場行情" className="markets" state={state} maxAgeSec={STALE_AFTER_SEC.quotes}>
-      <div className="tiles">
-        {prices.map((inst) => (
-          <Tile key={inst.symbol} inst={inst} quote={bySymbol.get(inst.symbol)} />
-        ))}
-        {yields.length > 0 && <YieldTile items={yields} quotes={bySymbol} />}
+      <div
+        className="tiles"
+        style={{ "--tiles": tiles, "--tile-rows-2": Math.ceil(tiles / 2), "--tile-rows-3": Math.ceil(tiles / 3) } as React.CSSProperties}
+      >
+        {/* Yields share one tile, placed where the first yield is in the list. */}
+        {items.map((inst, i) =>
+          inst.format.kind !== "yield" ? (
+            <Tile key={inst.symbol} inst={inst} quote={bySymbol.get(inst.symbol)} />
+          ) : i === firstYield ? (
+            <YieldTile key="yields" items={yields} quotes={bySymbol} />
+          ) : null,
+        )}
       </div>
     </Section>
   );

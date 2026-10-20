@@ -1,30 +1,28 @@
 import { useState } from "react";
 import { REFRESH_SEC, STALE_AFTER_SEC } from "../config";
+import { TOPICS, type Topic } from "../news-sources";
+import { useSettings } from "../settings";
 import { ago } from "../format";
 import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
 import type { NewsItem } from "../shared";
 import { Section } from "./Section";
 
-const TOPICS = [
-  ["top", "綜合"],
-  ["business", "財經"],
-  ["world", "國際"],
-  ["tech", "科技"],
-] as const;
 
 export function News() {
-  const [topic, setTopic] = useState<string>(() => {
+  const { settings } = useSettings();
+  const [topic, setTopic] = useState<Topic>(() => {
     try {
-      return localStorage.getItem("newsTopic") ?? "top";
-    } catch {
-      return "top";
-    }
+      const t = localStorage.getItem("newsTopic");
+      if (TOPICS.some(([id]) => id === t)) return t as Topic;
+    } catch {}
+    return "top";
   });
+  const sources = settings.news[topic].join(",");
   const now = useNow(60_000);
-  const state = usePolling(() => getJSON<NewsItem[]>(`/api/news?topic=${topic}`), REFRESH_SEC.news, [topic]);
+  const state = usePolling(() => getJSON<NewsItem[]>(`/api/news?topic=${topic}&sources=${sources}`), REFRESH_SEC.news, [topic, sources]);
   const listRef = useScrollHint<HTMLOListElement>();
 
-  const choose = (t: string) => {
+  const choose = (t: Topic) => {
     setTopic(t);
     try {
       localStorage.setItem("newsTopic", t);

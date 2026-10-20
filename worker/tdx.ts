@@ -187,11 +187,20 @@ export async function bus(env: Env, queries: BusQuery[]): Promise<BusResponse> {
 
 const norm = (s: string) => s.replace(/台/g, "臺").replace(/(車?站)$/, "");
 
-async function stationId(env: Env, name: string): Promise<string> {
-  // Stored as a small name → id table (it is also persisted, so keep it compact).
-  const ids = await cached("stations", 86400, async () =>
+// Stored as a small name → id table (it is also persisted, so keep it compact).
+const stationIds = (env: Env): Promise<Record<string, string>> =>
+  cached("stations", 86400, async () =>
     Object.fromEntries(rows(await tdx(env, "/v3/Rail/TRA/Station")).map((x) => [norm(zh(x.StationName)), String(x.StationID)])),
   );
+
+/** All 臺鐵 station names, for the settings screen's station picker. */
+export async function stationNames(env: Env): Promise<string[]> {
+  if (!tdxConfigured(env)) return [];
+  return Object.keys(await stationIds(env));
+}
+
+async function stationId(env: Env, name: string): Promise<string> {
+  const ids = await stationIds(env);
   const id = ids[norm(name)];
   if (!id) throw new Error(`找不到車站 ${name}`);
   return id;

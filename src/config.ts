@@ -1,22 +1,6 @@
-// 所有可以調整的項目都在這個檔案。
+// 固定的設定與連結。畫面上要顯示哪些地點、行情、公車、火車、新聞來源，在 src/settings.tsx（使用者可在設定畫面調整）。
 
-export interface Location {
-  name: string;
-  latitude: number;
-  longitude: number;
-  /** 氣象署測站：先找指定站名，沒有的話用同一行政區的任一測站。townId 是氣象署鄉鎮預報頁的代碼 */
-  cwa: { county: string; town: string; townId: string; station?: string };
-}
-
-export const LOCATIONS: Location[] = [
-  { name: "汐止", latitude: 25.0629, longitude: 121.658, cwa: { county: "新北市", town: "汐止區", townId: "6501100", station: "汐止" } },
-  { name: "南港", latitude: 25.055, longitude: 121.6067, cwa: { county: "臺北市", town: "南港區", townId: "6300900" } },
-  { name: "內湖", latitude: 25.0836, longitude: 121.5944, cwa: { county: "臺北市", town: "內湖區", townId: "6301000", station: "內湖" } },
-  { name: "台北", latitude: 25.0375, longitude: 121.5637, cwa: { county: "臺北市", town: "中正區", townId: "6300500", station: "臺北" } },
-];
-
-/** 整頁天氣動畫依照這個地點的現在天氣 */
-export const FX_LOCATION = "汐止";
+import type { WeatherPlace } from "./settings";
 
 export type QuoteFormat = { kind: "price"; decimals: number; prefix?: string } | { kind: "yield" };
 
@@ -30,58 +14,19 @@ export interface Instrument {
   format: QuoteFormat;
 }
 
-export const INSTRUMENTS: Instrument[] = [
-  { symbol: "^TWII", name: "台股加權", subtitle: "TAIEX", format: { kind: "price", decimals: 2 } },
-  { symbol: "^IXIC", name: "那斯達克", subtitle: "NASDAQ", format: { kind: "price", decimals: 2 } },
-  { symbol: "BTC-USD", name: "比特幣", subtitle: "BTC / USD", format: { kind: "price", decimals: 0, prefix: "$" } },
-  { symbol: "GC=F", name: "黃金", subtitle: "USD / oz", format: { kind: "price", decimals: 1, prefix: "$" } },
-  { symbol: "TWD=X", page: "USDTWD=X", name: "美元 / 台幣", subtitle: "USD / TWD", format: { kind: "price", decimals: 3 } },
-  { symbol: "^IRX", name: "美債 13 週", subtitle: "殖利率", format: { kind: "yield" }, feedDelayMin: 15 },
-  { symbol: "^FVX", name: "美債 5 年", subtitle: "殖利率", format: { kind: "yield" }, feedDelayMin: 15 },
-  { symbol: "^TNX", name: "美債 10 年", subtitle: "殖利率", format: { kind: "yield" }, feedDelayMin: 15 },
-  { symbol: "^TYX", name: "美債 30 年", subtitle: "殖利率", format: { kind: "yield" }, feedDelayMin: 15 },
-];
-
 /** 台灣習慣紅漲綠跌；改成 false 就是美式綠漲紅跌 */
 export const RED_IS_UP = true;
-
-export interface BusStop {
-  city: string; // TDX 縣市代碼：NewTaipei、Taipei…
-  route: string;
-  stop: string;
-  /** 0 = 去程, 1 = 返程, "auto" = 選目的地看起來是往台北的方向 */
-  direction: 0 | 1 | "auto";
-  /** 只看會開往這一站的車（取代 direction）；環狀線同一站經過兩次時，用它選對邊 */
-  toward?: string;
-  /** 列表分組標題；同組的排在一起，依設定順序 */
-  group: string;
-}
-
-export const BUS_STOPS: BusStop[] = [
-  { city: "NewTaipei", route: "藍23", stop: "忠孝里", direction: "auto", group: "往台北" },
-  { city: "NewTaipei", route: "藍39", stop: "樟樹實中", direction: "auto", group: "往台北" },
-  // 站名可以寫簡稱：TDX 上是「汐科站北站」、「南港行政中心(南港車站)」
-  { city: "NewTaipei", route: "F913", stop: "汐科站北站", direction: "auto", toward: "日月光社區", group: "往日月光社區" },
-  { city: "NewTaipei", route: "590", stop: "南港車站", direction: "auto", toward: "日月光社區", group: "往日月光社區" },
-];
 
 /** "auto" 判斷「往台北」的關鍵字（比對路線的往 XX 方向） */
 export const TOWARD_TAIPEI = /捷運|臺北|台北|市政府|南港|昆陽|松山/;
 
-/** 火車區塊的路線（手風琴，依序排列，第一條預設展開） */
-export const TRAINS = [
-  { from: "汐科", to: "臺北" }, // 上車站 → 下車站
-  { from: "臺北", to: "汐科" },
-  { from: "松山", to: "汐科" },
-];
-export const TRAIN_TYPE = "區間"; // 也會包含「區間快」
 export const TRAIN_LIMIT = 10; // 列表可捲動，螢幕高的時候能多顯示幾班
 
 export const links = {
   /** 臺鐵營運資訊（停駛、通阻公告） */
   traAlerts: "https://www.railway.gov.tw/tra-tip-web/tip",
   quote: (i: Instrument) => `https://tw.stock.yahoo.com/quote/${encodeURIComponent(i.page ?? i.symbol)}`,
-  weather: (l: Location) => `https://www.cwa.gov.tw/V8/C/W/Town/Town.html?TID=${l.cwa.townId}`,
+  weather: (p: WeatherPlace) => `https://www.cwa.gov.tw/V8/C/W/Town/Town.html?TID=${p.townId}`,
   bus: (routeId: string) => `https://pda5284.gov.taipei/MQS/route.jsp?rid=${routeId}`,
   /** 臺鐵車次查詢，含停靠站與即時誤點 */
   train: (trainNo: string, date: string) =>

@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type Scene, sceneFor } from "./WeatherFx";
-import { FX_LOCATION, LOCATIONS, type Location, REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
+import type React from "react";
+import { REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
+import { type WeatherPlace, placeKey, useSettings } from "../settings";
 import { clock } from "../format";
 import { type Loaded, getJSON, usePolling } from "../hooks";
 import type { Observation, ObservationResponse } from "../shared";
@@ -41,23 +43,23 @@ function cwaEmoji(text: string, day: boolean): string {
 
 const HIGHWAY = /^國[一二三五]/;
 
-function pickStation(loc: Location, obs: Observation[]): Observation | undefined {
+function pickStation(loc: WeatherPlace, obs: Observation[]): Observation | undefined {
   // A station that hasn't reported for a while is broken or offline; better to show the model
   // (and say so) than an old reading presented as current.
   const usable = obs.filter((o) => o.temperature != null && Date.now() - o.time < STATION_MAX_AGE_MIN * 60_000);
-  const inTown = usable.filter((o) => o.county === loc.cwa.county && o.town === loc.cwa.town);
+  const inTown = usable.filter((o) => o.county === loc.county && o.town === loc.town);
   return (
-    (loc.cwa.station && usable.find((o) => o.station === loc.cwa.station)) ||
+    (loc.station && usable.find((o) => o.station === loc.station)) ||
     // Freeway stations (國一N013K …) sit on viaducts and in valleys; use them only if nothing else exists.
     inTown.find((o) => !HIGHWAY.test(o.station)) ||
     inTown[0]
   );
 }
 
-async function loadForecasts(): Promise<Loaded<Forecast[]>> {
+async function loadForecasts(places: WeatherPlace[]): Promise<Loaded<Forecast[]>> {
   const p = new URLSearchParams({
-    latitude: LOCATIONS.map((l) => l.latitude).join(","),
-    longitude: LOCATIONS.map((l) => l.longitude).join(","),
+    latitude: places.map((l) => l.latitude).join(","),
+    longitude: places.map((l) => l.longitude).join(","),
     current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m",
     hourly: "temperature_2m,precipitation_probability,weather_code,is_day",
     daily: "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
@@ -167,7 +169,7 @@ function Hourly({ f, group }: { f: Forecast; group: StripGroup }) {
   );
 }
 
-function WeatherCard({ loc, f, obs, group }: { loc: Location; f?: Forecast; obs?: Observation; group: StripGroup }) {
+function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; obs?: Observation; group: StripGroup }) {
   if (!f) return <div className="wx"><div className="wx-name">{loc.name}</div></div>;
   const day = f.current.is_day === 1;
   const [mText, mIcon] = wmo(f.current.weather_code, day);
@@ -204,17 +206,27 @@ function WeatherCard({ loc, f, obs, group }: { loc: Location; f?: Forecast; obs?
 }
 
 export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
-  const forecasts = usePolling(loadForecasts, REFRESH_SEC.weather);
+  const { settings } = useSettings();
+  const places = settings.weather;
+  const key = places.map((p) => `${p.latitude},${p.longitude}`).join(";");
+  const towns = [...new Set(places.map(placeKey))].join(",");
+  const forecasts = usePolling(() => loadForecasts(places), REFRESH_SEC.weather, [key]);
   // Station data is optional: without a CWA key (or if it fails) the cards fall back to the model.
-  const obs = usePolling(() => getJSON<ObservationResponse>("/api/observations"), REFRESH_SEC.weather);
+  const obs = usePolling(
+    () => getJSON<ObservationResponse>(`/api/observations?towns=${encodeURIComponent(towns)}`),
+    REFRESH_SEC.weather,
+    [towns],
+  );
   const stations = obs.data?.observations ?? [];
   const [group] = useState(() => new StripGroup());
   useEffect(() => () => group.dispose(), [group]);
+  // Right after the places change, the previous forecasts are still in state; don't mix them up.
+  const fresh = forecasts.data?.length === places.length ? forecasts.data : undefined;
 
-  // Tell the page what the weather is at FX_LOCATION, for the full-page animation.
-  const fxIndex = LOCATIONS.findIndex((l) => l.name === FX_LOCATION);
-  const fxForecast = forecasts.data?.[fxIndex];
-  const fxText = fxIndex >= 0 ? pickStation(LOCATIONS[fxIndex], stations)?.weather : null;
+  // The full-page animation follows the first place's weather.
+  const fxPlace = places[0];
+  const fxForecast = fresh?.[0];
+  const fxText = fxPlace ? pickStation(fxPlace, stations)?.weather : null;
   const fxKind = fxForecast ? sceneFor(fxText, fxForecast.current.weather_code, fxForecast.current.is_day === 1) : null;
   useEffect(() => {
     if (fxKind && onScene) onScene(fxKind);
@@ -222,9 +234,9 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   }, [fxKind?.kind, fxKind?.day]);
   return (
     <Section title="天氣" className="weather" state={forecasts} maxAgeSec={STALE_AFTER_SEC.weather}>
-      <div className="wx-grid">
-        {LOCATIONS.map((loc, i) => (
-          <WeatherCard key={loc.name} loc={loc} f={forecasts.data?.[i]} obs={pickStation(loc, stations)} group={group} />
+      <div className="wx-grid" style={{ "--wx": places.length, "--wx-rows-2": Math.ceil(places.length / 2) } as React.CSSProperties}>
+        {places.map((loc, i) => (
+          <WeatherCard key={loc.name} loc={loc} f={fresh?.[i]} obs={pickStation(loc, stations)} group={group} />
         ))}
       </div>
       {obs.data && !obs.data.configured && <p className="hint">設定氣象署授權碼後，會改用各區測站的實測資料。</p>}

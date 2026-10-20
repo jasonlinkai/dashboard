@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
-import { FX_LOCATION } from "../config";
+import { useSettings } from "../settings";
+import { Backup } from "./Backup";
+import { ContentEditor } from "./ContentEditor";
 import type { ThemePref } from "../theme";
 
 const THEMES: [ThemePref, string, string][] = [
@@ -22,6 +24,7 @@ export function Settings({
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const { settings } = useSettings();
   useEffect(() => {
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -31,7 +34,7 @@ export function Settings({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-small" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <h2 id="settings-title">設定</h2>
           <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="關閉">
@@ -59,8 +62,10 @@ export function Settings({
                 </button>
               ))}
             </div>
-            <div className="muted small">依照{FX_LOCATION}現在的天氣，在整個畫面背景顯示晴、雲、雨、雷等動畫。系統開啟「減少動態效果」時不會播放。</div>
+            <div className="muted small">依照{settings.weather[0]?.name}（天氣的第一個地點）現在的天氣，在整個畫面背景顯示晴、雲、雨、雷等動畫。系統開啟「減少動態效果」時不會播放。</div>
           </div>
+          <ContentEditor />
+          <Backup theme={theme} fx={fx} onTheme={onTheme} onFx={onFx} />
         </div>
       </div>
     </div>
