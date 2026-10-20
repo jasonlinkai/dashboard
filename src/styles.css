@@ -236,11 +236,6 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   /* Vertical only. */
   overflow-y: auto; overflow-x: hidden; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none;
 }
-/* Fade the bottom only while there is more below (data-more is set by useScrollHint). */
-.scroll[data-more="true"] {
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
-}
 .scroll::-webkit-scrollbar { display: none; }
 
 /* ---------- Cards ---------- */
@@ -521,19 +516,17 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* ---------- Scroll cue (scrollCues.ts) ---------- */
 [data-cue]::after {
   content: ""; position: absolute; left: var(--cue-x); top: var(--cue-y); z-index: 3; pointer-events: none;
-  width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
-  background: color-mix(in srgb, var(--blue) 88%, transparent)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
-    center / 16px no-repeat;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
-  animation: cue-bob 1.6s ease-in-out infinite;
+  width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%;
+  background: color-mix(in srgb, var(--card-2) 80%, transparent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b95a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    center / 13px no-repeat;
+  border: 1px solid var(--line); opacity: 0.75;
+  animation: cue-bob 2.4s ease-in-out infinite;
   --cue-rot: 0deg;
 }
-[data-cue="up"]::after { --cue-rot: 180deg; }
 [data-cue="right"]::after { --cue-rot: -90deg; }
-[data-cue="left"]::after { --cue-rot: 90deg; }
 @keyframes cue-bob {
-  0%, 100% { transform: rotate(var(--cue-rot)) translateY(-2px); opacity: 0.85; }
-  50% { transform: rotate(var(--cue-rot)) translateY(3px); opacity: 1; }
+  0%, 100% { transform: rotate(var(--cue-rot)) translateY(-1px); }
+  50% { transform: rotate(var(--cue-rot)) translateY(2px); }
 }
 @media (prefers-reduced-motion: reduce) { [data-cue]::after { animation: none; transform: rotate(var(--cue-rot)); } }

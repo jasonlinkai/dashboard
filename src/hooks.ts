@@ -147,30 +147,11 @@ export function useWakeLock() {
 }
 
 /**
- * For scrollable lists: sets data-more="true" while there is content below the fold, so the
- * bottom fade only appears when there really is more to scroll to.
+ * Ref for a scrollable list. The "more below" hint is drawn by scrollCues.ts on the list's parent;
+ * nothing is written to the list itself while it scrolls (that can cut iOS momentum scrolling short).
  */
 export function useScrollHint<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => {
-      el.dataset.more = String(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
-    };
-    update();
-    el.addEventListener("scroll", update, { passive: true });
-    const resize = new ResizeObserver(update);
-    resize.observe(el);
-    const mutate = new MutationObserver(update); // new data arrived
-    mutate.observe(el, { childList: true, subtree: true });
-    return () => {
-      el.removeEventListener("scroll", update);
-      resize.disconnect();
-      mutate.disconnect();
-    };
-  }, []);
-  return ref;
+  return useRef<T>(null);
 }
 
 // Long enough that resting a finger before scrolling doesn't turn into a drag.

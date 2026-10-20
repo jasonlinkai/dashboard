@@ -1,6 +1,7 @@
-// A small bouncing arrow on every area whose content doesn't fit, so people remember it scrolls.
-// It points to where the rest is (down / right; up / left once scrolled to the end) and hides when
-// everything fits. Drawn as ::after on the area's parent, positioned from CSS variables set here.
+// A small, quiet arrow on every area whose content doesn't fit, so people remember it scrolls.
+// It points to where the rest is (down / right) and disappears at the end. Drawn as ::after on the
+// area's parent, positioned from CSS variables set here. It only changes once scrolling has
+// stopped: restyling things mid-scroll can cut iOS momentum scrolling short.
 
 const AREAS = ".scroll, .wx-grid, .tiles, .route-tabs";
 const EDGE = 4;
@@ -18,10 +19,8 @@ function update(el: HTMLElement) {
     return;
   }
   const down = el.scrollTop + el.clientHeight < el.scrollHeight - EDGE;
-  const up = el.scrollTop > EDGE;
   const right = scrollsX(el) && el.scrollLeft + el.clientWidth < el.scrollWidth - EDGE;
-  const left = scrollsX(el) && el.scrollLeft > EDGE;
-  const dir = down ? "down" : right ? "right" : up ? "up" : left ? "left" : "";
+  const dir = down ? "down" : right ? "right" : "";
   if (!dir) {
     delete p.dataset.cue;
     return;
@@ -30,14 +29,7 @@ function update(el: HTMLElement) {
   // Place it inside the scrolling area, at the edge the arrow points to.
   const x0 = el.offsetLeft;
   const y0 = el.offsetTop;
-  const [x, y] =
-    dir === "down"
-      ? [x0 + el.offsetWidth / 2, y0 + el.offsetHeight - 18]
-      : dir === "up"
-        ? [x0 + el.offsetWidth / 2, y0 + 18]
-        : dir === "right"
-          ? [x0 + el.offsetWidth - 18, y0 + el.offsetHeight / 2]
-          : [x0 + 18, y0 + el.offsetHeight / 2];
+  const [x, y] = dir === "down" ? [x0 + el.offsetWidth / 2, y0 + el.offsetHeight - 14] : [x0 + el.offsetWidth - 14, y0 + el.offsetHeight / 2];
   p.style.setProperty("--cue-x", `${Math.round(x)}px`);
   p.style.setProperty("--cue-y", `${Math.round(y)}px`);
   p.dataset.cue = dir;
@@ -63,13 +55,17 @@ export function startScrollCues() {
       requestAnimationFrame(scan);
     }
   };
+  // Wait until the area has stopped scrolling (no scroll event for a moment) before updating.
+  const idle = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
   document.addEventListener(
     "scroll",
     (e) => {
       const el = e.target as HTMLElement;
-      if (el instanceof HTMLElement && el.matches(AREAS)) update(el);
+      if (!(el instanceof HTMLElement) || !el.matches(AREAS)) return;
+      clearTimeout(idle.get(el));
+      idle.set(el, setTimeout(() => update(el), 250));
     },
-    true,
+    { capture: true, passive: true },
   );
   new MutationObserver(later).observe(document.body, { subtree: true, childList: true });
   addEventListener("resize", later);
