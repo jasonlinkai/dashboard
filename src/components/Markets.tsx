@@ -83,7 +83,13 @@ export function Markets() {
   const bySymbol = new Map(state.data?.map((q) => [q.symbol, q]));
   const n = items.length;
   return (
-    <Section title="市場行情" className="markets" state={state} maxAgeSec={STALE_AFTER_SEC.quotes}>
+    <Section
+      title="市場行情"
+      className="markets"
+      state={state}
+      maxAgeSec={STALE_AFTER_SEC.quotes}
+      source={<><a href="https://finance.yahoo.com/" target="_blank" rel="noopener noreferrer">Yahoo Finance</a>（非官方介面，僅供參考）</>}
+    >
       <div
         className="tiles"
         ref={tilesRef}

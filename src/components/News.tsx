@@ -55,7 +55,14 @@ export function News() {
   );
 
   return (
-    <Section title="新聞" className="news" state={state} maxAgeSec={STALE_AFTER_SEC.news} actions={tabs}>
+    <Section
+      title="新聞"
+      className="news"
+      state={state}
+      maxAgeSec={STALE_AFTER_SEC.news}
+      actions={tabs}
+      source="各媒體 RSS 標題與連結，版權屬原媒體，點標題閱讀原文"
+    >
       <ol className="news-list scroll" ref={listRef}>
         {!topic && <li className="hint">所有新聞分類都設為不顯示，可在右上角「設定 → 新聞」開啟。</li>}
         {state.data?.map((n) => (

@@ -243,7 +243,17 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fxKind?.kind, fxKind?.day]);
   return (
-    <Section title="天氣" className="weather" state={forecasts} maxAgeSec={STALE_AFTER_SEC.weather}>
+    <Section
+      title="天氣"
+      className="weather"
+      state={forecasts}
+      maxAgeSec={STALE_AFTER_SEC.weather}
+      source={
+        <>
+          <a href="https://www.cwa.gov.tw/" target="_blank" rel="noopener noreferrer">中央氣象署</a>（實測）、Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a>（預報，CC BY 4.0）
+        </>
+      }
+    >
       <div className="wx-grid" ref={gridRef} style={{ "--wx": places.length, "--wx-rows-2": Math.ceil(places.length / 2) } as React.CSSProperties}>
         {places.map((loc, i) => (
           <WeatherCard key={loc.name} loc={loc} f={fresh?.[i]} obs={pickStation(loc, stations)} group={group} />

@@ -50,6 +50,7 @@ export function Section({
   state,
   maxAgeSec,
   actions,
+  source,
   children,
 }: {
   title: string;
@@ -58,6 +59,8 @@ export function Section({
   /** Data older than this is flagged as delayed. */
   maxAgeSec: number;
   actions?: ReactNode;
+  /** Attribution line at the bottom of the card (the data licences require crediting the source). */
+  source?: ReactNode;
   children: ReactNode;
 }) {
   useNow(1000); // re-render every second
@@ -89,6 +92,7 @@ export function Section({
         </span>
       </header>
       {children}
+      {source && <div className="card-source">資料來源：{source}</div>}
     </section>
   );
 }

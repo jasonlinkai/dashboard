@@ -62,7 +62,13 @@ export function Bus() {
   const all = state.data?.arrivals ?? [];
   const notFound = new Set(state.data?.notFound ?? []);
   return (
-    <Section title="公車" className="bus" state={state} maxAgeSec={STALE_AFTER_SEC.bus}>
+    <Section
+      title="公車"
+      className="bus"
+      state={state}
+      maxAgeSec={STALE_AFTER_SEC.bus}
+      source={<>交通部 <a href="https://tdx.transportdata.tw/" target="_blank" rel="noopener noreferrer">TDX</a> 運輸資料流通服務</>}
+    >
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (
@@ -235,7 +241,13 @@ export function Train() {
   // Right after switching, the previous route's answer is still in state; don't show it here.
   const current = route && state.data && state.data.from === route.from && state.data.to === route.to ? state.data : undefined;
   return (
-    <Section title="火車" className="train" state={state} maxAgeSec={STALE_AFTER_SEC.train}>
+    <Section
+      title="火車"
+      className="train"
+      state={state}
+      maxAgeSec={STALE_AFTER_SEC.train}
+      source={<>交通部 <a href="https://tdx.transportdata.tw/" target="_blank" rel="noopener noreferrer">TDX</a>（臺鐵時刻、即時與營運公告）</>}
+    >
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
       ) : (

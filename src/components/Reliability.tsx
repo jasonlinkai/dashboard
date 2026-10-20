@@ -108,6 +108,17 @@ function blocks(settings: Settings): Block[] {
 ];
 }
 
+/** Who the data comes from and on what terms (the licences require crediting the source). */
+const SOURCES: [name: string, href: string, use: string, licence: string][] = [
+  ["交通部 TDX 運輸資料流通服務", "https://tdx.transportdata.tw/", "公車到站、臺鐵時刻／即時／營運公告", "政府資料開放授權條款－第 1 版"],
+  ["中央氣象署開放資料", "https://opendata.cwa.gov.tw/", "測站實測、鄉鎮清單與座標", "政府資料開放授權條款－第 1 版"],
+  ["臺灣證券交易所 OpenAPI", "https://openapi.twse.com.tw/", "上市股票、ETF 中文名稱", "政府資料開放授權條款－第 1 版"],
+  ["Open-Meteo", "https://open-meteo.com/", "天氣預報（逐時、高低溫、降雨機率）", "CC BY 4.0，免費 API 限非商業使用"],
+  ["Yahoo Finance", "https://finance.yahoo.com/", "行情報價與走勢", "非官方介面，僅供個人參考，報價以券商為準"],
+  ["各新聞媒體", "https://www.cna.com.tw/", "新聞標題與連結（RSS、TVBS 網站地圖）", "版權屬各媒體；只顯示標題並連回原文"],
+  ["Google 地圖", "https://www.google.com/maps", "公車路線連結", "僅開啟搜尋連結"],
+];
+
 const LEGEND: [ReactNode, string][] = [
   ["◯ 0:24 後更新", "下一次向後端要資料的倒數；倒數本身不代表資料是新的。"],
   ["資料 23:51:27", "後端最後一次真正從資料來源取得資料的時間。"],
@@ -169,6 +180,30 @@ export function Reliability({ onClose }: { onClose: () => void }) {
               </ul>
             </section>
           ))}
+          <section className="rel-block rel-sources">
+            <h3>資料來源與授權</h3>
+            <dl>
+              {SOURCES.map(([name, href, use, licence]) => (
+                <div key={name}>
+                  <dt>
+                    <a href={href} target="_blank" rel="noopener noreferrer">
+                      {name}
+                    </a>
+                  </dt>
+                  <dd>
+                    {use}・{licence}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="muted">
+              政府開放資料依{" "}
+              <a href="https://data.gov.tw/license" target="_blank" rel="noopener noreferrer">
+                政府資料開放授權條款－第 1 版
+              </a>{" "}
+              使用並標示來源。本看板為個人、非商業用途。
+            </p>
+          </section>
           <p className="rel-foot">
             所有數字僅供參考，不構成投資建議；出門、搭車、交易前請以官方來源確認。點任何一筆資料都可以開啟它的來源頁面。
           </p>
