@@ -25,7 +25,10 @@ function summary(s: Settings): [string, string][] {
     ["公車", s.bus.map((b) => `${b.route} ${b.stop}`).join("、") || "（無）"],
     ["火車", s.trains.map((t) => `${t.from}→${t.to}`).join("、") || "（無）"],
     ["車種", s.trainType],
-    ...TOPICS.map(([id, label]): [string, string] => [`新聞・${label}`, s.news[id].map((x) => NEWS_BY_ID.get(x)?.name ?? x).join("、")]),
+    ...TOPICS.map(([id, label]): [string, string] => [
+      `新聞・${label}`,
+      s.news[id].map((x) => NEWS_BY_ID.get(x)?.name ?? x).join("、") || "（不顯示）",
+    ]),
   ];
 }
 

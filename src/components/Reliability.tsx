@@ -20,7 +20,7 @@ function blocks(settings: Settings): Block[] {
   const fixedStations = settings.weather.filter((l) => l.station).map((l) => `${l.name}→${l.station}站`);
   const townStations = settings.weather.filter((l) => !l.station).map((l) => l.name);
   const newsLine = (topic: (typeof TOPICS)[number]) =>
-    `${topic[1]}：${settings.news[topic[0]].map((id) => NEWS_BY_ID.get(id)?.name ?? id).join("、")}`;
+    `${topic[1]}：${settings.news[topic[0]].map((id) => NEWS_BY_ID.get(id)?.name ?? id).join("、") || "（不顯示）"}`;
   return [
   {
     title: "市場行情",

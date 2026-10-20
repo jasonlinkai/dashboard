@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BUS_CITY_NAME, type BusRouteInfo, type BusTrip, MAX_BUS_CITIES } from "../bus-cities";
-import { NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
+import { DEFAULT_NEWS, NEWS_BY_ID, TOPICS, type Topic, sourcesFor } from "../news-sources";
 import { tdxHeaders } from "../tdxKey";
 import { toast } from "../toast";
 import {
@@ -194,7 +194,17 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
 
   const add = () => {
     if (!picked || !label || duplicate || full) return;
-    update([...places, { name: label, county: picked.county, town: picked.town, townId: picked.townId, latitude: picked.latitude, longitude: picked.longitude }]);
+    update([
+      ...places,
+      {
+        name: label,
+        county: picked.county,
+        town: picked.town,
+        townId: picked.townId,
+        latitude: picked.latitude,
+        longitude: picked.longitude,
+      },
+    ]);
     toast(`已新增「${label}」`);
     setName("");
   };
@@ -203,7 +213,15 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
     <>
       <ul className="ed-list">
         {places.map((p, i) => (
-          <Row key={p.name} name={p.name} i={i} count={places.length} min={1} onMove={(by) => update(move(places, i, by))} onRemove={() => update(without(places, i))}>
+          <Row
+            key={p.name}
+            name={p.name}
+            i={i}
+            count={places.length}
+            min={1}
+            onMove={(by) => update(move(places, i, by))}
+            onRemove={() => update(without(places, i))}
+          >
             {p.name}
             <span className="muted small">
               {" "}
@@ -228,13 +246,23 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
             </option>
           ))}
         </select>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={picked ? shortName(picked.town) : "顯示名稱"} maxLength={8} aria-label="顯示名稱" />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={picked ? shortName(picked.town) : "顯示名稱"}
+          maxLength={8}
+          aria-label="顯示名稱"
+        />
         <button className="ed-primary" onClick={add} disabled={!picked || !label || duplicate || full}>
           新增
         </button>
       </div>
       <p className="muted small">
-        {full ? `最多 ${LIMITS.weather} 個地點。` : duplicate ? "已經有同名的地點，請換個顯示名稱。" : "清單是氣象署有測站的鄉鎮區；第一個地點決定整頁的天氣動畫。"}
+        {full
+          ? `最多 ${LIMITS.weather} 個地點。`
+          : duplicate
+            ? "已經有同名的地點，請換個顯示名稱。"
+            : "清單是氣象署有測站的鄉鎮區；第一個地點決定整頁的天氣動畫。"}
       </p>
     </>
   );
@@ -283,17 +311,32 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
             </option>
           ))}
         </select>
-        <button className="ed-primary" disabled={!pick || !fits(pick)} onClick={() => (update([...items, pick]), setPick(""), toast(`已新增「${instrumentOf(pick).name}」`))}>
+        <button
+          className="ed-primary"
+          disabled={!pick || !fits(pick)}
+          onClick={() => (update([...items, pick]), setPick(""), toast(`已新增「${instrumentOf(pick).name}」`))}
+        >
           新增
         </button>
       </div>
       <div className="ed-add">
-        <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Yahoo 代號，如 2317.TW" maxLength={20} aria-label="自訂代號" />
+        <input
+          value={symbol}
+          onChange={(e) => setSymbol(e.target.value)}
+          placeholder="Yahoo 代號，如 2317.TW"
+          maxLength={20}
+          aria-label="自訂代號"
+        />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="顯示名稱" maxLength={10} aria-label="自訂名稱" />
         <button
           className="ed-primary"
           disabled={!customOk || !fits({ symbol: symbol.trim(), name })}
-          onClick={() => (update([...items, { symbol: symbol.trim(), name: name.trim() }]), setSymbol(""), setName(""), toast(`已新增「${name.trim()}」`))}
+          onClick={() => (
+            update([...items, { symbol: symbol.trim(), name: name.trim() }]),
+            setSymbol(""),
+            setName(""),
+            toast(`已新增「${name.trim()}」`)
+          )}
         >
           新增
         </button>
@@ -400,10 +443,7 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
             onRemove={() => update(without(stops, i))}
           >
             {b.route}
-            <span className="muted small">
-              {" "}
-              {busLabel(b)}
-            </span>
+            <span className="muted small"> {busLabel(b)}</span>
           </Row>
         ))}
       </ul>
@@ -419,7 +459,13 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
                 </option>
               ))}
             </select>
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜尋路線，如 藍23、307" maxLength={20} aria-label="搜尋路線" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜尋路線，如 藍23、307"
+              maxLength={20}
+              aria-label="搜尋路線"
+            />
           </div>
           {cityFull ? (
             <p className="hint error">最多 {MAX_BUS_CITIES} 個縣市（每個縣市每分鐘要多查一次 TDX）。</p>
@@ -433,7 +479,9 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
               </button>
             </p>
           ) : !q ? (
-            <p className="muted small">輸入路線名稱，或起訖站名（{BUS_CITY_NAME.get(city)}共 {list.length} 條路線）。</p>
+            <p className="muted small">
+              輸入路線名稱，或起訖站名（{BUS_CITY_NAME.get(city)}共 {list.length} 條路線）。
+            </p>
           ) : !matches.length ? (
             <p className="muted small">找不到「{q}」。</p>
           ) : (
@@ -517,7 +565,11 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
       .then((names: string[]) => setStations(names))
       .catch(() => {});
   }, []);
-  const norm = (v: string) => v.trim().replace(/台/g, "臺").replace(/車?站$/, "");
+  const norm = (v: string) =>
+    v
+      .trim()
+      .replace(/台/g, "臺")
+      .replace(/車?站$/, "");
   const known = (v: string) => !stations.length || stations.includes(norm(v));
   const dup = routes.some((r) => r.from === norm(from) && r.to === norm(to));
   const ok = norm(from) && norm(to) && norm(from) !== norm(to) && known(from) && known(to) && !dup && routes.length < LIMITS.trains;
@@ -527,22 +579,52 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
     <>
       <ul className="ed-list">
         {routes.map((r, i) => (
-          <Row key={`${r.from}-${r.to}`} name={`${r.from}→${r.to}`} i={i} count={routes.length} onMove={(by) => update(move(routes, i, by))} onRemove={() => update(without(routes, i))}>
+          <Row
+            key={`${r.from}-${r.to}`}
+            name={`${r.from}→${r.to}`}
+            i={i}
+            count={routes.length}
+            onMove={(by) => update(move(routes, i, by))}
+            onRemove={() => update(without(routes, i))}
+          >
             {r.from} → {r.to}
             {i === 0 && <span className="muted small">・預設顯示</span>}
           </Row>
         ))}
       </ul>
       <div className="ed-add">
-        <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="上車站" list="tra-stations" maxLength={8} aria-label="上車站" />
+        <input
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+          placeholder="上車站"
+          list="tra-stations"
+          maxLength={8}
+          aria-label="上車站"
+        />
         <span className="muted">→</span>
-        <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="下車站" list="tra-stations" maxLength={8} aria-label="下車站" />
+        <input
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          placeholder="下車站"
+          list="tra-stations"
+          maxLength={8}
+          aria-label="下車站"
+        />
         <datalist id="tra-stations">
           {stations.map((n) => (
             <option key={n} value={n} />
           ))}
         </datalist>
-        <button className="ed-primary" disabled={!ok} onClick={() => (update([...routes, { from: norm(from), to: norm(to) }]), setFrom(""), setTo(""), toast(`已新增「${norm(from)}→${norm(to)}」`))}>
+        <button
+          className="ed-primary"
+          disabled={!ok}
+          onClick={() => (
+            update([...routes, { from: norm(from), to: norm(to) }]),
+            setFrom(""),
+            setTo(""),
+            toast(`已新增「${norm(from)}→${norm(to)}」`)
+          )}
+        >
           新增
         </button>
       </div>
@@ -559,7 +641,12 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         <div className="setting-label">車種</div>
         <div className="segmented" role="radiogroup" aria-label="車種">
           {TRAIN_TYPES.map((t) => (
-            <button key={t} role="radio" aria-checked={s.trainType === t} onClick={() => (set({ ...s, trainType: t }), toast(`車種改為「${t}」`))}>
+            <button
+              key={t}
+              role="radio"
+              aria-checked={s.trainType === t}
+              onClick={() => (set({ ...s, trainType: t }), toast(`車種改為「${t}」`))}
+            >
               {t}
             </button>
           ))}
@@ -584,39 +671,78 @@ function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
     <>
       <div className="tabs ed-tabs" role="tablist">
         {TOPICS.map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={topic === id} onClick={() => (setTopic(id), setPick(""))}>
+          <button
+            key={id}
+            role="tab"
+            aria-selected={topic === id}
+            className={s.news[id].length ? "" : "tab-hidden"}
+            onClick={() => (setTopic(id), setPick(""))}
+          >
             {label}
           </button>
         ))}
       </div>
-      <ul className="ed-list">
-        {ids.map((id, i) => {
-          const src = NEWS_BY_ID.get(id);
-          return (
-            <Row key={id} name={NEWS_BY_ID.get(id)?.name ?? id} i={i} count={ids.length} min={1} onMove={(by) => update(move(ids, i, by))} onRemove={() => update(without(ids, i))}>
-              {src?.name ?? id}
-              {src?.note && <span className="muted small">・{src.note}</span>}
-            </Row>
-          );
-        })}
-      </ul>
-      <div className="ed-add">
-        <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="新增來源">
-          <option value="">{available.length ? "選擇來源" : "沒有其他來源"}</option>
-          {available.map((src) => (
-            <option key={src.id} value={src.id}>
-              {src.name}
-              {src.note ? `（${src.note}）` : ""}
-            </option>
-          ))}
-        </select>
-        <button className="ed-primary" disabled={!pick || full} onClick={() => (update([...ids, pick]), setPick(""), toast(`已新增「${NEWS_BY_ID.get(pick)?.name ?? pick}」`))}>
-          新增
-        </button>
+      <div className="segmented" role="radiogroup" aria-label="在看板顯示這個分類">
+        {([true, false] as const).map((on) => (
+          <button
+            key={String(on)}
+            role="radio"
+            aria-checked={ids.length > 0 === on}
+            onClick={() => {
+              if (ids.length > 0 === on) return;
+              update(on ? DEFAULT_NEWS[topic] : []);
+              const label = TOPICS.find(([id]) => id === topic)![1];
+              toast(on ? `看板顯示「${label}」` : `看板不顯示「${label}」`);
+            }}
+          >
+            {on ? "顯示這個分類" : "不顯示"}
+          </button>
+        ))}
       </div>
-      <p className="muted small">
-        {full ? `每個分頁最多 ${LIMITS.news} 個來源。` : "排在前面的來源，在每一輪都排在前面。來源只能從清單選，不能填任意網址。"}
-      </p>
+      {ids.length > 0 && (
+        <>
+          <ul className="ed-list">
+            {ids.map((id, i) => {
+              const src = NEWS_BY_ID.get(id);
+              return (
+                <Row
+                  key={id}
+                  name={NEWS_BY_ID.get(id)?.name ?? id}
+                  i={i}
+                  count={ids.length}
+                  min={1}
+                  onMove={(by) => update(move(ids, i, by))}
+                  onRemove={() => update(without(ids, i))}
+                >
+                  {src?.name ?? id}
+                  {src?.note && <span className="muted small">・{src.note}</span>}
+                </Row>
+              );
+            })}
+          </ul>
+          <div className="ed-add">
+            <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="新增來源">
+              <option value="">{available.length ? "選擇來源" : "沒有其他來源"}</option>
+              {available.map((src) => (
+                <option key={src.id} value={src.id}>
+                  {src.name}
+                  {src.note ? `（${src.note}）` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              className="ed-primary"
+              disabled={!pick || full}
+              onClick={() => (update([...ids, pick]), setPick(""), toast(`已新增「${NEWS_BY_ID.get(pick)?.name ?? pick}」`))}
+            >
+              新增
+            </button>
+          </div>
+          <p className="muted small">
+            {full ? `每個分頁最多 ${LIMITS.news} 個來源。` : "排在前面的來源，在每一輪都排在前面。來源只能從清單選，不能填任意網址。"}
+          </p>
+        </>
+      )}
     </>
   );
 }
@@ -635,7 +761,7 @@ function summary(section: Section, s: Settings): string {
     case "trains":
       return s.trains.map((t) => `${t.from}→${t.to}`).join("、") || "未設定";
     case "news":
-      return TOPICS.map(([id, label]) => `${label} ${s.news[id].length}`).join("・") + " 個來源";
+      return `顯示 ${TOPICS.filter(([id]) => s.news[id].length).length}／${TOPICS.length} 個分類`;
   }
 }
 

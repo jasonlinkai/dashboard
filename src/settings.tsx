@@ -4,7 +4,7 @@
 import { type ReactNode, createContext, useContext, useEffect, useState } from "react";
 import type { Instrument } from "./config";
 import { type BusCity, MAX_BUS_CITIES, isBusCity } from "./bus-cities";
-import { MAX_NEWS_SOURCES, NEWS_BY_ID, TOPICS, type Topic } from "./news-sources";
+import { DEFAULT_NEWS, MAX_NEWS_SOURCES, NEWS_BY_ID, TOPICS, type Topic } from "./news-sources";
 
 export interface WeatherPlace {
   name: string;
@@ -113,12 +113,7 @@ export const DEFAULT_SETTINGS: Settings = {
     { from: "松山", to: "汐科" },
   ],
   trainType: "區間",
-  news: {
-    top: ["cna", "tvbs", "ettoday", "pts", "newtalk", "bbc-zh", "dw-zh"],
-    business: ["cna", "tvbs", "udn-money", "ettoday", "cnbc"],
-    world: ["cna", "tvbs", "bbc-zh", "dw-zh", "aljazeera"],
-    tech: ["cna", "tvbs", "ithome", "technews", "inside", "techcrunch"],
-  },
+  news: DEFAULT_NEWS,
 };
 
 // ---------- Derived helpers ----------
@@ -251,9 +246,10 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
   if (!isObj(raw.news)) err("news 必須是物件");
   else {
     for (const [topic, label] of TOPICS) {
-      const ids = raw.news[topic];
-      if (!Array.isArray(ids) || ids.length < 1 || ids.length > LIMITS.news) {
-        err(`news.${topic}（${label}）要有 1～${LIMITS.news} 個來源`);
+      // A topic added after the file was saved gets the defaults; an empty list hides the tab.
+      const ids = raw.news[topic] ?? DEFAULT_NEWS[topic];
+      if (!Array.isArray(ids) || ids.length > LIMITS.news) {
+        err(`news.${topic}（${label}）要是 0～${LIMITS.news} 個來源（0 個＝不顯示這個分類）`);
         continue;
       }
       const bad = ids.filter((id) => typeof id !== "string" || !NEWS_BY_ID.get(id)?.feeds[topic]);

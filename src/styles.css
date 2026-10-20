@@ -386,6 +386,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .tabs button { border: 0; background: none; padding: 3px 9px; border-radius: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .tabs button[aria-selected="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.2); }
 .news .card-head { flex-wrap: wrap; }
+/* Many news topics: the tab row scrolls sideways instead of wrapping. */
+.news-tabs { max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; scrollbar-width: none; }
+.news-tabs::-webkit-scrollbar { display: none; }
+.news-tabs button { flex: none; }
+.tabs button.tab-hidden { opacity: 0.45; text-decoration: line-through; }
 .news-list { flex: 1; min-height: 0; }
 .news-list li + li { border-top: 1px solid var(--line); }
 .news-list .link { padding: 7px 6px; margin: 0 -6px; }

@@ -4,9 +4,16 @@
 
 export const TOPICS = [
   ["top", "綜合"],
+  ["politics", "政治"],
   ["business", "財經"],
   ["world", "國際"],
+  ["china", "兩岸"],
+  ["society", "社會"],
+  ["life", "生活"],
+  ["health", "健康"],
   ["tech", "科技"],
+  ["sports", "運動"],
+  ["entertainment", "娛樂"],
 ] as const;
 export type Topic = (typeof TOPICS)[number][0];
 
@@ -36,9 +43,15 @@ export const NEWS_SOURCES: NewsSource[] = [
     name: "中央社",
     feeds: {
       top: [cna("politics"), cna("social"), cna("lifehealth")],
+      politics: [cna("politics")],
       business: [cna("finance")],
       world: [cna("intworld")],
+      china: [cna("mainland")],
+      society: [cna("social")],
+      life: [cna("lifehealth")],
       tech: [cna("technology")],
+      sports: [cna("sport")],
+      entertainment: [cna("stars")],
     },
   },
   {
@@ -46,17 +59,46 @@ export const NEWS_SOURCES: NewsSource[] = [
     name: "TVBS",
     feeds: {
       top: [tvbs("politics", "local", "life", "world", "china", "money")],
+      politics: [tvbs("politics")],
       business: [tvbs("money")],
       world: [tvbs("world", "china")],
+      china: [tvbs("china")],
+      society: [tvbs("local")],
+      life: [tvbs("life")],
+      health: [tvbs("health")],
       tech: [tvbs("tech")],
+      sports: [tvbs("sports")],
+      entertainment: [tvbs("entertainment")],
     },
   },
   {
     id: "ettoday",
     name: "ETtoday",
-    feeds: { top: one("https://feeds.feedburner.com/ettoday/realtime"), business: one("https://feeds.feedburner.com/ettoday/finance") },
+    feeds: {
+      top: one("https://feeds.feedburner.com/ettoday/realtime"),
+      business: one("https://feeds.feedburner.com/ettoday/finance"),
+      china: one("https://feeds.feedburner.com/ettoday/china"),
+      society: one("https://feeds.feedburner.com/ettoday/society"),
+      life: one("https://feeds.feedburner.com/ettoday/lifestyle"),
+      health: one("https://feeds.feedburner.com/ettoday/health"),
+      sports: one("https://feeds.feedburner.com/ettoday/sport"),
+      entertainment: one("https://feeds.feedburner.com/ettoday/star"),
+    },
   },
-  { id: "ltn", name: "自由時報", feeds: { top: [ltn("all")], business: [ltn("business")], world: [ltn("world")] } },
+  {
+    id: "ltn",
+    name: "自由時報",
+    feeds: {
+      top: [ltn("all")],
+      politics: [ltn("politics")],
+      business: [ltn("business")],
+      world: [ltn("world")],
+      society: [ltn("society")],
+      life: [ltn("life")],
+      sports: [ltn("sports")],
+      entertainment: [ltn("entertainment")],
+    },
+  },
   { id: "pts", name: "公視", feeds: { top: one("https://news.pts.org.tw/xml/newsfeed.xml") } },
   { id: "newtalk", name: "新頭殼", feeds: { top: one("https://newtalk.tw/rss/all") } },
   { id: "udn-money", name: "經濟日報", feeds: { business: one("https://money.udn.com/rssfeed/news/1001/5591?ch=money") } },
@@ -110,3 +152,18 @@ export const NEWS_BY_ID = new Map(NEWS_SOURCES.map((s) => [s.id, s]));
 export const sourcesFor = (topic: Topic) => NEWS_SOURCES.filter((s) => s.feeds[topic]?.length);
 
 export const MAX_NEWS_SOURCES = 12;
+
+/** Default outlets per topic, in priority order (no 自由時報 by request; it can be added in settings). */
+export const DEFAULT_NEWS: Record<Topic, string[]> = {
+  top: ["cna", "tvbs", "ettoday", "pts", "newtalk", "bbc-zh", "dw-zh"],
+  politics: ["cna", "tvbs"],
+  business: ["cna", "tvbs", "udn-money", "ettoday", "cnbc"],
+  world: ["cna", "tvbs", "bbc-zh", "dw-zh", "aljazeera"],
+  china: ["cna", "tvbs", "ettoday"],
+  society: ["cna", "tvbs", "ettoday"],
+  life: ["cna", "tvbs", "ettoday"],
+  health: ["tvbs", "ettoday"],
+  tech: ["cna", "tvbs", "ithome", "technews", "inside", "techcrunch"],
+  sports: ["cna", "tvbs", "ettoday"],
+  entertainment: ["cna", "tvbs", "ettoday"],
+};

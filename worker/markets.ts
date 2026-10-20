@@ -1,4 +1,4 @@
-import { type FeedSpec, NEWS_BY_ID, MAX_NEWS_SOURCES, TOPICS, type Topic } from "../src/news-sources";
+import { DEFAULT_NEWS, type FeedSpec, NEWS_BY_ID, MAX_NEWS_SOURCES, TOPICS, type Topic } from "../src/news-sources";
 import type { NewsItem, Quote } from "../src/shared";
 import { UA, cached, fetchJSON } from "./util";
 
@@ -94,14 +94,6 @@ async function feed({ source, url, sections }: Feed): Promise<NewsItem[]> {
 
 // Outlets often run the same wire story word for word; compare titles without spaces/punctuation.
 const titleKey = (t: string) => t.replace(/[\s\p{P}\p{S}]/gu, "");
-
-/** Default outlets per topic, in priority order (the settings screen starts from these). */
-export const DEFAULT_NEWS: Record<Topic, string[]> = {
-  top: ["cna", "tvbs", "ettoday", "pts", "newtalk", "bbc-zh", "dw-zh"],
-  business: ["cna", "tvbs", "udn-money", "ettoday", "cnbc"],
-  world: ["cna", "tvbs", "bbc-zh", "dw-zh", "aljazeera"],
-  tech: ["cna", "tvbs", "ithome", "technews", "inside", "techcrunch"],
-};
 
 /**
  * `sources` are catalog ids in the user's order; unknown ids, and outlets that don't cover this

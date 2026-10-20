@@ -3,7 +3,7 @@
 // area's parent, positioned from CSS variables set here. It only changes once scrolling has
 // stopped: restyling things mid-scroll can cut iOS momentum scrolling short.
 
-const AREAS = ".scroll, .wx-grid, .tiles, .route-tabs";
+const AREAS = ".scroll, .wx-grid, .tiles, .route-tabs, .news-tabs";
 const EDGE = 4;
 
 function scrollsX(el: HTMLElement) {
