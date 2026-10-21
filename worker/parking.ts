@@ -368,13 +368,17 @@ function sameLot(a: ParkingLot, b: ParkingLot): string | null {
 
 /** How much a record tells the driver; the richest one of a merged car park is shown. */
 function richness(p: ParkingLot): number {
+  // "收費（金額未提供）" says nothing a driver can use.
+  const fareInfo = p.fareEstimate ? 4 : p.fare && !/^依現場|金額未提供/.test(p.fare) ? 2 : 0;
   return (
+    // Official records first: they carry live spaces (even when the live feed failed this time)
+    // and the operator's rate text; OpenStreetMap only fills their blanks.
+    (p.source === "OSM" ? 0 : 20) +
     (p.live === "ok" && (p.car || p.spaces) ? 8 : 0) +
-    (p.fareEstimate ? 4 : p.fare && !/^依現場/.test(p.fare) ? 2 : 0) +
+    fareInfo +
     (p.name !== UNNAMED ? 2 : 0) +
     (p.address ? 1 : 0) +
-    (p.description ? 1 : 0) +
-    (p.source === "OSM" ? 0 : 0.5) // tie: prefer the official record
+    (p.description ? 1 : 0)
   );
 }
 

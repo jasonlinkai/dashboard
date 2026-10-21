@@ -377,7 +377,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
                 )}
                 {loading && " ・載入中…"}
                 <span className="pk-dist-note muted small">
-                  每個停車場右側的距離，是從目的地（地圖上的藍點）到停車場的直線距離，實際行車距離會更長。
+                  每個停車場右側的距離，是從目的地（地圖上的紅色圖釘）到停車場的直線距離，實際行車距離會更長。
                 </span>
               </span>
               {data && (
@@ -511,7 +511,7 @@ function LotItem({
           <SpaceLine lot={lot} now={now} />
           <span className="pk-fare">{fareText(lot)}</span>
         </span>
-        <span className="pk-dist" title="從目的地（地圖上的藍點）到這個停車場的直線距離">
+        <span className="pk-dist" title="從目的地（地圖上的紅色圖釘）到這個停車場的直線距離">
           {fmtDistance(lot.distance)}
           <small>距目的地</small>
         </span>
@@ -652,7 +652,13 @@ function ParkingMap({
     if (!dest) return;
     const circle = L.circle([dest.lat, dest.lon], { radius, color: "#5aa9ff", weight: 1.5, fillOpacity: 0.06, interactive: false }).addTo(g);
     L.marker([dest.lat, dest.lon], {
-      icon: L.divIcon({ className: "", html: '<div class="pk-dest" title="目的地"></div>', iconSize: [0, 0] }),
+      // A red map pin whose tip is on the point (the icon's anchor is its bottom middle).
+      icon: L.divIcon({
+        className: "",
+        html: `<svg class="pk-dest" viewBox="0 0 30 42" aria-label="目的地"><path d="M15 41C15 41 28 25.5 28 15A13 13 0 0 0 2 15C2 25.5 15 41 15 41Z" fill="#e5322d" stroke="#fff" stroke-width="2"/><circle cx="15" cy="15" r="5" fill="#fff"/></svg>`,
+        iconSize: [30, 42],
+        iconAnchor: [15, 41],
+      }),
       interactive: false,
       zIndexOffset: 1000,
     }).addTo(g);
