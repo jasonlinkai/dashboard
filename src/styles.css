@@ -583,6 +583,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-open { padding: 0; font: 700 15px/1 -apple-system, BlinkMacSystemFont, sans-serif; }
 .parking {
   position: fixed; inset: 0; z-index: 20; background: var(--bg); color: var(--text);
+  /* No pinch-zooming the page (the map zooms itself; Leaflet sets touch-action: none on it). */
+  touch-action: pan-x pan-y;
   display: flex; flex-direction: column; gap: 8px;
   padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
 }
@@ -615,7 +617,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 @media (min-width: 900px) { .pk-body { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1.4fr) minmax(340px, 1fr); padding-bottom: max(12px, env(safe-area-inset-bottom)); } }
 .pk-map { border-radius: 12px; border: 1px solid var(--line); overflow: hidden; background: var(--card-2); min-height: 0; }
 .pk-list {
-  min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 .pk-summary { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; font-size: 14px; padding: 2px 2px 6px; }

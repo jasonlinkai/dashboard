@@ -155,8 +155,17 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   onCloseRef.current = onClose;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
+    // iOS Safari can still pinch-zoom the page despite touch-action; its gesture events can be
+    // cancelled. Leaflet zooms the map from touch events, so the map keeps its pinch.
+    const noZoom = (e: Event) => e.preventDefault();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("gesturestart", noZoom);
+    document.addEventListener("gesturechange", noZoom);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("gesturestart", noZoom);
+      document.removeEventListener("gesturechange", noZoom);
+    };
   }, []);
 
   // Fetch for the current destination, then refresh live spaces every 2 minutes while visible.
