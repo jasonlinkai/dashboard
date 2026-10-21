@@ -74,7 +74,8 @@ const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-d
 const TABS: Record<Tab, [label: string, icon: string]> = {
   markets: ["行情", "📈"],
   weather: ["天氣", "⛅"],
-  transit: ["交通", "🚌"],
+  bus: ["公車", "🚌"],
+  train: ["火車", "🚆"],
   news: ["新聞", "📰"],
   todo: ["待辦", "✅"],
 };
@@ -84,7 +85,8 @@ const defaultsOf = (types: Panel[]) => Object.fromEntries(types.flatMap((t) => F
 
 function loadTab(): Tab {
   try {
-    const t = localStorage.getItem("tab");
+    // The old 交通 tab (bus and train together) is the bus tab now.
+    const t = localStorage.getItem("tab")?.replace("transit", "bus");
     if (PHONE_TABS.some((id) => id === t)) return t as Tab;
   } catch {}
   return "markets";
@@ -150,13 +152,8 @@ export default function App() {
   const gridRef = useRef<HTMLElement>(null);
   const layoutBtnRef = useRef<HTMLButtonElement>(null);
   const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, shownIds]));
-  // No arranging on a phone (fixed tabs); a window shrunk to phone size ends it too.
-  const phoneRef = useRef(phone);
-  phoneRef.current = phone;
-  useEffect(() => onEditLayout(() => (phoneRef.current ? toast("手機版沒有排版功能，請在平板或電腦上調整", "info") : setEditing(true))), []);
-  useEffect(() => {
-    if (phone) setEditing(false);
-  }, [phone]);
+  // A phone has layout mode too, but its tabs are fixed: there it can only reset to the defaults.
+  useEffect(() => onEditLayout(() => setEditing(true)), []);
   const boxes = mode === "phone" ? null : layout[mode];
   const setLayout = (next: Partial<typeof layout>, first?: Rects) => {
     flip.capture(first);
@@ -323,6 +320,24 @@ export default function App() {
       if (other?.dataset.card) swap(p, other.dataset.card);
     },
   };
+  /**
+   * A phone has no boxes: the preset's deleted types come back with their default content (a free
+   * spot or hidden on the tablet boards, whose layouts are otherwise left alone), and each tab shows
+   * its type's first card again.
+   */
+  const resetPhone = (preset: Preset) => {
+    const back = settings.absent.filter((t) => SCREENS.some((m) => preset[m][t]));
+    const next = validate({ ...settings, ...defaultsOf(back), absent: settings.absent.filter((t) => !back.includes(t)) }, preset).settings;
+    if (!next) return toast("無法恢復預設", "error");
+    setSettings(next);
+    setPicked({});
+    try {
+      localStorage.removeItem("phoneCards");
+    } catch {}
+    const added = back.length ? `，補回${back.map((t) => PANEL_NAMES[t]).join("、")}` : "";
+    setAnnounce(`已恢復預設${added}`);
+    toast(`已恢復手機的預設${added}`);
+  };
   // Entering edit mode puts focus on the first thing to move, for keyboard users.
   // Leaving edit mode hands focus back to the header's layout button (the bar's one is gone).
   const wasEditing = useRef(false);
@@ -331,11 +346,13 @@ export default function App() {
     wasEditing.current = editing;
   }, [editing]);
   useEffect(() => {
-    if (!editing || mode === "phone") return;
-    const b = layout[mode];
-    const first = [...shownIds].sort((a, c) => b[a].y - b[c].y || b[a].x - b[c].x)[0];
-    const grid = gridRef.current;
-    (grid && cardOf(grid, first))?.querySelector<HTMLElement>(".card-move")?.focus();
+    if (!editing) return;
+    if (mode !== "phone") {
+      const b = layout[mode];
+      const first = [...shownIds].sort((a, c) => b[a].y - b[c].y || b[a].x - b[c].x)[0];
+      const grid = gridRef.current;
+      (grid && cardOf(grid, first))?.querySelector<HTMLElement>(".card-move")?.focus();
+    }
     // Esc in the reset question closes only the question.
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector("dialog[open]") && setEditing(false);
     window.addEventListener("keydown", onKey);
@@ -349,7 +366,7 @@ export default function App() {
    * (or are hidden) as when loading a file. A type that came back gets a free spot in the other layout.
    */
   const resetLayout = (preset: Preset = PRESETS.default) => {
-    if (mode === "phone") return;
+    if (mode === "phone") return resetPhone(preset);
     const back = settings.absent.filter((t) => preset[mode][t]);
     const { [mode]: _, ...keep } = layout;
     const next = validate(
@@ -442,18 +459,16 @@ export default function App() {
           <button className="info-btn" onClick={() => setShowInfo(true)} aria-label="資料可靠度說明" title="資料可靠度說明">
             i
           </button>
-          {!phone && (
-            <button
-              ref={layoutBtnRef}
-              className="icon-btn layout-toggle"
-              aria-pressed="false"
-              onClick={() => setEditing(true)}
-              aria-label="排版模式"
-              title="排版模式：拖動板塊調整位置"
-            >
-              <LayoutIcon />
-            </button>
-          )}
+          <button
+            ref={layoutBtnRef}
+            className="icon-btn layout-toggle"
+            aria-pressed="false"
+            onClick={() => setEditing(true)}
+            aria-label="排版模式"
+            title={phone ? "排版模式：恢復預設" : "排版模式：拖動板塊調整位置"}
+          >
+            <LayoutIcon />
+          </button>
           {/* Settings stays at the far right. */}
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="設定" title="設定">
             <GearIcon />
@@ -515,7 +530,7 @@ export default function App() {
           </Suspense>
         )}
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
-        {showLayoutHelp && mode !== "phone" && <LayoutHelp mode={mode} onClose={() => setShowLayoutHelp(false)} />}
+        {showLayoutHelp && <LayoutHelp mode={mode} onClose={() => setShowLayoutHelp(false)} />}
         {confirmReset && (
           <Confirm
             title="恢復預設版面？"
@@ -523,8 +538,9 @@ export default function App() {
             onOk={() => (setConfirmReset(false), resetLayout())}
             onCancel={() => setConfirmReset(false)}
           >
-            {mode === "wide" ? "橫向（桌機、平板橫放）" : "直向（平板直放）"}
-            的板塊位置與大小會回到預設，隱藏的板塊也會顯示回來；被刪除的預設板塊會用預設內容補回。另一個方向的版面不受影響。
+            {phone
+              ? "被刪除的預設板塊會用預設內容補回，每個分頁回到顯示第一個板塊。平板與電腦的版面不受影響。"
+              : `${mode === "wide" ? "橫向（桌機、平板橫放）" : "直向（平板直放）"}的板塊位置與大小會回到預設，隱藏的板塊也會顯示回來；被刪除的預設板塊會用預設內容補回。另一個方向的版面不受影響。`}
           </Confirm>
         )}
         {showSettings && (

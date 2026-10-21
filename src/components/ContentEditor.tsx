@@ -36,7 +36,7 @@ import {
 import { SkeletonPicks } from "./Skeleton";
 import { SubPage } from "./SubPage";
 
-// Same order as the board's tabs on a phone: 行情・天氣・交通（公車、火車）・新聞.
+// Same order as the board's tabs on a phone: 行情・天氣・公車・火車・新聞・待辦.
 const SECTIONS = [
   ["markets", "行情"],
   ["weather", "天氣"],

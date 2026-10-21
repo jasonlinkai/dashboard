@@ -77,9 +77,8 @@ export const isPanel = (s: unknown): s is Panel => (PANELS as readonly unknown[]
 export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", weather: "天氣", bus: "公車", train: "火車", news: "新聞", todo: "待辦事項" };
 
 /** The phone's bottom tabs (parking opens from the header's P, as on every screen). */
-export const PHONE_TABS = ["markets", "weather", "transit", "news", "todo"] as const;
+export const PHONE_TABS = ["markets", "weather", "bus", "train", "news", "todo"] as const;
 export type PhoneTab = (typeof PHONE_TABS)[number];
-export const TRANSIT = ["bus", "train"] as const;
 
 /** Tablet and desktop: each card is a box on a GRID × GRID board, in cells (x, y from the top left). */
 export const GRID = 24;

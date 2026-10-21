@@ -213,7 +213,7 @@ export function Section({
           </button>
         )}
         {actions}
-        {layout.editing && panel && (
+        {layout.editing && panel && layout.mode !== "phone" && (
           <button
             className="card-hide"
             onClick={() => layout.hide(id)}

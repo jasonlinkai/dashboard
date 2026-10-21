@@ -470,6 +470,58 @@ test.describe("phone", () => {
     await expect(c.getByRole("button", { name: "沒有下一個" })).toBeDisabled();
   });
 
+  test("bus and train have a tab each; the old 交通 tab opens as the bus tab", async ({ page }) => {
+    await page.addInitScript(() => localStorage.getItem("tab") ?? localStorage.setItem("tab", "transit"));
+    await open(page, PHONE);
+    await expect(card(page, "bus")).toBeVisible();
+    await expect(card(page, "train")).toBeHidden();
+    await tab(page, "火車").click();
+    await expect(card(page, "train")).toBeVisible();
+    await expect(card(page, "bus")).toBeHidden();
+    await expect(page.locator("nav.tabbar button")).toHaveText([/行情/, /天氣/, /公車/, /火車/, /新聞/, /待辦/]);
+  });
+
+  test("layout mode on a phone can only reset", async ({ page }) => {
+    await open(page, PHONE);
+    await startEditing(page);
+    await expect(bar(page)).toBeVisible();
+    // Just the help, reset and finish: nothing to add, hide, move or resize.
+    await expect(bar(page).getByRole("button")).toHaveText(["", "恢復預設", ""]);
+    await expect(bar(page).getByRole("combobox")).toHaveCount(0);
+    await expect(page.locator(".card-hide, .card-move, .card-resize, .card-edge")).toHaveCount(0);
+    await bar(page).getByRole("button", { name: "排版說明" }).click();
+    await expect(page.getByRole("dialog", { name: "排版怎麼運作" })).toContainText("手機的分頁固定");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(bar(page)).toBeHidden();
+  });
+
+  test("a phone reset brings back the preset's deleted types and the first card of each tab; tablet layouts stay", async ({ page }) => {
+    const wide = { markets: DEF.wide.markets, weather: DEF.wide.weather, bus: DEF.wide.bus, train: DEF.wide.train };
+    await open(page, PHONE, {
+      ...BASE,
+      absent: ["news", "todo"],
+      extras: [{ id: "weather-aa", type: "weather", weather: [place("南港")] }],
+      layout: { wide, tall: swapped(DEF.tall), hidden: { wide: ["weather-aa"], tall: ["news"] } },
+    });
+    await page.evaluate(() => localStorage.setItem("phoneCards", JSON.stringify({ weather: "weather-aa" })));
+    await page.reload();
+    await startEditing(page);
+    await bar(page).getByRole("button", { name: "恢復預設" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "恢復預設" }).click();
+    const s = (await stored(page))!;
+    expect(s.absent).toEqual(["todo"]); // to-do isn't in the default preset
+    expect(s.layout.wide.markets).toEqual(DEF.wide.markets);
+    expect(s.layout.wide.weather).toEqual(DEF.wide.weather);
+    expect(s.layout.tall.bus).toEqual(DEF.tall.train); // still swapped
+    expect(s.layout.wide.news).toEqual(DEF.wide.news); // its preset box was free there
+    await page.keyboard.press("Escape");
+    await tab(page, "天氣").click();
+    await expect(page.locator("main.grid > .card.weather .card-switch-count")).toHaveText("1/2");
+    await tab(page, "新聞").click();
+    await expect(card(page, "news")).toBeVisible();
+  });
+
   test("a to-do tab", async ({ page }) => {
     await open(page, PHONE);
     await tab(page, "待辦").click();
