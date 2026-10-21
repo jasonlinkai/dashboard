@@ -286,7 +286,8 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   );
   const osmAsOf = data?.extra.find((x) => x.source === "OSM")?.asOf;
   const osmDate = osmAsOf ? osmAsOf.slice(0, 10) : null;
-  const noLiveAtAll = lots.length > 0 && lots.every((p) => p.live !== "ok");
+  // Only when the sources have no live data here, not when it just failed to load (that has its own note).
+  const noLiveAtAll = lots.length > 0 && lots.every((p) => p.live === "none");
 
   return (
     <div className="parking" role="dialog" aria-modal="true" aria-labelledby="parking-title">
@@ -409,6 +410,9 @@ export default function Parking({ onClose }: { onClose: () => void }) {
                   </>
                 )}
                 {loading && " ・載入中…"}
+                <span className="pk-dist-note muted small">
+                  每個停車場右側的距離，是從目的地（地圖上的藍點）到停車場的直線距離，實際行車距離會更長。
+                </span>
               </span>
               {data && (
                 <span className="muted tiny">
@@ -461,7 +465,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
 
           <ol className="pk-lots">
             {lots.map((p) => (
-              <LotItem key={p.id} lot={p} now={now} open={selected === p.id} onToggle={() => setSelected(selected === p.id ? null : p.id)} />
+              <LotItem key={p.id} lot={p} now={now} destLabel={dest?.label ?? ""} open={selected === p.id} onToggle={() => setSelected(selected === p.id ? null : p.id)} />
             ))}
           </ol>
 
@@ -509,7 +513,19 @@ function SpaceLine({ lot, now }: { lot: ParkingLot; now: number }) {
   );
 }
 
-function LotItem({ lot, now, open, onToggle }: { lot: ParkingLot; now: number; open: boolean; onToggle: () => void }) {
+function LotItem({
+  lot,
+  now,
+  open,
+  onToggle,
+  destLabel,
+}: {
+  lot: ParkingLot;
+  now: number;
+  open: boolean;
+  onToggle: () => void;
+  destLabel: string;
+}) {
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
     if (open) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -529,7 +545,10 @@ function LotItem({ lot, now, open, onToggle }: { lot: ParkingLot; now: number; o
           <SpaceLine lot={lot} now={now} />
           <span className="pk-fare">{fareText(lot)}</span>
         </span>
-        <span className="pk-dist">{fmtDistance(lot.distance)}</span>
+        <span className="pk-dist" title="從目的地（地圖上的藍點）到這個停車場的直線距離">
+          {fmtDistance(lot.distance)}
+          <small>距目的地</small>
+        </span>
       </button>
       {open && (
         <div className="pk-detail">
@@ -550,6 +569,10 @@ function LotItem({ lot, now, open, onToggle }: { lot: ParkingLot; now: number; o
               {lot.description}
             </p>
           )}
+          <p>
+            <b>距離</b>
+            距目的地「{destLabel}」直線 {fmtDistance(lot.distance)}（實際行車距離會更長）
+          </p>
           <p>
             <b>來源</b>
             {lot.sources.map((s, i) => `${SOURCE[s].long}${i === 0 && lot.sources.length > 1 ? "（主要）" : ""}`).join("、")}
