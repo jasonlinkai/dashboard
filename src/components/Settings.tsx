@@ -89,10 +89,10 @@ export function Settings({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-head">
-          <h2 id="settings-title">設定</h2>
-          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="關閉">
-            ✕
+          <button ref={closeRef} className="sub-back" onClick={onClose}>
+            ‹ 返回
           </button>
+          <h2 id="settings-title">設定</h2>
         </header>
         <nav className="settings-tabs" role="tablist" aria-label="設定分類">
           {PAGES.map(([id, label]) => (
