@@ -27,12 +27,19 @@ function serve(request: Request, env: Env): Promise<Response> {
 // daily timetable / station list / route info.
 const TDX_PATHS = new Set(["/api/bus", "/api/bus-routes", "/api/bus-trips", "/api/bus-route", "/api/train", "/api/stations", "/api/tdx-check", "/api/parking", "/api/geocode"]);
 
-/** A visitor's own TDX key from the request headers (used for this request only, never stored). */
-function ownCreds(request: Request): TdxCreds | null {
-  const id = request.headers.get("X-TDX-Id")?.trim();
-  const secret = request.headers.get("X-TDX-Secret")?.trim();
-  if (!id || !secret || id.length > 200 || secret.length > 200) return null;
-  return { id, secret };
+/**
+ * A visitor's own TDX keys from the request headers (used for this request only, never stored):
+ * X-TDX-Id / X-TDX-Secret, and optionally -2 and -3 (TDX lets a member create three keys).
+ */
+function ownCreds(request: Request): TdxCreds[] | null {
+  const keys: TdxCreds[] = [];
+  for (const suffix of ["", "-2", "-3"]) {
+    const id = request.headers.get(`X-TDX-Id${suffix}`)?.trim();
+    const secret = request.headers.get(`X-TDX-Secret${suffix}`)?.trim();
+    if (!id || !secret || id.length > 200 || secret.length > 200 || keys.some((k) => k.id === id)) continue;
+    keys.push({ id, secret });
+  }
+  return keys.length ? keys : null;
 }
 
 export class TdxGate extends DurableObject<Env> {

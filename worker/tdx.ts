@@ -12,7 +12,7 @@ const tokens = new Map<string, { value: string; expires: number }>();
 /**
  * The site's own keys: TDX_CLIENT_ID / TDX_CLIENT_SECRET, plus optional _2 and _3 (TDX lets one
  * member create up to three keys). Each key has its own per-minute quota, so calls are spread
- * across them; see pickSiteKey.
+ * across them; see pickKey.
  */
 export function siteKeys(env: Env): TdxCreds[] {
   const keys: TdxCreds[] = [];
@@ -42,11 +42,20 @@ async function accessToken(creds: TdxCreds, own: boolean): Promise<string> {
 }
 
 /** Logs in with the visitor's key without spending any of its per-minute quota. */
-export async function checkCreds(env: Env): Promise<{ ok: true }> {
-  const creds = tdxCreds.getStore();
-  if (!creds) throw new Error("沒有收到金鑰");
-  tokens.delete(creds.id); // always really try
-  await accessToken(creds, true);
+/** Logs in with each of the visitor's keys (spends none of their per-minute quota). */
+export async function checkCreds(_env: Env): Promise<{ ok: true }> {
+  const keys = tdxCreds.getStore();
+  if (!keys?.length) throw new Error("沒有收到金鑰");
+  for (const creds of keys) {
+    tokens.delete(creds.id); // always really try
+    try {
+      await accessToken(creds, true);
+    } catch (e) {
+      loginFailed.set(creds.id, { until: Date.now() + 5 * 60_000, error: e });
+      throw e;
+    }
+    loginFailed.delete(creds.id); // fixed: usable again right away
+  }
   return { ok: true };
 }
 
@@ -54,8 +63,9 @@ export async function checkCreds(env: Env): Promise<{ ok: true }> {
 // so we never burn the minute on 429s; callers fall back to their last cached value.
 const BUDGET_PER_MIN = 4;
 const recentCalls = new Map<string, number[]>();
-/** Site keys whose login failed, left alone until this time so we don't retry them on every call. */
-const loginFailedUntil = new Map<string, number>();
+/** Keys whose login failed, left alone until `until` so we don't retry them on every call. */
+const loginFailed = new Map<string, { until: number; error: unknown }>();
+const isLoginFailed = (id: string, now: number) => (loginFailed.get(id)?.until ?? 0) > now;
 
 /** This key's calls in the last minute (pruned in place). */
 function recentFor(id: string, now: number): number[] {
@@ -69,11 +79,11 @@ function recentFor(id: string, now: number): number[] {
  * The site key with the most quota left this minute (ties: the one used least recently), so
  * calls rotate across the keys and one key isn't used up while the others sit idle.
  */
-function pickSiteKey(keys: TdxCreds[], now: number, skip: Set<string>): TdxCreds | null {
+function pickKey(keys: TdxCreds[], now: number, skip: Set<string>): TdxCreds | null {
   let best: TdxCreds | null = null;
   let bestScore = Infinity;
   for (const k of keys) {
-    if (skip.has(k.id) || (loginFailedUntil.get(k.id) ?? 0) > now) continue;
+    if (skip.has(k.id) || isLoginFailed(k.id, now)) continue;
     const recent = recentFor(k.id, now);
     if (recent.length >= BUDGET_PER_MIN) continue;
     const score = recent.length * 1e13 + (recent.at(-1) ?? 0);
@@ -85,7 +95,7 @@ function pickSiteKey(keys: TdxCreds[], now: number, skip: Set<string>): TdxCreds
 /** `path` is under /api/basic unless it starts with /api/ (e.g. /api/advanced/V3/Map/...). */
 export async function tdx(env: Env, path: string, query: Record<string, string> = {}): Promise<unknown> {
   const visitor = tdxCreds.getStore();
-  const keys = visitor ? [visitor] : siteKeys(env);
+  const keys = visitor ?? siteKeys(env);
   if (!keys.length) throw new Error("尚未設定 TDX 金鑰");
   const full = visitor ? "你的 TDX 金鑰每分鐘查詢額度已滿，稍後自動更新" : "TDX 每分鐘查詢額度已滿，稍後自動更新";
   const qs = new URLSearchParams({ ...query, $format: "JSON" });
@@ -95,15 +105,19 @@ export async function tdx(env: Env, path: string, query: Record<string, string> 
   const skip = new Set<string>();
   for (;;) {
     const now = Date.now();
-    const creds = pickSiteKey(keys, now, skip);
-    if (!creds) throw new Error(full);
+    const creds = pickKey(keys, now, skip);
+    if (!creds) {
+      // Every key fails to log in: say that, not "quota used up".
+      const failed = keys.map((k) => loginFailed.get(k.id)).filter((f) => f && f.until > now);
+      throw failed.length === keys.length ? failed[0]!.error : new Error(full);
+    }
     let auth: string;
     try {
       auth = await accessToken(creds, Boolean(visitor));
     } catch (e) {
-      // A site key that can't log in shouldn't take the others down with it.
-      if (visitor || keys.length === 1) throw e;
-      loginFailedUntil.set(creds.id, now + 5 * 60_000);
+      // A key that can't log in shouldn't take the others down with it.
+      loginFailed.set(creds.id, { until: now + 5 * 60_000, error: e });
+      if (keys.length === 1) throw e;
       skip.add(creds.id);
       continue;
     }

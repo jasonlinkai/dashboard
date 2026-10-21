@@ -31,7 +31,8 @@ export interface TdxCreds {
   id: string;
   secret: string;
 }
-export const tdxCreds = new AsyncLocalStorage<TdxCreds | null>();
+/** A visitor's own TDX keys (up to three, sent with their request, never stored); null = the site's keys. */
+export const tdxCreds = new AsyncLocalStorage<TdxCreds[] | null>();
 
 // Anything cached for an hour or more is reference data (station lists, timetables), not live data.
 const LIVE_TTL_SEC = 3600;

@@ -738,3 +738,15 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .sk-wx { width: 60%; height: 1.6em; margin-top: 10px; }
 @keyframes sk-shine { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+.key-slot { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card-2); }
+.key-slot-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+/* Four pages, always all visible: equal columns instead of a row that scrolls. */
+.settings-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex: none; }
+.settings-tabs button {
+  border: 0; border-radius: 999px; padding: 7px 4px; background: var(--card-2); color: var(--muted);
+  font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Same size on every page, so switching pages doesn't make the dialog jump; content stays at the top. */
+.modal-settings .settings-body, .modal-settings .setting { align-content: start; }
+.modal-settings { height: min(860px, 100%); }
+.settings-tabs button[aria-selected="true"] { background: var(--blue); color: #fff; }
