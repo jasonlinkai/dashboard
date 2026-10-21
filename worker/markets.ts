@@ -207,10 +207,9 @@ export function news(topicParam: string, sourceIds: string[]): Promise<NewsItem[
     if (!ok.length) throw (settled[0] as PromiseRejectedResult).reason;
     const seen = new Set<string>();
     const perSource = new Map<string, number>();
-    const byTime = (a: NewsItem, b: NewsItem) => (b.published ?? 0) - (a.published ?? 0);
-    // Rank each story within its outlet, then list round by round (every outlet's newest, then
-    // every outlet's second newest …) in the user's outlet order, so outlets alternate instead of
-    // whoever publishes most often filling the top.
+    const byTime = (a: NewsItem, b: NewsItem) => (b.published ?? -Infinity) - (a.published ?? -Infinity);
+    // Newest first. Each outlet keeps at most PER_SOURCE stories, so one that publishes very often
+    // can't push the others off the list. Stories without a time go last.
     const ranked = ok
       .flat()
       .filter((n) => n.published == null || Date.now() - n.published < MAX_AGE_MS)
@@ -228,8 +227,8 @@ export function news(topicParam: string, sourceIds: string[]): Promise<NewsItem[
       })
       .filter(({ rank }) => rank < PER_SOURCE);
     return ranked
-      .sort((a, b) => a.rank - b.rank || (order.get(a.n.source) ?? 99) - (order.get(b.n.source) ?? 99))
       .map(({ n }) => n)
+      .sort((a, b) => (b.published ?? -Infinity) - (a.published ?? -Infinity) || (order.get(a.source) ?? 99) - (order.get(b.source) ?? 99))
       .slice(0, 40);
   });
 }
