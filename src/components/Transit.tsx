@@ -1,6 +1,6 @@
 import { BUS_CITY_NAME } from "../bus-cities";
 import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN_LIMIT, links } from "../config";
-import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
+import { type BusStop, LIMITS, trainTypeKeyword, useSettings } from "../settings";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
@@ -13,13 +13,19 @@ const NOT_CONFIGURED = <p className="hint">網站尚未設定 TDX 金鑰，可�
 
 const sameRoute = (a: BusArrival, s: BusStop) => a.route === s.route && (a.city ?? s.city) === s.city;
 
+/**
+ * This arrival belongs to this board entry: same route, the entry's stop (names may be spelled
+ * a little differently on the signs) and, when set, heading toward the same next stop. A route
+ * can have several entries (e.g. one stop each way).
+ */
+const belongs = (a: BusArrival, s: BusStop) =>
+  sameRoute(a, s) && (a.toward ?? null) === (s.toward ?? null) && (a.stop === s.stop || isSubsequence(s.stop, a.stop));
+
 /** Keep the configured direction; "auto" keeps whichever direction heads toward Taipei. */
-function wanted(a: BusArrival, all: BusArrival[], stops: BusStop[]): boolean {
-  const cfg = stops.find((s) => sameRoute(a, s));
-  if (!cfg) return false;
+function wanted(a: BusArrival, all: BusArrival[], cfg: BusStop): boolean {
   if (cfg.toward) return true; // the backend already kept only buses heading there
   if (cfg.direction !== "auto") return a.direction === cfg.direction;
-  const toward = all.filter((x) => sameRoute(x, cfg) && TOWARD_TAIPEI.test(x.headsign));
+  const toward = all.filter((x) => belongs(x, cfg) && TOWARD_TAIPEI.test(x.headsign));
   const dirs = new Set(toward.map((x) => x.direction));
   // If both or neither direction looks like Taipei we can't tell, so show both.
   return dirs.size !== 1 || dirs.has(a.direction);
@@ -92,10 +98,10 @@ export function Bus() {
           {stops.map((cfg) => {
             // No boarding stop picked: list the route only (ignore arrivals still on screen from before).
             const rows = all
-              .filter((a) => cfg.stop && sameRoute(a, cfg) && wanted(a, all, stops))
+              .filter((a) => cfg.stop && belongs(a, cfg) && wanted(a, all, cfg))
               .sort((a, b) => (a.estimateSec ?? 1e9) - (b.estimateSec ?? 1e9));
             return (
-              <li key={`${cfg.city}:${cfg.route}`} data-reorder className="bus-stop">
+              <li key={`${cfg.city}:${cfg.route}:${cfg.stop}:${cfg.toward ?? ""}`} data-reorder className="bus-stop">
                 {notFound.has(`${cfg.route}:${cfg.stop}`) ? (
                   <div className="row">
                     <span className="chip blue-chip">{cfg.route}</span>
@@ -193,32 +199,51 @@ function BusRouteSheet({
   onClose: () => void;
 }) {
   const { settings, setSettings } = useSettings();
-  const cfg: BusStop = settings.bus.find((b) => b.city === city && b.route === route) ?? {
-    city: city as BusStop["city"],
-    route,
-    stop: "",
-    direction: "auto",
-  };
+  const isThis = (b: BusStop) => b.city === city && b.route === route;
+  /** This route's boarding stops (a route can have several, e.g. one each way). */
+  const picks = settings.bus.filter((b) => isThis(b) && b.stop);
   const state = usePolling(
-    () => getJSON<BusRouteDetail>(`/api/bus-route?city=${cfg.city}&route=${encodeURIComponent(cfg.route)}`),
+    () => getJSON<BusRouteDetail>(`/api/bus-route?city=${city}&route=${encodeURIComponent(route)}`),
     REFRESH_SEC.bus,
-    [cfg.city, cfg.route],
+    [city, route],
   );
   const trips = state.data?.trips ?? [];
-  const has = (t: (typeof trips)[number]) => Boolean(cfg.stop) && t.stops.some((s) => s.name === cfg.stop || isSubsequence(cfg.stop, s.name));
-  // Start on the trip with this stop in the board row's direction, main route before sub-routes.
-  const initial = Math.max(
-    0,
-    [...trips.keys()].sort(
-      (a, b) =>
-        Number(has(trips[b]) && trips[b].direction === direction) - Number(has(trips[a]) && trips[a].direction === direction) ||
-        Number(trips[b].subRoute === cfg.route) - Number(trips[a].subRoute === cfg.route) ||
-        a - b,
-    )[0] ?? 0,
-  );
+  type Trip = (typeof trips)[number];
+
+  /**
+   * Where a saved boarding stop is on a trip (-1: not on it). A loop route passes a stop twice:
+   * with "toward", it's the pass that still has that stop ahead (as on the board), otherwise the
+   * first. Names may differ slightly (樟樹實中 vs 樟樹國際實中). A stop saved without "toward"
+   * (direction "auto") counts on the trip the board shows: the one heading toward Taipei.
+   */
+  const indexOn = (cfg: BusStop, t: Trip): number => {
+    if (typeof cfg.direction === "number" && !cfg.toward && t.direction !== cfg.direction) return -1;
+    if (cfg.direction === "auto" && !cfg.toward) {
+      const taipei = new Set(trips.filter((x) => TOWARD_TAIPEI.test(x.headsign)).map((x) => x.direction));
+      if (taipei.size === 1 && !taipei.has(t.direction)) return -1;
+    }
+    for (const match of [(n: string) => n === cfg.stop, (n: string) => isSubsequence(cfg.stop, n)]) {
+      const hits = t.stops.flatMap((s, i) => (match(s.name) ? [i] : []));
+      const ok = cfg.toward ? hits.filter((i) => t.stops.slice(i + 1).some((x) => x.name === cfg.toward)) : hits;
+      if (ok.length) return ok[0];
+    }
+    return -1;
+  };
+
+  // Start on the board row's direction, a trip with a boarding stop, main route before sub-routes.
+  const score = (t: Trip) =>
+    (t.direction === direction ? 4 : 0) + (picks.some((c) => indexOn(c, t) >= 0) ? 2 : 0) + (t.subRoute === route ? 1 : 0);
+  const initial = trips.length ? [...trips.keys()].sort((a, b) => score(trips[b]) - score(trips[a]) || a - b)[0] : 0;
   const [picked, setPicked] = useState<number | null>(null);
   const tab = picked ?? initial;
   const trip = trips[tab];
+  /** Stop index on the shown trip → the saved boarding stop there. */
+  const mine = new Map<number, BusStop>();
+  if (trip) for (const c of picks) {
+    const i = indexOn(c, trip);
+    if (i >= 0 && !mine.has(i)) mine.set(i, c);
+  }
+  const firstMine = mine.size ? Math.min(...mine.keys()) : -1;
   const mineRef = useRef<HTMLLIElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -227,59 +252,59 @@ function BusRouteSheet({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  // Bring the configured stop into view when the trip is shown.
+  // Bring the boarding stop into view when the trip is shown.
   useEffect(() => {
     mineRef.current?.scrollIntoView({ block: "center" });
   }, [tab, Boolean(state.data)]);
-  // The rider's stop. A loop route passes it twice: with "toward", it's the pass that still has
-  // that stop ahead (like the board); otherwise the first pass. Names may differ slightly
-  // (樟樹實中 vs 樟樹國際實中), as on the board.
-  const mineAt = (() => {
-    const stops = trip?.stops ?? [];
-    if (!cfg.stop) return -1;
-    for (const match of [(n: string) => n === cfg.stop, (n: string) => isSubsequence(cfg.stop, n)]) {
-      const hits = stops.flatMap((s, i) => (match(s.name) ? [i] : []));
-      const ok = cfg.toward ? hits.filter((i) => stops.slice(i + 1).some((t) => t.name === cfg.toward)) : hits;
-      if (ok.length) return ok[0];
-    }
-    return -1;
-  })();
+
   /**
-   * Tick a stop: the board then shows this route's arrivals there. Like the settings picker, the
-   * next stop is saved as `toward`, which pins the side of the road (and the pass, on a loop).
-   * One stop per route; tick it again to go back to listing the route only.
+   * Tick a stop to add it as a boarding stop (the board gets a row for it); untick to remove it.
+   * Like the settings picker, the next stop is saved as `toward`, which pins the side of the road
+   * (and the pass, on a loop). With no stop left the route stays on the board, listed only.
    */
   const pick = (i: number) => {
     if (!trip) return;
     const s = trip.stops[i];
+    const existing = mine.get(i);
+    const at = settings.bus.findIndex(isThis);
+    let bus: BusStop[];
+    if (existing) {
+      bus = settings.bus.filter((b) => b !== existing);
+      if (!bus.some(isThis)) bus.splice(Math.max(0, at), 0, { city: city as BusStop["city"], route, stop: "", direction: "auto" });
+      setSettings({ ...settings, bus });
+      toast(`已取消「${route} ${existing.stop}」這個上車站`);
+      return;
+    }
     const next = trip.stops[i + 1]?.name;
     const loop = trip.stops[0].name === trip.stops.at(-1)!.name;
-    const others = settings.bus.filter((b) => !(b.city === cfg.city && b.route === cfg.route));
-    const at = settings.bus.findIndex((b) => b.city === cfg.city && b.route === cfg.route);
-    const entry: BusStop =
-      i === mineAt
-        ? { city: cfg.city, route: cfg.route, stop: "", direction: "auto" }
-        : {
-            city: cfg.city,
-            route: cfg.route,
-            stop: s.name,
-            direction: next ? "auto" : (trip.direction as 0 | 1),
-            ...(next ? { toward: next } : {}),
-            headsign: loop ? `環狀・下一站 ${next ?? s.name}` : trip.headsign,
-          };
-    const bus = [...others];
-    bus.splice(at < 0 ? bus.length : at, 0, entry);
+    const entry: BusStop = {
+      city: city as BusStop["city"],
+      route,
+      stop: s.name,
+      direction: next ? "auto" : (trip.direction as 0 | 1),
+      ...(next ? { toward: next } : {}),
+      headsign: loop ? `環狀・下一站 ${next ?? s.name}` : trip.headsign,
+    };
+    // A route listed without a stop is replaced; otherwise the new stop goes after this route's others.
+    const routeOnly = settings.bus.find((b) => isThis(b) && !b.stop);
+    if (!routeOnly && settings.bus.length >= LIMITS.bus) {
+      toast(`公車最多 ${LIMITS.bus} 筆，請先取消其他上車站`, "error");
+      return;
+    }
+    bus = settings.bus.filter((b) => b !== routeOnly);
+    const last = bus.reduce((acc, b, j) => (isThis(b) ? j : acc), -1);
+    bus.splice(last >= 0 ? last + 1 : Math.max(0, at), 0, entry);
     setSettings({ ...settings, bus });
-    toast(entry.stop ? `已將「${cfg.route} ${entry.stop}」設為上車站，看板會顯示這站的到站時間` : `已取消「${cfg.route}」的上車站，看板只列路線`);
+    toast(`已加入「${route} ${s.name}（${entry.headsign}）」，看板會顯示這站的到站時間`);
   };
-  const label = (t: (typeof trips)[number]) => (t.subRoute !== cfg.route ? `${t.subRoute} ${t.headsign}` : t.headsign);
-  const twoCities = cfg.city === "Taipei" || cfg.city === "NewTaipei";
+  const label = (t: Trip) => (t.subRoute !== route ? `${t.subRoute} ${t.headsign}` : t.headsign);
+  const twoCities = city === "Taipei" || city === "NewTaipei";
   return createPortal(
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal bus-sheet" role="dialog" aria-modal="true" aria-label={`${cfg.route} 全線動態`} onClick={(e) => e.stopPropagation()}>
+      <div className="modal bus-sheet" role="dialog" aria-modal="true" aria-label={`${route} 全線動態`} onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <h2>
-            <span className="chip blue-chip">{cfg.route}</span> 全線動態
+            <span className="chip blue-chip">{route}</span> 全線動態
           </h2>
           <span className="muted small bus-sheet-status">
             {state.loading && !state.data ? "載入中…" : state.error ? <span className="error">⚠ {state.error}</span> : null}
@@ -298,18 +323,19 @@ function BusRouteSheet({
           </div>
         )}
         <p className="bus-sheet-hint muted small">
-          {cfg.stop ? `勾選的站是看板上顯示到站時間的上車站；取消勾選，看板就只列路線。` : `勾選一站當上車站，看板就會顯示那一站的到站時間。`}
+          勾選上車站，看板就會顯示那一站的到站時間；可以勾多站，例如去程、回程各一站（切換上方方向）。
+          {picks.length > 0 && `目前 ${picks.length} 站：${picks.map((c) => c.stop).join("、")}`}
         </p>
         <ol className="bus-stops">
           {trip?.stops.map((s, i) => {
             const e = stopEta(s);
-            const mine = i === mineAt;
+            const isMine = mine.has(i);
             return (
-              <li key={i} ref={mine ? mineRef : undefined} className={mine ? "mine" : ""}>
+              <li key={i} ref={i === firstMine ? mineRef : undefined} className={isMine ? "mine" : ""}>
                 <input
                   type="checkbox"
                   className="bus-stop-pick"
-                  checked={mine}
+                  checked={isMine}
                   onChange={() => pick(i)}
                   aria-label={`把 ${s.name} 設為上車站`}
                   title="勾選後，看板顯示這一站的到站時間"
@@ -317,7 +343,7 @@ function BusRouteSheet({
                 <span className={`bus-stop-eta ${e.cls}`}>{e.text}</span>
                 <span className="bus-stop-name">
                   {s.name}
-                  {mine && <span className="pk-tag">上車站</span>}
+                  {isMine && <span className="pk-tag">上車站</span>}
                   {s.lastBus && <span className="red small">・末班車</span>}
                 </span>
                 {s.buses.map((b) => (
@@ -340,7 +366,7 @@ function BusRouteSheet({
                 5284 大台北公車 ›
               </a>
             )}
-            <a href={links.bus(cfg.city, cfg.route)} target="_blank" rel="noopener noreferrer">
+            <a href={links.bus(city, route)} target="_blank" rel="noopener noreferrer">
               Google 地圖 ›
             </a>
           </span>

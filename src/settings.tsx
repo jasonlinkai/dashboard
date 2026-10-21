@@ -226,8 +226,13 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
         ...(b.headsign ? { headsign: b.headsign as string } : {}),
       });
     });
-    const routes = bus.map((b) => `${b.city}:${b.route}`);
-    if (new Set(routes).size !== routes.length) err("bus 的同一條路線只能出現一次");
+    // A route may have several boarding stops (e.g. one each way), but not the same one twice,
+    // and an entry without a stop only when the route has no stop at all.
+    const keys = bus.map((b) => `${b.city}:${b.route}:${b.stop}:${b.toward ?? ""}`);
+    if (new Set(keys).size !== keys.length) err("bus 有重複的路線＋上車站");
+    for (const b of bus)
+      if (!b.stop && bus.some((o) => o.city === b.city && o.route === b.route && o.stop))
+        err(`bus：${b.route} 已有上車站，不需要另一筆沒有上車站的`);
     const cities = new Set(bus.map((b) => b.city));
     if (cities.size > MAX_BUS_CITIES) err(`bus 最多 ${MAX_BUS_CITIES} 個縣市（每個縣市每分鐘多查一次 TDX）`);
   }

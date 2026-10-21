@@ -466,15 +466,19 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
   };
 
   const trip = Array.isArray(trips) ? trips[Math.min(tripIndex, trips.length - 1)] : null;
-  const already = route ? stops.some((b) => b.city === city && b.route === route.name) : false;
+  /** This stop (in this direction) is already on the list; the same route at another stop is fine. */
+  const taken = (i: number) =>
+    Boolean(route && trip) &&
+    stops.some((b) => b.city === city && b.route === route!.name && b.stop === trip!.stops[i] && (b.toward ?? "") === (trip!.stops[i + 1] ?? ""));
 
   const add = (i: number) => {
-    if (!route || !trip || full || cityFull || already) return;
+    if (!route || !trip || full || cityFull || taken(i)) return;
     const stop = trip.stops[i];
-    update([
-      ...stops,
-      { city, route: route.name, stop, direction: "auto", toward: trip.stops[i + 1], headsign: tripLabel(trip, trips as BusTrip[]) },
-    ]);
+    const entry: BusStop = { city, route: route.name, stop, direction: "auto", toward: trip.stops[i + 1], headsign: tripLabel(trip, trips as BusTrip[]) };
+    // Replaces the route's entry without a stop, if any; another stop of the route goes after its others.
+    const rest = stops.filter((b) => !(b.city === city && b.route === route.name && !b.stop));
+    const last = rest.reduce((acc, b, j) => (b.city === city && b.route === route.name ? j : acc), -1);
+    update(last >= 0 ? [...rest.slice(0, last + 1), entry, ...rest.slice(last + 1)] : [...rest, entry]);
     toast(`已新增「${route.name} ${stop}」，公車區塊下次更新時出現`);
     setRoute(null);
     setQuery("");
@@ -485,8 +489,8 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
       <ul className="ed-list">
         {stops.map((b, i) => (
           <Row
-            key={`${b.city}:${b.route}`}
-            name={b.route}
+            key={`${b.city}:${b.route}:${b.stop}:${b.toward ?? ""}`}
+            name={`${b.route} ${b.stop}`.trim()}
             i={i}
             count={stops.length}
             onMove={(by) => update(move(stops, i, by))}
@@ -498,7 +502,7 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         ))}
       </ul>
       {full ? (
-        <p className="muted small">最多 {LIMITS.bus} 條，請先刪除一條再新增。</p>
+        <p className="muted small">最多 {LIMITS.bus} 筆，請先刪除一筆再新增。</p>
       ) : !route ? (
         <>
           <div className="ed-add">
@@ -579,17 +583,14 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
                   </button>
                 ))}
               </div>
-              {already ? (
-                <p className="hint error">這條路線已經在清單裡了，要換站牌請先刪除原本那一筆。</p>
-              ) : (
-                <p className="muted small">點你要上車的站牌（終點站不能上車，所以不列出）：</p>
-              )}
+              <p className="muted small">點你要上車的站牌（終點站不能上車，所以不列出）。同一條路線可以加多站，例如去程、回程各一站：</p>
               <ul className="pick-list">
                 {trip!.stops.slice(0, -1).map((name, i) => (
                   <li key={i}>
-                    <button className="pick-item" disabled={already} onClick={() => add(i)}>
+                    <button className="pick-item" disabled={taken(i)} onClick={() => add(i)}>
                       <span className="pick-seq">{i + 1}</span>
                       {name}
+                      {taken(i) && <span className="muted small">（已加入）</span>}
                     </button>
                   </li>
                 ))}
