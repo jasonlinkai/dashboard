@@ -1,6 +1,6 @@
 import { type ReactNode, useRef } from "react";
 import { editLayout, movable as canMove, useLayoutEdit } from "../layoutEdit";
-import { PANEL_NAMES, isPanel, useCard, useSettings } from "../settings";
+import { PANEL_NAMES, cardName, isPanel, useCard, useSettings } from "../settings";
 import { mmss } from "../format";
 import { type Polled, useNow } from "../hooks";
 import { type ContentSection, openSettings } from "../openSettings";
@@ -80,13 +80,16 @@ export function Section({
   const left = state.nextAt == null ? null : Math.min(state.intervalSec * 1.5, (state.nextAt - now) / 1000);
   const layout = useLayoutEdit();
   const panel = isPanel(className) ? className : null;
-  const movable = layout.editing && panel && canMove(layout.mode, panel) && panel;
+  const movable = layout.editing && panel && canMove(layout.mode) && panel;
   // Which card this is: an extra one (天氣 2) has its own id and a number after its title.
   const card = useCard();
   const id = card?.id || className;
   const extra = !!card && card.n > 1;
   // The user's name for this card, if any (設定 → 顯示內容 → the card's page).
-  const custom = useSettings().settings.names[id];
+  const { settings } = useSettings();
+  const custom = settings.names[id];
+  // Phone: one card of a type at a time; with several, the title becomes a switch between them.
+  const siblings = layout.mode === "phone" ? layout.sameType(id) : [];
   const heading = custom ?? (extra ? `${title} ${card.n}` : title);
   const name = custom ?? (panel ? (extra ? `${PANEL_NAMES[panel]} ${card.n}` : PANEL_NAMES[panel]) : title);
   // Holding the title for half a second starts rearranging the cards.
@@ -124,23 +127,33 @@ export function Section({
             </svg>
           </button>
         )}
-        <h2
-          onPointerDown={(e) => {
-            if (layout.editing || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
-            release();
-            press.current = { timer: setTimeout(() => (release(), navigator.vibrate?.(15), editLayout()), 500), x: e.clientX, y: e.clientY };
-          }}
-          onPointerMove={(e) => {
-            const p = press.current;
-            if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) release();
-          }}
-          onPointerUp={release}
-          onPointerCancel={release}
-          onPointerLeave={release}
-          onContextMenu={(e) => layout.editing || e.preventDefault()}
-        >
-          {heading}
-        </h2>
+        {siblings.length > 1 ? (
+          <div className="tabs card-switch" role="tablist" aria-label={`切換${panel ? PANEL_NAMES[panel] : title}`}>
+            {siblings.map((q) => (
+              <button key={q} role="tab" aria-selected={q === id} onClick={() => layout.pick(q)}>
+                {cardName(settings, q)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <h2
+            onPointerDown={(e) => {
+              if (layout.editing || layout.mode === "phone" || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+              release();
+              press.current = { timer: setTimeout(() => (release(), navigator.vibrate?.(15), editLayout()), 500), x: e.clientX, y: e.clientY };
+            }}
+            onPointerMove={(e) => {
+              const p = press.current;
+              if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) release();
+            }}
+            onPointerUp={release}
+            onPointerCancel={release}
+            onPointerLeave={release}
+            onContextMenu={(e) => layout.editing || e.preventDefault()}
+          >
+            {heading}
+          </h2>
+        )}
         {edit && (
           <button
             className="card-gear"

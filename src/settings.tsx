@@ -129,12 +129,8 @@ const fromSlots = (m: LayoutMode, slots: readonly Panel[]) => Object.fromEntries
 export interface Layout {
   wide: Boxes;
   tall: Boxes;
-  /** Phone: order of the bottom tabs. */
-  tabs: PhoneTab[];
-  /** Phone: bus and train in the transit tab, top (or left) first. */
-  transit: Panel[];
-  /** Cards taken off each layout (a phone too). Their boxes are kept for when they come back. */
-  hidden: Record<Screen, CardId[]>;
+  /** Cards taken off each layout. Their boxes are kept for when they come back. (A phone shows every card.) */
+  hidden: Record<LayoutMode, CardId[]>;
 }
 
 /** The settings fields each card type shows. An extra card has its own copy of them. */
@@ -184,15 +180,12 @@ export function overLimit(s: Settings): string | null {
   return null;
 }
 export type LayoutMode = "wide" | "tall";
-/** The three layouts: desktop and landscape tablet, portrait tablet, phone. */
-export type Screen = LayoutMode | "phone";
-export const SCREENS: Screen[] = ["wide", "tall", "phone"];
+/** The layouts a user arranges: desktop and landscape tablet, portrait tablet. A phone has fixed tabs. */
+export const SCREENS: LayoutMode[] = ["wide", "tall"];
 export const DEFAULT_LAYOUT: Layout = {
   wide: fromSlots("wide", PANELS),
   tall: fromSlots("tall", PANELS),
-  tabs: [...PHONE_TABS],
-  transit: [...TRANSIT],
-  hidden: { wide: [], tall: [], phone: [] },
+  hidden: { wide: [], tall: [] },
 };
 
 // ---------- Catalogs and limits ----------
@@ -466,18 +459,19 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     ...DEFAULT_LAYOUT,
     wide: { ...DEFAULT_LAYOUT.wide },
     tall: { ...DEFAULT_LAYOUT.tall },
-    hidden: { wide: [], tall: [], phone: [] },
+    hidden: { wide: [], tall: [] },
   };
   const given: Record<LayoutMode, CardId[]> = { wide: [], tall: [] };
   if (raw.layout !== undefined && !isObj(raw.layout)) err("layout 必須是物件");
   else if (isObj(raw.layout)) {
-    // One list (before each layout had its own) applies to all three.
+    // One list (before each layout had its own) applies to both. Cards that aren't in this file
+    // (a layout imported without its cards) are skipped; older files' phone list is ignored.
     const h = raw.layout.hidden ?? [];
     for (const sc of SCREENS) {
       const list = Array.isArray(h) ? h : isObj(h) ? (h[sc] ?? []) : null;
-      if (!Array.isArray(list) || !list.every((p) => ids.includes(p)) || new Set(list).size !== list.length || list.length >= ids.length)
-        err(`layout.hidden.${sc} 要是板塊 id（${ids.join("、")}）裡不重複的幾個（至少留一個不隱藏）`);
-      else layout.hidden[sc] = [...(list as CardId[])];
+      const known = Array.isArray(list) ? [...new Set(list.filter((p) => ids.includes(p as string)))] : null;
+      if (!known || known.length >= ids.length) err(`layout.hidden.${sc} 要是板塊 id 的陣列（至少留一個不隱藏）`);
+      else layout.hidden[sc] = known as CardId[];
     }
     for (const m of ["wide", "tall"] as const) {
       const v = raw.layout[m];
@@ -502,17 +496,7 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
       }
       layout[m] = Object.fromEntries(given[m].map((p) => [p, { x: boxes[p].x, y: boxes[p].y, w: boxes[p].w, h: boxes[p].h }]));
     }
-    const lists = [
-      ["tabs", PHONE_TABS, "手機底部分頁的順序"],
-      ["transit", TRANSIT, "手機交通分頁由上而下"],
-    ] as const;
-    for (const [key, all, what] of lists) {
-      const list = raw.layout[key];
-      if (list === undefined) continue;
-      const ok = Array.isArray(list) && list.length === all.length && all.every((p) => list.includes(p));
-      if (!ok) err(`layout.${key} 要列出 ${all.join("、")} 各一次（${what}）`);
-      else (layout[key] as string[]) = list as string[];
-    }
+    // Older files also have the phone's tab order (layout.tabs, layout.transit): phones now have fixed tabs.
   }
   // A card without a box (an extra, or a type added after the file was saved): its default box or
   // a free spot; with no room it starts hidden (its box then only waits for the card to come back).
@@ -521,7 +505,9 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     for (const p of ids.filter((q) => !given[m].includes(q))) {
       if (isPanel(p) && !given[m].length) boxes[p] = DEFAULT_LAYOUT[m][p];
       else {
-        const spot = findSpot({ ...boxes, ...(isPanel(p) ? { [p]: DEFAULT_LAYOUT[m][p] } : {}) }, p, layout.hidden[m], [{ w: MIN_W, h: MIN_H }]);
+        // The biggest of these sizes that has room (the smallest can be too small to read on a screen).
+        const sizes = [{ w: 8, h: 9 }, { w: 6, h: 6 }, { w: MIN_W, h: MIN_H }];
+        const spot = findSpot({ ...boxes, ...(isPanel(p) ? { [p]: DEFAULT_LAYOUT[m][p] } : {}) }, p, layout.hidden[m], sizes);
         if (spot) boxes[p] = spot;
         else {
           boxes[p] = { x: 0, y: 0, w: MIN_W, h: MIN_H };

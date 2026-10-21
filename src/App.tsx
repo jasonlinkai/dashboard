@@ -30,7 +30,6 @@ import {
   type PhoneTab,
   type Rect,
   type Settings as SettingsData,
-  TRANSIT,
   cardIds,
   cardName,
   findSpot,
@@ -54,9 +53,7 @@ import {
   useFlip,
   useLayoutMode,
   usePanelDrag,
-  useTabDrag,
 } from "./layoutEdit";
-import { moveTo } from "./hooks";
 
 // Leaflet only loads when the parking search is opened.
 const Parking = lazy(() => import("./components/Parking"));
@@ -65,7 +62,7 @@ const dateFmt = new Intl.DateTimeFormat("zh-TW", { month: "long", day: "numeric"
 const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
 
 // On a phone everything can't fit on one screen, so sections become tabs (CSS shows them only there).
-// Their order is in the settings (layout.tabs).
+// Fixed order; a tab with several cards of its type switches between them in the card's title.
 const TABS: Record<Tab, [label: string, icon: string]> = {
   markets: ["行情", "📈"],
   weather: ["天氣", "⛅"],
@@ -109,32 +106,52 @@ export default function App() {
   const { settings, setSettings } = useSettings();
   const { layout } = settings;
   const mode = useLayoutMode();
-  // Each layout (desktop, portrait tablet, phone) shows its own choice of cards.
-  const hidden = layout.hidden[mode];
+  const phone = mode === "phone";
+  // Each arranged layout shows its own choice of cards; a phone shows every card.
+  const hidden = phone ? [] : layout.hidden[mode];
   const kind = (id: CardId) => typeOf(settings, id);
   const name = (id: CardId) => cardName(settings, id);
   const ids = cardIds(settings);
-  const shownIds = ids.filter((id) => !hidden.includes(id));
-  const shown = preview ?? (hidden.includes("weather") ? null : scene);
+  /** A type's cards, its first one first. */
+  const sameType = (id: CardId) => ids.filter((q) => kind(q) === kind(id));
+  // Phone: one card of each type at a time, picked with the switch in its title (kept on this device).
+  const [picked, setPicked] = useState<Record<string, CardId>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("phoneCards") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  const pick = (id: CardId) => {
+    const next = { ...picked, [kind(id)]: id };
+    setPicked(next);
+    try {
+      localStorage.setItem("phoneCards", JSON.stringify(next));
+    } catch {}
+  };
+  const shownIds = phone
+    ? PANELS.map((t) => (picked[t] && ids.includes(picked[t]) && kind(picked[t]) === t ? picked[t] : t))
+    : ids.filter((id) => !hidden.includes(id));
+  const shown = preview ?? (shownIds.includes("weather") ? scene : null);
   const [editing, setEditing] = useState(false);
   const [announce, setAnnounce] = useState("");
   const gridRef = useRef<HTMLElement>(null);
-  const navRef = useRef<HTMLElement>(null);
   const layoutBtnRef = useRef<HTMLButtonElement>(null);
-  // Phone tabs with something left to show (transit while any bus or train card is shown).
-  const shownTypes = new Set(shownIds.map(kind));
-  const shownTabs = layout.tabs.filter((t) => (t === "transit" ? TRANSIT.some((q) => shownTypes.has(q)) : shownTypes.has(t)));
-  const shownTab = shownTabs.includes(tab) ? tab : shownTabs[0];
-  const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, layout.transit, shownIds]));
-  const tabFlip = useFlip(navRef, layout.tabs.join(), true);
-  useEffect(() => onEditLayout(() => setEditing(true)), []);
+  const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, shownIds]));
+  // No arranging on a phone (fixed tabs); a window shrunk to phone size ends it too.
+  const phoneRef = useRef(phone);
+  phoneRef.current = phone;
+  useEffect(() => onEditLayout(() => (phoneRef.current ? toast("手機版沒有排版功能，請在平板或電腦上調整", "info") : setEditing(true))), []);
+  useEffect(() => {
+    if (phone) setEditing(false);
+  }, [phone]);
   const boxes = mode === "phone" ? null : layout[mode];
   const setLayout = (next: Partial<typeof layout>, first?: Rects) => {
     flip.capture(first);
     setSettings({ ...settings, layout: { ...layout, ...next } });
   };
   const describe = (r: Rect) => `從第 ${r.y + 1} 列第 ${r.x + 1} 欄起，寬 ${r.w} 格、高 ${r.h} 格（整面 ${GRID}×${GRID} 格）`;
-  const where = (p: CardId) => (boxes ? describe(boxes[p]) : `在第 ${layout.transit.indexOf(kind(p)) + 1} 組（共 2 組）`);
+  const where = (p: CardId) => (boxes ? describe(boxes[p]) : "");
   const changes = (next: Boxes) =>
     Object.keys(next)
       .filter((p) => next[p] !== boxes?.[p])
@@ -146,32 +163,20 @@ export default function App() {
     setLayout({ [mode]: next }, first);
     return true;
   };
-  /** Two cards trade places (and sizes); on a phone, the bus and train groups trade order. */
+  /** Two cards trade places (and sizes). */
   const swap = (a: CardId, b: CardId, first?: Rects) => {
-    if (a === b) return;
-    if (boxes) {
-      if (!setBoxes({ ...boxes, [a]: boxes[b], [b]: boxes[a] }, first)) {
-        flip.play(first ?? new Map());
-        // Only a box laid out on a bigger screen can be under this screen's minimum.
-        return toast(`${name(a)}或${name(b)}的位置在這個螢幕上太小，請先把它放大再交換`, "error");
-      }
-    } else if (kind(a) !== kind(b) && [kind(a), kind(b)].every((t) => (TRANSIT as readonly Panel[]).includes(t)))
-      setLayout({ transit: [...layout.transit].reverse() }, first);
-    else return;
+    if (a === b || !boxes) return;
+    if (!setBoxes({ ...boxes, [a]: boxes[b], [b]: boxes[a] }, first)) {
+      flip.play(first ?? new Map());
+      // Only a box laid out on a bigger screen can be under this screen's minimum.
+      return toast(`${name(a)}或${name(b)}的位置在這個螢幕上太小，請先把它放大再交換`, "error");
+    }
     setAnnounce(`${name(a)}和${name(b)}交換了位置`);
   };
   usePanelDrag(gridRef, editing, mode, boxes, hidden, swap, (next, first) => {
     const said = changes(next);
     if (setBoxes(next, first)) setAnnounce(said);
   });
-  /** From / to are places among the tabs shown. */
-  const moveTab = (from: number, to: number) => {
-    if (to < 0 || to >= shownTabs.length || from === to) return;
-    tabFlip.capture();
-    const at = (i: number) => layout.tabs.indexOf(shownTabs[i]);
-    setSettings({ ...settings, layout: { ...layout, tabs: moveTo(layout.tabs, at(from), at(to)) } });
-    setAnnounce(`${TABS[shownTabs[from]][0]}分頁移到第 ${to + 1} 個`);
-  };
   /** On this layout only: a type's first card is hidden (it keeps its content); an extra one is removed everywhere. */
   const hide = (p: CardId) => {
     if (shownIds.length <= 1) return toast("至少要留一個板塊", "error");
@@ -232,10 +237,11 @@ export default function App() {
     setSettingsSection(SECTION_OF[type]);
     setShowSettings(true);
   };
-  useTabDrag(navRef, editing && mode === "phone", moveTab);
   const edit = {
     editing,
     mode,
+    sameType,
+    pick,
     where,
     hide,
     style: (p: CardId) => (layout.wide[p] ? ({ "--wide": area(layout.wide[p]), "--tall": area(layout.tall[p]) } as CSSProperties) : {}),
@@ -260,8 +266,6 @@ export default function App() {
       if (other?.dataset.card) swap(p, other.dataset.card);
     },
   };
-  // Phone: --transit-bus / --transit-train order the transit tab. (Each card sets its own --wide / --tall.)
-  const areas = Object.fromEntries(layout.transit.map((p, i) => [`--transit-${p}`, i])) as CSSProperties;
   // Entering edit mode puts focus on the first thing to move, for keyboard users.
   // Leaving edit mode hands focus back to the header's layout button (the bar's one is gone).
   const wasEditing = useRef(false);
@@ -270,14 +274,11 @@ export default function App() {
     wasEditing.current = editing;
   }, [editing]);
   useEffect(() => {
-    if (!editing) return;
-    if (mode === "phone") navRef.current?.querySelector<HTMLElement>("[data-tab-id]")?.focus();
-    else {
-      const b = layout[mode];
-      const first = [...shownIds].sort((a, c) => b[a].y - b[c].y || b[a].x - b[c].x)[0];
-      const grid = gridRef.current;
-      (grid && cardOf(grid, first))?.querySelector<HTMLElement>(".card-move")?.focus();
-    }
+    if (!editing || mode === "phone") return;
+    const b = layout[mode];
+    const first = [...shownIds].sort((a, c) => b[a].y - b[c].y || b[a].x - b[c].x)[0];
+    const grid = gridRef.current;
+    (grid && cardOf(grid, first))?.querySelector<HTMLElement>(".card-move")?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEditing(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -287,7 +288,6 @@ export default function App() {
   // Everything: hiding is shared by all layouts, so resetting one alone could leave overlaps in
   // another. Extra cards are kept, placed in free cells (or hidden) as when loading a file.
   const resetLayout = () => {
-    tabFlip.capture();
     setLayout(validate({ ...settings, layout: undefined }).settings?.layout ?? DEFAULT_LAYOUT);
     setAnnounce("已恢復預設版面，隱藏的板塊也都顯示回來");
     toast("已恢復預設版面（所有版面，隱藏的板塊也會顯示）");
@@ -307,13 +307,7 @@ export default function App() {
         <header className={`top ${editing ? "top-editing" : ""}`}>
           {editing && (
             <div className="layout-bar" role="toolbar" aria-label="調整版面">
-              <span className="layout-bar-hint">
-                {mode !== "phone"
-                  ? "拖到另一板塊上交換、拖到空位移動，拖右下角調整大小"
-                  : shownTab === "transit"
-                    ? "拖動卡片或分頁調整位置"
-                    : "拖動底部分頁調整順序"}
-              </span>
+              <span className="layout-bar-hint">拖到另一板塊上交換、拖到空位移動，拖右下角調整大小</span>
               {/* Left, by the hint: away from the finish button so it isn't tapped by mistake. */}
               <button className="layout-reset" onClick={resetLayout}>
                 恢復預設
@@ -364,25 +358,25 @@ export default function App() {
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="設定" title="設定">
             <GearIcon />
           </button>
-          <button
-            ref={layoutBtnRef}
-            className="icon-btn layout-toggle"
-            aria-pressed="false"
-            onClick={() => setEditing(true)}
-            aria-label="排版模式"
-            title="排版模式：拖動板塊調整位置"
-          >
-            <LayoutIcon />
-          </button>
+          {!phone && (
+            <button
+              ref={layoutBtnRef}
+              className="icon-btn layout-toggle"
+              aria-pressed="false"
+              onClick={() => setEditing(true)}
+              aria-label="排版模式"
+              title="排版模式：拖動板塊調整位置"
+            >
+              <LayoutIcon />
+            </button>
+          )}
         </header>
         <LayoutEditContext.Provider value={edit}>
           {/* Hidden cards aren't rendered at all, so they don't fetch either. */}
           <main
             ref={gridRef}
             className={`grid ${editing ? "editing" : ""}`}
-            data-tab={shownTab}
-            data-single={shownIds.filter((id) => (TRANSIT as readonly Panel[]).includes(kind(id))).length === 1 || undefined}
-            style={areas}
+            data-tab={tab}
           >
             {shownIds.map((id) => (
               <CardSettings key={id} id={id}>
@@ -398,23 +392,9 @@ export default function App() {
             ))}
           </main>
         </LayoutEditContext.Provider>
-        <nav ref={navRef} className={`tabbar ${editing ? "editing" : ""}`}>
-          {shownTabs.map((id, i) => (
-            <button
-              key={id}
-              data-tab-id={id}
-              aria-selected={shownTab === id}
-              onClick={() => choose(id)}
-              aria-label={
-                editing ? `${TABS[id][0]}分頁，第 ${i + 1} 個（共 ${shownTabs.length} 個）。按左右方向鍵移動位置` : undefined
-              }
-              aria-keyshortcuts={editing ? "ArrowLeft ArrowRight" : undefined}
-              onKeyDown={(e) => {
-                if (!editing || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
-                e.preventDefault();
-                moveTab(i, i + (e.key === "ArrowLeft" ? -1 : 1));
-              }}
-            >
+        <nav className="tabbar">
+          {PHONE_TABS.map((id) => (
+            <button key={id} aria-selected={tab === id} onClick={() => choose(id)}>
               <span className="tab-icon">{TABS[id][1]}</span>
               {TABS[id][0]}
             </button>

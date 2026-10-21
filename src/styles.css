@@ -455,8 +455,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* ---------- Layouts ---------- */
 
 /* Phone (default): one section at a time, switched by the bottom tab bar. */
-/* Several cards of the tab's type (天氣, 天氣 2 …) share the screen evenly. */
-.grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); }
+.grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .grid > .card { display: none; grid-area: auto; }
 .grid[data-tab="markets"] > .markets,
 .grid[data-tab="weather"] > .weather,
@@ -465,11 +464,6 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grid[data-tab="transit"] > .train { display: flex; }
 /* Bus takes what it needs, but at most half: a long bus list scrolls instead of squeezing the trains. */
 .grid[data-tab="transit"] { grid-template-rows: fit-content(50%) minmax(0, 1fr); }
-/* Bus or train hidden: the other one has the tab to itself. */
-.grid[data-tab="transit"][data-single] { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
-/* Bus and train in the order chosen in edit mode (App sets the vars; the first takes the top row). */
-.grid > .bus { order: var(--transit-bus, 0); }
-.grid > .train { order: var(--transit-train, 1); }
 .grid[data-tab="markets"] .tile-price { font-size: 24px; }
 
 /* Tablet and desktop: each card lays itself out by the shape of the slot it sits in, not by the
@@ -681,16 +675,10 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   background: color-mix(in srgb, var(--blue) 14%, color-mix(in srgb, var(--card) 62%, transparent));
 }
 
-/* Phone: the bottom tabs are dragged sideways to reorder (the parking button stays put). */
-.tabbar.editing [data-tab-id] {
-  touch-action: none; -webkit-user-select: none; user-select: none; cursor: grab;
-  outline: 1.5px dashed color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: -3px;
-}
-.tabbar.editing [data-tab-id]:focus-visible { outline: 2px solid var(--blue); }
-.tabbar [data-tab-id].tab-lifted {
-  position: relative; z-index: 2; opacity: 0.75; cursor: grabbing;
-  background: var(--card-2); box-shadow: 0 6px 18px rgb(0 0 0 / 0.4), inset 0 0 0 2px var(--blue);
-}
+/* Phone: several cards of a type (天氣, 公司天氣 …) share its tab; the title switches between them. */
+.card-switch { min-width: 0; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; scrollbar-width: none; }
+.card-switch::-webkit-scrollbar { display: none; }
+.card-switch button { flex: none; font-size: 14px; font-weight: 600; padding: 3px 10px; }
 
 /* ---------- Toasts ---------- */
 .toasts {

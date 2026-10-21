@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { NEWS_BY_ID } from "../news-sources";
-import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, PANEL_NAMES, isPanel, type PhoneTab, type Settings, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
+import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, type Settings, cardName, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
 import type { ThemePref } from "../theme";
 import { toast } from "../toast";
 
@@ -17,23 +17,16 @@ interface Pending {
   from: string;
 }
 
-const LAYOUT_PARTS = { wide: "橫向", tall: "直向", tabs: "手機分頁", transit: "手機交通", hidden: "隱藏" } as const;
-const TAB_NAMES: Record<PhoneTab, string> = { markets: "行情", weather: "天氣", transit: "交通", news: "新聞" };
-const layoutSummary = ({ layout, extras }: Settings) =>
-  (Object.keys(LAYOUT_PARTS) as (keyof typeof LAYOUT_PARTS)[])
-    .filter((k) => JSON.stringify(layout[k]) !== JSON.stringify(DEFAULT_LAYOUT[k]))
-    .map((k) => {
-      if (k === "wide" || k === "tall") return `${LAYOUT_PARTS[k]}：已調整`;
-      const card = (p: string) => (isPanel(p) ? PANEL_NAMES[p] : p);
-      if (k === "hidden")
-        return `${LAYOUT_PARTS[k]}：${(["wide", "tall", "phone"] as const)
-          .filter((sc) => layout.hidden[sc].length)
-          .map((sc) => `${{ wide: "橫向", tall: "直向", phone: "手機" }[sc]} ${layout.hidden[sc].map(card).join("、")}`)
-          .join("，")}`;
-      const names = k === "tabs" ? layout.tabs.map((t) => TAB_NAMES[t]) : layout[k].map(card);
-      return `${LAYOUT_PARTS[k]}：${names.join("、")}`;
+/** Which layouts were arranged, and the cards hidden in each. */
+const layoutSummary = (s: Settings) =>
+  (["wide", "tall"] as const)
+    .map((m) => {
+      const moved = JSON.stringify(s.layout[m]) !== JSON.stringify(DEFAULT_LAYOUT[m]);
+      const off = s.layout.hidden[m].map((p) => cardName(s, p));
+      if (!moved && !off.length) return "";
+      return `${m === "wide" ? "橫向" : "直向"}：${moved ? "已調整" : "預設"}${off.length ? `，隱藏 ${off.join("、")}` : ""}`;
     })
-    .concat(extras.length ? [`額外板塊：${extras.map((e) => PANEL_NAMES[e.type]).join("、")}`] : [])
+    .filter(Boolean)
     .join("；") || "預設";
 
 /** Human-readable summary of a settings object, for the confirm step. */
@@ -47,6 +40,7 @@ function summary(s: Settings): [string, string][] {
       `新聞・${label}`,
       s.news[id].map((x) => NEWS_BY_ID.get(x)?.name ?? x).join("、") || "（不顯示）",
     ]),
+    ["額外板塊", s.extras.map((e) => cardName(s, e.id)).join("、") || "（無）"],
     ["版面", layoutSummary(s)],
   ];
 }
@@ -123,10 +117,20 @@ export function Backup({
     }
   };
 
+  // What to take from the file: its cards and their content, its layouts, or both.
+  const [parts, setParts] = useState({ content: true, layout: true });
   const apply = () => {
     if (!pending) return;
-    setSettings(pending.settings);
-    if (pending.appearance) {
+    if (!parts.content && !parts.layout) return toast("請至少勾選一項", "error");
+    // One part only: the other comes from this device; validate() fits the two together (new
+    // cards get free cells or start hidden; boxes of cards that aren't here are dropped).
+    const merged =
+      parts.content && parts.layout
+        ? pending.settings
+        : validate(parts.content ? { ...pending.settings, layout: settings.layout } : { ...settings, layout: pending.settings.layout }).settings;
+    if (!merged) return toast("無法只匯入一部分，請兩項都勾選", "error");
+    setSettings(merged);
+    if (parts.content && pending.appearance) {
       onTheme(pending.appearance.theme);
       onFx(pending.appearance.fx);
     }
@@ -196,6 +200,16 @@ export function Backup({
               </div>
             )}
           </dl>
+          <div className="ed-parts">
+            <label>
+              <input type="checkbox" checked={parts.content} onChange={(e) => setParts({ ...parts, content: e.target.checked })} />
+              板塊與內容（地點、行情、站牌、路線、新聞、名稱、外觀）
+            </label>
+            <label>
+              <input type="checkbox" checked={parts.layout} onChange={(e) => setParts({ ...parts, layout: e.target.checked })} />
+              版面（桌機與平板的擺放、隱藏的板塊）
+            </label>
+          </div>
           <div className="ed-actions">
             <button className="ed-primary" onClick={apply}>
               套用
