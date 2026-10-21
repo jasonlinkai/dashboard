@@ -207,6 +207,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .key-why p:last-child { margin-bottom: 0; }
 .key-why ul { margin: 0 0 6px; padding-left: 1.2em; list-style: disc; }
 .key-why b { color: var(--text); }
+/* Step-by-step help at the top of an add page. */
+.ed-guide { padding: 10px 12px; border-radius: 10px; background: var(--card-2); font-size: 13px; line-height: 1.55; display: grid; gap: 6px; }
+.ed-guide ol { margin: 0; padding-left: 1.4em; list-style: decimal; display: grid; gap: 2px; }
+.ed-guide ul { margin: 0; padding: 6px 0 0 1.1em; list-style: disc; color: var(--muted); border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.ed-guide a { color: var(--blue); text-decoration: underline; }
 .ed-examples { margin: 0; display: grid; gap: 2px; font-size: 13px; }
 .ed-examples > div { display: grid; grid-template-columns: 6em 1fr; gap: 6px; }
 .ed-examples dt { color: var(--muted); }

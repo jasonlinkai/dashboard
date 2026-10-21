@@ -56,6 +56,26 @@ interface EditorProps {
 const rowEdit = <T,>(sorting: boolean, list: T[], i: number, update: (list: T[]) => void) =>
   sorting ? { onMove: (by: number) => update(move(list, i, by)) } : { onRemove: () => update(without(list, i)) };
 
+/** How to fill in an add page: numbered steps, then what to know. */
+function AddGuide({ steps, notes }: { steps: ReactNode[]; notes?: ReactNode[] }) {
+  return (
+    <div className="ed-guide">
+      <ol>
+        {steps.map((x, i) => (
+          <li key={i}>{x}</li>
+        ))}
+      </ol>
+      {notes && (
+        <ul>
+          {notes.map((x, i) => (
+            <li key={i}>{x}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Opens a list's add page; when the list is full, says so instead. */
 function AddButton({ label, full, fullNote, onClick }: { label: string; full: boolean; fullNote: string; onClick: () => void }) {
   if (full) return <p className="muted small">{fullNote}</p>;
@@ -242,6 +262,19 @@ function WeatherAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
 
   return (
     <>
+      <AddGuide
+        steps={[
+          "選縣市。",
+          "選鄉鎮區：全臺 368 個鄉鎮市區都可以選。",
+          <>顯示名稱（選填）：卡片上的名字，最多 8 個字；沒填就用鄉鎮名，例如「汐止區」顯示「汐止」。</>,
+          "按「新增」，回到清單，看板馬上多一張天氣卡片。",
+        ]}
+        notes={[
+          "大字的現在溫度是中央氣象署測站的實測值；同一區沒有平地測站時，改用鄰近或預報模型的數值，卡片上會註明。逐時預報來自 Open-Meteo。",
+          "新地點加在清單最後。排第一的地點決定整頁的天氣動畫，想換就在清單按「排序」把它拖到第一個。",
+          `最多 ${LIMITS.weather} 個地點，目前 ${places.length} 個；同一個顯示名稱不能重複。`,
+        ]}
+      />
       <div className="ed-add">
         <select value={county} onChange={(e) => (setCounty(e.target.value), setTownId(""))} aria-label="縣市">
           {counties.map((c) => (
@@ -267,13 +300,7 @@ function WeatherAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
           新增
         </button>
       </div>
-      <p className="muted small">
-        {full
-          ? `最多 ${LIMITS.weather} 個地點。`
-          : duplicate
-            ? "已經有同名的地點，請換個顯示名稱。"
-            : "全臺 368 個鄉鎮區都可選；沒有氣象署測站的地區，現在溫度改用預報模型並會註明。顯示名稱沒填就用鄉鎮名。"}
-      </p>
+      <p className="muted small">{full ? `最多 ${LIMITS.weather} 個地點。` : duplicate ? "已經有同名的地點，請換個顯示名稱。" : ""}</p>
     </>
   );
 }
@@ -379,6 +406,24 @@ function MarketsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
 
   return (
     <>
+      <AddGuide
+        steps={[
+          "輸入 Yahoo Finance 的代號，格式見下方範例（英文大小寫都可以）。",
+          "顯示名稱（選填）：沒填時，台股自動用中文簡稱（例如 2317.TW 顯示「鴻海」），其他市場顯示代號。",
+          "按「加入」：會先向 Yahoo 確認這個代號有報價才加入，找不到會提示你檢查代號。",
+        ]}
+        notes={[
+          <>
+            不知道代號：到{" "}
+            <a href="https://tw.stock.yahoo.com/" target="_blank" rel="noopener noreferrer">
+              Yahoo 股市
+            </a>{" "}
+            搜尋，報價頁網址最後一段就是代號，例如 …/quote/2330.TW 的代號是 2330.TW。
+          </>,
+          "報價來自 Yahoo 的非官方介面，可能延遲，僅供參考，交易請以券商報價為準。",
+          `最多 ${LIMITS.markets} 格，目前 ${items.length} 格；新的一格加在最後，可在清單按「排序」調整位置。`,
+        ]}
+      />
       {
         <>
           <div className="ed-add">
@@ -415,13 +460,6 @@ function MarketsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
           </dl>
         </>
       }
-      <p className="muted small">
-        目前 {items.length}／{LIMITS.markets} 格。代號以 Yahoo Finance 為準，加入前會先確認有報價；不知道代號可到{" "}
-        <a href="https://tw.stock.yahoo.com/" target="_blank" rel="noopener noreferrer">
-          Yahoo 股市
-        </a>{" "}
-        搜尋，報價頁網址最後一段就是代號。名稱沒填時，台股自動用中文簡稱，其他用代號。
-      </p>
     </>
   );
 }
@@ -556,6 +594,19 @@ function BusAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; o
 
   return (
     <>
+      <AddGuide
+        steps={[
+          `選縣市（全臺 22 個縣市的市區公車；整份清單最多 ${MAX_BUS_CITIES} 個縣市）。`,
+          "找路線：輸入路線名稱（如 藍23、307）或起訖站名（如 南港），也可以直接往下捲瀏覽全部路線。",
+          "選方向：上方分頁切換這條路線往哪個終點。",
+          "點你要上車的站牌：看板會顯示公車到這一站還要多久。",
+        ]}
+        notes={[
+          "同一條路線可以加好幾站，例如去程、回程各一站。",
+          "資料來自交通部 TDX，只有市區公車；公路客運、國道客運不在內。到站時間每分鐘更新一次。",
+          "也可以在看板上點公車路線，打開「全線動態」直接勾選上車站。",
+        ]}
+      />
       {!route ? (
         <>
           <div className="ed-add">
@@ -640,7 +691,7 @@ function BusAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; o
                   </button>
                 ))}
               </div>
-              <p className="muted small">點你要上車的站牌（終點站不能上車，所以不列出）。同一條路線可以加多站，例如去程、回程各一站：</p>
+              <p className="muted small">點你要上車的站牌（終點站不能上車，所以不列出）：</p>
               <ul className="pick-list">
                 {trip!.stops.slice(0, -1).map((name, i) => (
                   <li key={i}>
@@ -656,10 +707,6 @@ function BusAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; o
           )}
         </div>
       )}
-      <p className="muted small">
-        資料來自 TDX 的市區公車（公路客運不在內）。點看板上的公車會開 Google
-        地圖搜尋該路線。搜尋比對路線名稱與起訖站名（含在其中即可，路線名稱開頭符合的排前面）。
-      </p>
     </>
   );
 }
@@ -740,6 +787,19 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
 
   return (
     <>
+      <AddGuide
+        steps={[
+          "上車站：輸入站名會列出建議；「台」「臺」都可以，不用打「站」。",
+          "下車站：同上。",
+          "車種：這條路線只列出哪種車。",
+          "按「新增」。",
+        ]}
+        notes={[
+          "看板會列出從上車站出發、有停下車站的班次，以及預計誤點和臺鐵的營運公告。",
+          "只有臺鐵，不含高鐵、捷運。想看回程，再加一條上下車站相反的路線。",
+          `最多 ${LIMITS.trains} 條。清單排第一的路線，是看板上預設打開的那一條。`,
+        ]}
+      />
       <div className="ed-add">
         <input
           value={from}
@@ -763,17 +823,6 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
             <option key={n} value={n} />
           ))}
         </datalist>
-        <button
-          className="ed-primary"
-          disabled={!ok}
-          onClick={() => (
-            update([...routes, { from: norm(from), to: norm(to), type }]),
-            toast(`已新增「${norm(from)}→${norm(to)}（${type}）」`),
-            onDone()
-          )}
-        >
-          新增
-        </button>
       </div>
       <p className="muted small">
         {routes.length >= LIMITS.trains
@@ -787,7 +836,20 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
       <div className="setting">
         <div className="setting-label">車種</div>
         <TrainTypePicker value={type} onChange={setType} />
-        <div className="muted small">只列出這種車；「區間」也包含區間快車。之後可以在清單上改。</div>
+        <div className="muted small">只列出這種車；「區間」也包含區間快車，「全部」列出所有車種。加入後也可以在清單上改。</div>
+      </div>
+      <div className="ed-actions">
+        <button
+          className="ed-primary"
+          disabled={!ok}
+          onClick={() => (
+            update([...routes, { from: norm(from), to: norm(to), type }]),
+            toast(`已新增「${norm(from)}→${norm(to)}（${type}）」`),
+            onDone()
+          )}
+        >
+          新增
+        </button>
       </div>
     </>
   );
@@ -896,7 +958,15 @@ function NewsTopicEditor({ s, set, topic }: { s: Settings; set: (s: Settings) =>
       )}
       {adding && (
         <SubPage title={`新增「${label}」來源`} onClose={() => setAdding(false)}>
-          <p className="muted small">來源只能從清單選，不能填任意網址。</p>
+          <AddGuide
+            steps={[`點一個媒體，就會加進「${label}」分類，並回到上一頁。`]}
+            notes={[
+              "來源只能從這份清單選（都是確認過可以讀取的媒體 RSS），不能填任意網址。",
+              "新聞照發布時間由新到舊排列；為了不讓發稿量大的媒體洗版，每家最多顯示 8 則，只列 36 小時內的新聞。",
+              "標「簡體」「英文」的來源，內容不是繁體中文。",
+              `每個分類最多 ${LIMITS.news} 個來源，目前 ${ids.length} 個。`,
+            ]}
+          />
           <ul className="pick-list">
             {available.map((src) => (
               <li key={src.id}>
