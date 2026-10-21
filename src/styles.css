@@ -624,8 +624,9 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 }
 .pk-loading { align-items: center; justify-content: center; color: var(--muted); }
 .pk-head { display: flex; align-items: center; flex: none; }
-.pk-head h2 { margin: 0; font-size: 19px; flex: 1; }
-.pk-gear { margin-right: 8px; }
+.pk-head h2 { margin: 0; font-size: 19px; }
+/* Next to the title, like the gears on the board's cards. */
+.pk-gear { margin: 0 auto 0 4px; }
 /* The current settings, one line under the search box; tap to change them. */
 .pk-current {
   flex: none; display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border: 1px solid var(--line);

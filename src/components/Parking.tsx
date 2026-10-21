@@ -372,7 +372,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
     <div className="parking" role="dialog" aria-modal="true" aria-labelledby="parking-title">
       <header className="pk-head">
         <h2 id="parking-title">停車場搜尋</h2>
-        <button className="icon-btn pk-gear" onClick={() => setShowSettings(true)} aria-label="停車場設定" title="停車場設定">
+        <button className="card-gear pk-gear" onClick={() => setShowSettings(true)} aria-label="停車場設定" title="停車場設定">
           <GearIcon />
         </button>
         <button className="modal-close" onClick={onClose} aria-label="關閉">
