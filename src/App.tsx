@@ -150,11 +150,13 @@ export default function App() {
         <header className={`top ${editing ? "top-editing" : ""}`}>
           {editing && (
             <div className="layout-bar" role="toolbar" aria-label="調整版面">
-              <span className="layout-bar-hint">{mode !== "phone"
+              <span className="layout-bar-hint">
+                {mode !== "phone"
                   ? "拖動板塊，放到另一格就會交換位置"
                   : tab === "transit"
                     ? "拖動卡片或分頁調整位置"
-                    : "拖動底部分頁調整順序"}</span>
+                    : "拖動底部分頁調整順序"}
+              </span>
               <button onClick={resetLayout}>恢復預設</button>
               <button className="layout-done" onClick={() => setEditing(false)}>
                 完成
