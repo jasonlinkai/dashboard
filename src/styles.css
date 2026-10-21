@@ -655,13 +655,9 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   font: 700 12px/1 -apple-system, BlinkMacSystemFont, sans-serif; color: #fff;
   background: #7d8590; border: 2px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
 }
-.pk-pin.ok { background: #1f9d5a; }
-.pk-pin.low { background: #c98a12; }
-.pk-pin.full { background: #d93636; }
-.pk-pin.sel { outline: 3px solid #1a73e8; transform: translate(-50%, -50%) scale(1.25); }
+.pk-pin.sel { outline: 3px solid #111; outline-offset: 1px; transform: translate(-50%, -50%) scale(1.25); }
 .pk-dest { display: block; width: 30px; height: 42px; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.4)); }
 .pk-dot.old { background: none; border: 2px solid var(--muted); }
-.pk-pin.old { background: #9aa3ad; }
 .pk-tag { margin-left: 6px; font-size: 11px; font-weight: 600; padding: 1px 5px; border-radius: 5px; background: var(--card-2); color: var(--muted); vertical-align: 2px; }
 .pk-hit-top { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
 .pk-hit-top .muted { flex: none; font-variant-numeric: tabular-nums; }
@@ -669,15 +665,18 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-hits-tip.warn { color: var(--accent); }
 .pk-coord-nav { display: block; text-align: center; font-size: 12px; color: var(--muted); text-decoration: underline; padding: 4px 0 0; }
 
-/* Parking source marks: T = TDX, 新 = 新北市, O = OpenStreetMap */
-.pk-pin b { font-weight: 800; font-size: 11px; opacity: 0.8; margin-right: 3px; }
-/* No live count: a round pin with just the source letter, in the source's colour. */
-.pk-pin.letter { min-width: 24px; width: 24px; height: 24px; padding: 0; border-radius: 50%; }
-.pk-pin.letter.src-tdx, .pk-src.src-tdx { background: #1a73e8; }
-.pk-pin.letter.src-ntpc, .pk-src.src-ntpc { background: #8e44ad; }
+/* Parking source marks: T = TDX, 新 = 新北市, O = OpenStreetMap. The pin's fill is its source. */
+.pk-pin.src-tdx, .pk-src.src-tdx { background: #1a73e8; }
+.pk-pin.src-ntpc, .pk-src.src-ntpc { background: #8e44ad; }
 .pk-src.src-osm { background: #6b7a2a; }
 /* OpenStreetMap: location only, so outlined instead of filled. */
-.pk-pin.letter.src-osm { background: #fff; color: #6b7a2a; border: 2px dashed #6b7a2a; }
+.pk-pin.src-osm { background: #fff; color: #6b7a2a; border: 2px dashed #6b7a2a; }
+/* No live count: a round pin with the source letter. */
+.pk-pin.letter { min-width: 24px; width: 24px; height: 24px; padding: 0; border-radius: 50%; }
+/* Live count: the border tells how full it is. */
+.pk-pin.lv-low { border-color: #f2b84b; box-shadow: 0 0 0 2px #f2b84b, 0 1px 4px rgb(0 0 0 / 0.35); }
+.pk-pin.lv-full { border-color: #ff4d4d; box-shadow: 0 0 0 2px #ff4d4d, 0 1px 4px rgb(0 0 0 / 0.35); }
+.pk-pin.lv-old { opacity: 0.55; }
 .pk-srcs { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
 .pk-src {
   display: inline-block; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; font-style: normal;
@@ -722,3 +721,4 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-dist { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
 .pk-dist small { font-size: 10.5px; opacity: 0.8; }
 .pk-dist-note { display: block; margin-top: 2px; }
+.pk-legend-note { display: block !important; color: #666; font-size: 10px; line-height: 1.35; margin-top: 2px; }

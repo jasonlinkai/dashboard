@@ -573,15 +573,15 @@ const pinZ = (p: ParkingLot) => (p.live === "ok" && mainCount(p) ? 300 : p.sourc
 
 function lotIcon(p: ParkingLot, selected: boolean) {
   const c = mainCount(p);
-  const letter = SOURCE[p.source].badge;
-  const sel = selected ? " sel" : "";
-  // With live spaces: the source letter and the count, coloured by how full it is.
-  // Without: just the source letter, in the source's colour (T / 新 / O).
-  const html =
-    p.live === "ok" && c
-      ? `<div class="pk-pin ${level(p)}${sel}"><b>${letter}</b>${c.available > 999 ? "999+" : c.available}</div>`
-      : `<div class="pk-pin letter src-${p.source.toLowerCase()}${sel}">${letter}</div>`;
-  return L.divIcon({ className: "", html, iconSize: [0, 0] });
+  // Fill colour = source (T / 新 / O). With live spaces the pin shows the count (its border says
+  // how full: yellow nearly, red full; faded when old); without, the source letter.
+  const text = p.live === "ok" && c ? (c.available > 999 ? "999+" : String(c.available)) : SOURCE[p.source].badge;
+  const lvl = p.live === "ok" && c ? ` lv-${level(p)}` : " letter";
+  return L.divIcon({
+    className: "",
+    html: `<div class="pk-pin src-${p.source.toLowerCase()}${lvl}${selected ? " sel" : ""}">${text}</div>`,
+    iconSize: [0, 0],
+  });
 }
 
 function ParkingMap({
@@ -628,7 +628,8 @@ function ParkingMap({
       const div = L.DomUtil.create("div", "pk-legend");
       div.innerHTML = (Object.keys(SOURCE) as ParkingSource[])
         .map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`)
-        .join("");
+        .join("") +
+        '<span class="pk-legend-note">數字＝剩餘車位<br>黃框快滿・紅框已滿</span>';
       L.DomEvent.disableClickPropagation(div);
       return div;
     };
