@@ -44,6 +44,27 @@ const move = <T,>(list: T[], i: number, by: number): T[] => {
 };
 const without = <T,>(list: T[], i: number): T[] => list.filter((_, k) => k !== i);
 
+/** Each list page has two modes: normal (remove with ✕, add on its own page) and sorting (drag ≡). */
+interface EditorProps {
+  s: Settings;
+  set: (s: Settings) => void;
+  sorting: boolean;
+}
+
+/** A row's controls for the current mode: the drag handle while sorting, the ✕ otherwise. */
+const rowEdit = <T,>(sorting: boolean, list: T[], i: number, update: (list: T[]) => void) =>
+  sorting ? { onMove: (by: number) => update(move(list, i, by)) } : { onRemove: () => update(without(list, i)) };
+
+/** Opens a list's add page; when the list is full, says so instead. */
+function AddButton({ label, full, fullNote, onClick }: { label: string; full: boolean; fullNote: string; onClick: () => void }) {
+  if (full) return <p className="muted small">{fullNote}</p>;
+  return (
+    <button className="ed-add-btn" onClick={onClick}>
+      ＋ {label}
+    </button>
+  );
+}
+
 /**
  * One row of an editable list: drag handle, label, remove. Drag the handle (mouse or touch) to
  * reorder; with the handle focused, the arrow keys move the row too. Without `onMove` there is
@@ -183,7 +204,7 @@ interface Town {
 /** 汐止區 → 汐止, but keep two-character names like 東區 / 北區 whole. */
 const shortName = (town: string) => (town.length > 2 ? town.replace(/[區鎮鄉市]$/, "") : town);
 
-function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+function WeatherAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
   const [towns, setTowns] = useState<Town[] | null>(null);
   const [county, setCounty] = useState("新北市");
   const [townId, setTownId] = useState("");
@@ -215,32 +236,11 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
       },
     ]);
     toast(`已新增「${label}」`);
-    setName("");
+    onDone();
   };
 
   return (
     <>
-      <ul className="ed-list">
-        {places.map((p, i) => (
-          <Row
-            key={p.name}
-            name={p.name}
-            i={i}
-            count={places.length}
-            min={1}
-            onMove={(by) => update(move(places, i, by))}
-            onRemove={() => update(without(places, i))}
-          >
-            {p.name}
-            <span className="muted small">
-              {" "}
-              {p.county}
-              {p.town}
-              {i === 0 ? "・天氣動畫依此地" : ""}
-            </span>
-          </Row>
-        ))}
-      </ul>
       <div className="ed-add">
         <select value={county} onChange={(e) => (setCounty(e.target.value), setTownId(""))} aria-label="縣市">
           {counties.map((c) => (
@@ -271,8 +271,44 @@ function WeatherEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
           ? `最多 ${LIMITS.weather} 個地點。`
           : duplicate
             ? "已經有同名的地點，請換個顯示名稱。"
-            : "全臺 368 個鄉鎮區都可選；沒有氣象署測站的地區，現在溫度改用預報模型並會註明。第一個地點決定整頁的天氣動畫。"}
+            : "全臺 368 個鄉鎮區都可選；沒有氣象署測站的地區，現在溫度改用預報模型並會註明。顯示名稱沒填就用鄉鎮名。"}
       </p>
+    </>
+  );
+}
+function WeatherEditor({ s, set, sorting }: EditorProps) {
+  const places = s.weather;
+  const update = (weather: WeatherPlace[]) => set({ ...s, weather });
+  const [adding, setAdding] = useState(false);
+  return (
+    <>
+      <ul className="ed-list">
+        {places.map((p, i) => (
+          <Row key={p.name} name={p.name} i={i} count={places.length} min={1} {...rowEdit(sorting, places, i, update)}>
+            {p.name}
+            <span className="muted small">
+              {" "}
+              {p.county}
+              {p.town}
+              {i === 0 ? "・天氣動畫依此地" : ""}
+            </span>
+          </Row>
+        ))}
+      </ul>
+      {!sorting && (
+        <AddButton
+          label="新增地點"
+          full={places.length >= LIMITS.weather}
+          fullNote={`最多 ${LIMITS.weather} 個地點，請先刪除一個再新增。`}
+          onClick={() => setAdding(true)}
+        />
+      )}
+      <p className="muted small">排第一的地點決定整頁的天氣動畫。</p>
+      {adding && (
+        <SubPage title="新增天氣地點" onClose={() => setAdding(false)}>
+          <WeatherAdd s={s} set={set} onDone={() => setAdding(false)} />
+        </SubPage>
+      )}
     </>
   );
 }
@@ -295,7 +331,7 @@ const SYMBOL_EXAMPLES: [string, string][] = [
  * Markets are added by typing a Yahoo Finance symbol: any symbol Yahoo has can be added, which a
  * picker or search could never guarantee. Each one is checked for a quote before it is added.
  */
-function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+function MarketsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
   const items = s.markets;
   const update = (markets: MarketItem[]) => set({ ...s, markets });
   const used = new Set(items.map(marketSymbol));
@@ -332,8 +368,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
       const decimals = q.price < 1 ? 4 : sym.endsWith("=X") ? 3 : q.price >= 10_000 && sym.endsWith("-USD") ? 0 : 2;
       update([...items, known && !name.trim() ? sym : { symbol: sym, name: label.slice(0, 24), decimals }]);
       toast(`已新增「${label}」`);
-      setSymbol("");
-      setName("");
+      onDone();
     } catch {
       toast("暫時無法確認報價，請稍後再試", "error");
     } finally {
@@ -343,28 +378,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
 
   return (
     <>
-      <ul className="ed-list">
-        {items.map((m, i) => {
-          const inst = instrumentOf(m);
-          return (
-            <Row
-              key={inst.symbol}
-              name={inst.name}
-              i={i}
-              count={items.length}
-              min={1}
-              onMove={(by) => update(move(items, i, by))}
-              onRemove={() => update(without(items, i))}
-            >
-              {inst.name}
-              <span className="muted small"> {inst.symbol}</span>
-            </Row>
-          );
-        })}
-      </ul>
-      {full ? (
-        <p className="muted small">最多 {LIMITS.markets} 格，請先刪除一格再新增。</p>
-      ) : (
+      {
         <>
           <div className="ed-add">
             <input
@@ -399,7 +413,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
             ))}
           </dl>
         </>
-      )}
+      }
       <p className="muted small">
         目前 {items.length}／{LIMITS.markets} 格。代號以 Yahoo Finance 為準，加入前會先確認有報價；不知道代號可到{" "}
         <a href="https://tw.stock.yahoo.com/" target="_blank" rel="noopener noreferrer">
@@ -407,6 +421,39 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
         </a>{" "}
         搜尋，報價頁網址最後一段就是代號。名稱沒填時，台股自動用中文簡稱，其他用代號。
       </p>
+    </>
+  );
+}
+function MarketsEditor({ s, set, sorting }: EditorProps) {
+  const items = s.markets;
+  const update = (markets: MarketItem[]) => set({ ...s, markets });
+  const [adding, setAdding] = useState(false);
+  return (
+    <>
+      <ul className="ed-list">
+        {items.map((m, i) => {
+          const inst = instrumentOf(m);
+          return (
+            <Row key={inst.symbol} name={inst.name} i={i} count={items.length} min={1} {...rowEdit(sorting, items, i, update)}>
+              {inst.name}
+              <span className="muted small"> {inst.symbol}</span>
+            </Row>
+          );
+        })}
+      </ul>
+      {!sorting && (
+        <AddButton
+          label="新增行情"
+          full={items.length >= LIMITS.markets}
+          fullNote={`最多 ${LIMITS.markets} 格，請先刪除一格再新增。`}
+          onClick={() => setAdding(true)}
+        />
+      )}
+      {adding && (
+        <SubPage title="新增行情" onClose={() => setAdding(false)}>
+          <MarketsAdd s={s} set={set} onDone={() => setAdding(false)} />
+        </SubPage>
+      )}
     </>
   );
 }
@@ -438,7 +485,7 @@ function tripLabel(t: BusTrip, all: BusTrip[]) {
  * The stop after the chosen one is saved as `toward`, which pins the exact side of the road
  * (loop routes pass a stop name twice, once each way).
  */
-function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+function BusAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
   const stops = s.bus;
   const update = (bus: BusStop[]) => set({ ...s, bus });
   const [city, setCity] = useState<BusCity>(stops[0]?.city ?? "NewTaipei");
@@ -503,30 +550,12 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
     const last = rest.reduce((acc, b, j) => (b.city === city && b.route === route.name ? j : acc), -1);
     update(last >= 0 ? [...rest.slice(0, last + 1), entry, ...rest.slice(last + 1)] : [...rest, entry]);
     toast(`已新增「${route.name} ${stop}」，公車區塊下次更新時出現`);
-    setRoute(null);
-    setQuery("");
+    onDone();
   };
 
   return (
     <>
-      <ul className="ed-list">
-        {stops.map((b, i) => (
-          <Row
-            key={`${b.city}:${b.route}:${b.stop}:${b.toward ?? ""}`}
-            name={`${b.route} ${b.stop}`.trim()}
-            i={i}
-            count={stops.length}
-            onMove={(by) => update(move(stops, i, by))}
-            onRemove={() => update(without(stops, i))}
-          >
-            {b.route}
-            <span className="muted small"> {busLabel(b)}</span>
-          </Row>
-        ))}
-      </ul>
-      {full ? (
-        <p className="muted small">最多 {LIMITS.bus} 筆，請先刪除一筆再新增。</p>
-      ) : !route ? (
+      {!route ? (
         <>
           <div className="ed-add">
             <select value={city} onChange={(e) => (setCity(e.target.value as BusCity), setQuery(""))} aria-label="縣市">
@@ -633,10 +662,48 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
     </>
   );
 }
+function BusEditor({ s, set, sorting }: EditorProps) {
+  const stops = s.bus;
+  const update = (bus: BusStop[]) => set({ ...s, bus });
+  const [adding, setAdding] = useState(false);
+  return (
+    <>
+      <ul className="ed-list">
+        {stops.map((b, i) => (
+          <Row
+            key={`${b.city}:${b.route}:${b.stop}:${b.toward ?? ""}`}
+            name={`${b.route} ${b.stop}`.trim()}
+            i={i}
+            count={stops.length}
+            {...rowEdit(sorting, stops, i, update)}
+          >
+            {b.route}
+            <span className="muted small"> {busLabel(b)}</span>
+          </Row>
+        ))}
+      </ul>
+      {!stops.length && <p className="muted small">還沒有公車站牌。</p>}
+      {!sorting && (
+        <AddButton
+          label="新增公車站牌"
+          full={stops.length >= LIMITS.bus}
+          fullNote={`最多 ${LIMITS.bus} 筆，請先刪除一筆再新增。`}
+          onClick={() => setAdding(true)}
+        />
+      )}
+      <p className="muted small">也可以在看板上點公車路線，在「全線動態」勾選上車站。</p>
+      {adding && (
+        <SubPage title="新增公車站牌" onClose={() => setAdding(false)}>
+          <BusAdd s={s} set={set} onDone={() => setAdding(false)} />
+        </SubPage>
+      )}
+    </>
+  );
+}
 
 // ---------- 火車 ----------
 
-function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
   const routes = s.trains;
   const [stations, setStations] = useState<string[]>([]);
   const [from, setFrom] = useState("");
@@ -659,21 +726,6 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
 
   return (
     <>
-      <ul className="ed-list">
-        {routes.map((r, i) => (
-          <Row
-            key={`${r.from}-${r.to}`}
-            name={`${r.from}→${r.to}`}
-            i={i}
-            count={routes.length}
-            onMove={(by) => update(move(routes, i, by))}
-            onRemove={() => update(without(routes, i))}
-          >
-            {r.from} → {r.to}
-            {i === 0 && <span className="muted small">・預設顯示</span>}
-          </Row>
-        ))}
-      </ul>
       <div className="ed-add">
         <input
           value={from}
@@ -700,12 +752,7 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
         <button
           className="ed-primary"
           disabled={!ok}
-          onClick={() => (
-            update([...routes, { from: norm(from), to: norm(to) }]),
-            setFrom(""),
-            setTo(""),
-            toast(`已新增「${norm(from)}→${norm(to)}」`)
-          )}
+          onClick={() => (update([...routes, { from: norm(from), to: norm(to) }]), toast(`已新增「${norm(from)}→${norm(to)}」`), onDone())}
         >
           新增
         </button>
@@ -719,112 +766,163 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
               ? "這條路線已經在清單裡了。"
               : `可選全部 ${stations.length || ""} 個臺鐵車站（輸入時會列出建議；不含高鐵、捷運），例如 臺北、汐科。`}
       </p>
-      <div className="setting">
-        <div className="setting-label">車種</div>
-        <div className="segmented" role="radiogroup" aria-label="車種">
-          {TRAIN_TYPES.map((t) => (
-            <button
-              key={t}
-              role="radio"
-              aria-checked={s.trainType === t}
-              onClick={() => (set({ ...s, trainType: t }), toast(`車種改為「${t}」`))}
-            >
-              {t}
-            </button>
-          ))}
+    </>
+  );
+}
+function TrainsEditor({ s, set, sorting }: EditorProps) {
+  const routes = s.trains;
+  const update = (trains: Settings["trains"]) => set({ ...s, trains });
+  const [adding, setAdding] = useState(false);
+  return (
+    <>
+      <ul className="ed-list">
+        {routes.map((r, i) => (
+          <Row key={`${r.from}-${r.to}`} name={`${r.from}→${r.to}`} i={i} count={routes.length} {...rowEdit(sorting, routes, i, update)}>
+            {r.from} → {r.to}
+            {i === 0 && <span className="muted small">・預設顯示</span>}
+          </Row>
+        ))}
+      </ul>
+      {!routes.length && <p className="muted small">還沒有火車路線。</p>}
+      {!sorting && (
+        <AddButton
+          label="新增火車路線"
+          full={routes.length >= LIMITS.trains}
+          fullNote={`最多 ${LIMITS.trains} 條，請先刪除一條再新增。`}
+          onClick={() => setAdding(true)}
+        />
+      )}
+      {!sorting && (
+        <div className="setting">
+          <div className="setting-label">車種</div>
+          <div className="segmented" role="radiogroup" aria-label="車種">
+            {TRAIN_TYPES.map((t) => (
+              <button
+                key={t}
+                role="radio"
+                aria-checked={s.trainType === t}
+                onClick={() => (set({ ...s, trainType: t }), toast(`車種改為「${t}」`))}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="muted small">「區間」也包含區間快車。</div>
         </div>
-        <div className="muted small">「區間」也包含區間快車。</div>
-      </div>
+      )}
+      {adding && (
+        <SubPage title="新增火車路線" onClose={() => setAdding(false)}>
+          <TrainsAdd s={s} set={set} onDone={() => setAdding(false)} />
+        </SubPage>
+      )}
     </>
   );
 }
 
 // ---------- 新聞 ----------
 
-function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
-  const [topic, setTopic] = useState<Topic>(s.newsOrder[0]);
+/** One news topic: shown or not, and its sources (no order: the board sorts stories by time). */
+function NewsTopicEditor({ s, set, topic }: { s: Settings; set: (s: Settings) => void; topic: Topic }) {
   const ids = s.news[topic];
   const label = TOPICS.find(([id]) => id === topic)![1];
   const update = (list: string[]) => set({ ...s, news: { ...s.news, [topic]: list } });
   const available = sourcesFor(topic).filter((src) => !ids.includes(src.id));
-  const [pick, setPick] = useState("");
-  const full = ids.length >= LIMITS.news;
-
+  const [adding, setAdding] = useState(false);
   return (
     <>
-      <div className="setting">
-        <div className="setting-label">分類順序</div>
-        <div className="muted small">拖曳 ≡ 調整看板上新聞分類的順序；點分類可以設定它的來源、或不顯示。</div>
-        <ul className="ed-list">
-          {orderedTopics(s).map(([id, name], i) => (
-            <Row key={id} name={name} i={i} count={TOPICS.length} onMove={(by) => set({ ...s, newsOrder: move(s.newsOrder, i, by) })}>
-              <button className="ed-topic" aria-pressed={topic === id} onClick={() => (setTopic(id), setPick(""))}>
+      <div className="segmented" role="radiogroup" aria-label="在看板顯示這個分類">
+        {([true, false] as const).map((on) => (
+          <button
+            key={String(on)}
+            role="radio"
+            aria-checked={ids.length > 0 === on}
+            onClick={() => {
+              if (ids.length > 0 === on) return;
+              update(on ? DEFAULT_NEWS[topic] : []);
+              toast(on ? `看板顯示「${label}」` : `看板不顯示「${label}」`);
+            }}
+          >
+            {on ? "顯示這個分類" : "不顯示"}
+          </button>
+        ))}
+      </div>
+      {ids.length > 0 && (
+        <>
+          <ul className="ed-list">
+            {ids.map((id, i) => {
+              const src = NEWS_BY_ID.get(id);
+              return (
+                <Row key={id} name={src?.name ?? id} i={i} count={ids.length} min={1} onRemove={() => update(without(ids, i))}>
+                  {src?.name ?? id}
+                  {src?.note && <span className="muted small">・{src.note}</span>}
+                </Row>
+              );
+            })}
+          </ul>
+          {available.length > 0 && (
+            <AddButton
+              label="新增來源"
+              full={ids.length >= LIMITS.news}
+              fullNote={`每個分類最多 ${LIMITS.news} 個來源。`}
+              onClick={() => setAdding(true)}
+            />
+          )}
+          <p className="muted small">新聞一律依發布時間由新到舊排列，來源沒有先後之分。</p>
+        </>
+      )}
+      {adding && (
+        <SubPage title={`新增「${label}」來源`} onClose={() => setAdding(false)}>
+          <p className="muted small">來源只能從清單選，不能填任意網址。</p>
+          <ul className="pick-list">
+            {available.map((src) => (
+              <li key={src.id}>
+                <button className="pick-item" onClick={() => (update([...ids, src.id]), toast(`已新增「${src.name}」`), setAdding(false))}>
+                  {src.name}
+                  {src.note && <span className="muted small">{src.note}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </SubPage>
+      )}
+    </>
+  );
+}
+
+/** The news tabs: their order on the board (sorting mode), and each one's page. */
+function NewsEditor({ s, set, sorting }: EditorProps) {
+  const [topic, setTopic] = useState<Topic | null>(null);
+  return (
+    <>
+      <ul className="ed-list">
+        {orderedTopics(s).map(([id, name], i) => (
+          <Row
+            key={id}
+            name={name}
+            i={i}
+            count={TOPICS.length}
+            onMove={sorting ? (by) => set({ ...s, newsOrder: move(s.newsOrder, i, by) }) : undefined}
+          >
+            {sorting ? (
+              <span className={s.news[id].length ? "" : "ed-topic-off"}>{name}</span>
+            ) : (
+              <button className="ed-topic" onClick={() => setTopic(id)}>
                 <span className={s.news[id].length ? "" : "ed-topic-off"}>{name}</span>
                 <span className="muted small">{s.news[id].length ? `${s.news[id].length} 個來源` : "不顯示"}</span>
                 <span className="ed-section-chev" aria-hidden>
                   ›
                 </span>
               </button>
-            </Row>
-          ))}
-        </ul>
-      </div>
-      <div className="setting">
-        <div className="setting-label">「{label}」的來源</div>
-        <div className="segmented" role="radiogroup" aria-label="在看板顯示這個分類">
-          {([true, false] as const).map((on) => (
-            <button
-              key={String(on)}
-              role="radio"
-              aria-checked={ids.length > 0 === on}
-              onClick={() => {
-                if (ids.length > 0 === on) return;
-                update(on ? DEFAULT_NEWS[topic] : []);
-                toast(on ? `看板顯示「${label}」` : `看板不顯示「${label}」`);
-              }}
-            >
-              {on ? "顯示這個分類" : "不顯示"}
-            </button>
-          ))}
-        </div>
-        {ids.length > 0 && (
-          <>
-            <ul className="ed-list">
-              {ids.map((id, i) => {
-                const src = NEWS_BY_ID.get(id);
-                return (
-                  <Row key={id} name={src?.name ?? id} i={i} count={ids.length} min={1} onRemove={() => update(without(ids, i))}>
-                    {src?.name ?? id}
-                    {src?.note && <span className="muted small">・{src.note}</span>}
-                  </Row>
-                );
-              })}
-            </ul>
-            <div className="ed-add">
-              <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="新增來源">
-                <option value="">{available.length ? "選擇來源" : "沒有其他來源"}</option>
-                {available.map((src) => (
-                  <option key={src.id} value={src.id}>
-                    {src.name}
-                    {src.note ? `（${src.note}）` : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="ed-primary"
-                disabled={!pick || full}
-                onClick={() => (update([...ids, pick]), setPick(""), toast(`已新增「${NEWS_BY_ID.get(pick)?.name ?? pick}」`))}
-              >
-                新增
-              </button>
-            </div>
-            <p className="muted small">
-              {full ? `每個分類最多 ${LIMITS.news} 個來源。` : ""}
-              新聞一律依發布時間由新到舊排列，來源沒有先後之分。來源只能從清單選，不能填任意網址。
-            </p>
-          </>
-        )}
-      </div>
+            )}
+          </Row>
+        ))}
+      </ul>
+      <p className="muted small">{sorting ? "這裡的順序就是看板上新聞分類的順序。" : "點分類可以設定它的來源，或不在看板顯示。"}</p>
+      {topic && (
+        <SubPage title={TOPICS.find(([id]) => id === topic)![1]} onClose={() => setTopic(null)}>
+          <NewsTopicEditor s={s} set={set} topic={topic} />
+        </SubPage>
+      )}
     </>
   );
 }
@@ -850,20 +948,32 @@ function summary(section: Section, s: Settings): string {
   }
 }
 
-/** Second-level page over the settings dialog. Esc / 返回 / tapping outside close only this page. */
-function SubPage({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+let subPageIds = 0;
+const openSubPages: number[] = [];
+
+/** A page over the settings dialog (or over another such page). Esc / 返回 / tapping outside close only this page. */
+function SubPage({ title, action, onClose, children }: { title: string; action?: ReactNode; onClose: () => void; children: ReactNode }) {
   const backRef = useRef<HTMLButtonElement>(null);
+  const id = useRef(0);
+  if (!id.current) id.current = ++subPageIds;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     backRef.current?.focus();
-    // Capture phase on window runs before the settings dialog's own Esc handler, which would close everything.
+    openSubPages.push(id.current);
+    // Capture phase on window runs before the settings dialog's own Esc handler, which would close
+    // everything. Pages stack (list → add), so only the top one answers.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || openSubPages[openSubPages.length - 1] !== id.current) return;
       e.stopPropagation();
-      onClose();
+      onCloseRef.current();
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      openSubPages.splice(openSubPages.indexOf(id.current), 1);
+    };
+  }, []);
   return createPortal(
     <div className="modal-backdrop sub-backdrop" onClick={(e) => (e.stopPropagation(), onClose())}>
       <div className="modal modal-settings" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
@@ -872,6 +982,7 @@ function SubPage({ title, onClose, children }: { title: string; onClose: () => v
             ‹ 返回
           </button>
           <h2>{title}</h2>
+          {action}
         </header>
         <div className="settings-body">{children}</div>
       </div>
@@ -893,15 +1004,20 @@ export function ContentEditor({ initial, onExit }: { initial?: Section; onExit?:
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   const close = useCallback(() => (fromCard.current && onExitRef.current ? onExitRef.current() : setOpen(null)), []);
-  const props = { s: settings, set: setSettings };
+  // Sorting is a mode of the open page; every page starts out in the normal mode.
+  const [sorting, setSorting] = useState(false);
+  const props = { s: settings, set: setSettings, sorting };
+  const count = open === "news" ? TOPICS.length : open ? settings[open].length : 0;
   return (
     <div className="setting">
       <div className="setting-label">顯示內容</div>
-      <div className="muted small">也可以直接在看板上長按天氣卡片、行情方塊或火車路線，拖到想要的位置。</div>
+      <div className="muted small">
+        點進去可以新增、刪除；右上角「排序」調整順序。也可以直接在看板上長按天氣卡片、行情方塊或火車路線，拖到想要的位置。
+      </div>
       <ul className="ed-sections">
         {SECTIONS.map(([id, label]) => (
           <li key={id}>
-            <button className="ed-section" onClick={() => ((fromCard.current = false), setOpen(id))}>
+            <button className="ed-section" onClick={() => ((fromCard.current = false), setSorting(false), setOpen(id))}>
               <span className="ed-section-name">{label}</span>
               <span className="ed-section-sum muted small">{summary(id, settings)}</span>
               <span className="ed-section-chev" aria-hidden>
@@ -912,7 +1028,18 @@ export function ContentEditor({ initial, onExit }: { initial?: Section; onExit?:
         ))}
       </ul>
       {open && (
-        <SubPage title={TITLES[open]} onClose={close}>
+        <SubPage
+          title={TITLES[open]}
+          onClose={close}
+          action={
+            count > 1 && (
+              <button className={`sub-action ${sorting ? "on" : ""}`} onClick={() => setSorting(!sorting)}>
+                {sorting ? "完成" : "排序"}
+              </button>
+            )
+          }
+        >
+          {sorting && <p className="ed-sort-hint">按住 ≡ 拖到想要的位置；好了按右上角「完成」。</p>}
           {open === "weather" && <WeatherEditor {...props} />}
           {open === "markets" && <MarketsEditor {...props} />}
           {open === "bus" && <BusEditor {...props} />}

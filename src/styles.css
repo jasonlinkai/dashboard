@@ -134,6 +134,16 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* Second-level settings page sits above the settings dialog. */
 .sub-backdrop { z-index: 11; background: rgb(0 0 0 / 0.35); }
 .sub-back { border: 0; background: none; color: var(--blue); font-size: 16px; padding: 4px 10px 4px 0; margin-right: 6px; }
+/* 排序 / 完成 in a list page's title bar. */
+.sub-action { flex: none; border: 0; background: none; color: var(--blue); font-size: 16px; padding: 4px 2px 4px 10px; }
+.sub-action.on { font-weight: 700; }
+/* Opens a list's add page. */
+.ed-add-btn {
+  width: 100%; padding: 10px; border-radius: 8px; border: 1.5px dashed color-mix(in srgb, var(--blue) 55%, transparent);
+  background: color-mix(in srgb, var(--blue) 8%, transparent); color: var(--blue); font-weight: 600; font-size: 14px;
+}
+.ed-add-btn:active { background: color-mix(in srgb, var(--blue) 16%, transparent); }
+.ed-sort-hint { margin: 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--blue) 12%, transparent); font-size: 13px; }
 .ed-sections { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); }
 .ed-section {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px;
