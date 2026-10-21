@@ -11,7 +11,6 @@ import { toast } from "../toast";
 
 const RADII = [300, 500, 1000, 2000] as const;
 type Radius = (typeof RADII)[number];
-type Sort = "distance" | "fare" | "spaces";
 interface Dest {
   lat: number;
   lon: number;
@@ -27,7 +26,7 @@ const ALL_SOURCES: ParkingSource[] = ["TDX", "NTPC", "OSM"];
 /** OpenStreetMap is off by default: many of its car parks turn out to be private or gone. */
 const DEFAULT_SOURCES: ParkingSource[] = ["TDX", "NTPC"];
 
-function load(): { dest: Dest | null; radius: Radius; sort: Sort; sources: ParkingSource[]; liveOnly: boolean } {
+function load(): { dest: Dest | null; radius: Radius; sources: ParkingSource[]; liveOnly: boolean } {
   try {
     const v = JSON.parse(localStorage.getItem(STORE) ?? "{}");
     const dest =
@@ -36,12 +35,11 @@ function load(): { dest: Dest | null; radius: Radius; sort: Sort; sources: Parki
     return {
       dest,
       radius: RADII.includes(v.radius) ? v.radius : 500,
-      sort: ["distance", "fare", "spaces"].includes(v.sort) ? v.sort : "distance",
       sources,
       liveOnly: v.liveOnly === true,
     };
   } catch {
-    return { dest: null, radius: 500, sort: "distance", sources: DEFAULT_SOURCES, liveOnly: false };
+    return { dest: null, radius: 500, sources: DEFAULT_SOURCES, liveOnly: false };
   }
 }
 
@@ -109,26 +107,12 @@ function fareText(p: ParkingLot): string {
   return "費率見說明";
 }
 
-function sortLots(lots: ParkingLot[], sort: Sort): ParkingLot[] {
-  const list = [...lots];
-  if (sort === "fare") {
-    // Hourly estimates first (cheapest first), then flat per-entry, then unknown — each by distance.
-    const key = (p: ParkingLot) => p.fareEstimate?.hourly?.min ?? (p.fareEstimate?.perEntry ? 1e6 + p.fareEstimate.perEntry.min : Infinity);
-    list.sort((a, b) => key(a) - key(b) || a.distance - b.distance);
-  } else if (sort === "spaces") {
-    // Known free spaces, most first; car parks without live data go last.
-    const key = (p: ParkingLot) => (p.live === "ok" ? (mainCount(p)?.available ?? -1) : -1);
-    list.sort((a, b) => key(b) - key(a) || a.distance - b.distance);
-  }
-  return list;
-}
 
 
 export default function Parking({ onClose }: { onClose: () => void }) {
   const saved = useMemo(load, []);
   const [dest, setDest] = useState<Dest | null>(saved.dest);
   const [radius, setRadius] = useState<Radius>(saved.radius);
-  const [sort, setSort] = useState<Sort>(saved.sort);
   /** Sources to show (a car park found by several sources shows if any of them is on). */
   const [sources, setSources] = useState<ParkingSource[]>(saved.sources);
   const [liveOnly, setLiveOnly] = useState(saved.liveOnly);
@@ -147,9 +131,9 @@ export default function Parking({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE, JSON.stringify({ dest, radius, sort, sources, liveOnly }));
+      localStorage.setItem(STORE, JSON.stringify({ dest, radius, sources, liveOnly }));
     } catch {}
-  }, [dest, radius, sort, sources, liveOnly]);
+  }, [dest, radius, sources, liveOnly]);
 
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -205,11 +189,9 @@ export default function Parking({ onClose }: { onClose: () => void }) {
 
   const lots = useMemo(
     () =>
-      sortLots(
-        (data?.lots ?? []).filter((p) => p.sources.some((x) => sources.includes(x)) && (!liveOnly || (p.live === "ok" && mainCount(p)))),
-        sort,
-      ),
-    [data, sort, sources, liveOnly],
+      // The server sends them nearest first.
+      (data?.lots ?? []).filter((p) => p.sources.some((x) => sources.includes(x)) && (!liveOnly || (p.live === "ok" && mainCount(p)))),
+    [data, sources, liveOnly],
   );
   const hiddenCount = (data?.lots.length ?? 0) - lots.length;
   const toggleSource = (x: ParkingSource) => {
@@ -357,22 +339,6 @@ export default function Parking({ onClose }: { onClose: () => void }) {
                 {r < 1000 ? `${r}m` : `${r / 1000}km`}
               </button>
             ))}
-          </div>
-        </div>
-        <div className="pk-control">
-          <span className="muted small">排序</span>
-          <div className="segmented" role="radiogroup" aria-label="列表排序">
-          {(
-            [
-              ["distance", "距離"],
-              ["fare", "費率"],
-              ["spaces", "空位"],
-            ] as const
-          ).map(([k, label]) => (
-            <button key={k} role="radio" aria-checked={sort === k} onClick={() => setSort(k)}>
-              {label}
-            </button>
-          ))}
           </div>
         </div>
       </div>
