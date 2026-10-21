@@ -670,17 +670,14 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-coord-nav { display: block; text-align: center; font-size: 12px; color: var(--muted); text-decoration: underline; padding: 4px 0 0; }
 
 /* Parking source marks: T = TDX, 新 = 新北市, O = OpenStreetMap */
-.pk-pin { position: relative; padding-left: 4px; }
-.pk-pin > i {
-  position: absolute; left: -9px; top: -9px; width: 16px; height: 16px; border-radius: 50%;
-  font: 700 10px/16px -apple-system, BlinkMacSystemFont, sans-serif; font-style: normal; text-align: center;
-  color: #fff; border: 1.5px solid #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
-}
-.pk-pin.src-tdx > i, .pk-src.src-tdx { background: #1a73e8; }
-.pk-pin.src-ntpc > i, .pk-src.src-ntpc { background: #8e44ad; }
-.pk-pin.src-osm > i, .pk-src.src-osm { background: #6b7a2a; }
-/* OpenStreetMap pins: location only, so an outlined pin instead of a filled one. */
-.pk-pin.src-osm { background: #fff; color: #555; border: 2px dashed #6b7a2a; }
+.pk-pin b { font-weight: 800; font-size: 11px; opacity: 0.8; margin-right: 3px; }
+/* No live count: a round pin with just the source letter, in the source's colour. */
+.pk-pin.letter { min-width: 24px; width: 24px; height: 24px; padding: 0; border-radius: 50%; }
+.pk-pin.letter.src-tdx, .pk-src.src-tdx { background: #1a73e8; }
+.pk-pin.letter.src-ntpc, .pk-src.src-ntpc { background: #8e44ad; }
+.pk-src.src-osm { background: #6b7a2a; }
+/* OpenStreetMap: location only, so outlined instead of filled. */
+.pk-pin.letter.src-osm { background: #fff; color: #6b7a2a; border: 2px dashed #6b7a2a; }
 .pk-srcs { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
 .pk-src {
   display: inline-block; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; font-style: normal;

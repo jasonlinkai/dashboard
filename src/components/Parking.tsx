@@ -568,14 +568,20 @@ const TILE_URL = "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatibl
 const TILE_ATTR = '<a href="https://maps.nlsc.gov.tw/" target="_blank" rel="noopener">© 內政部國土測繪中心</a>';
 const TAIWAN: L.LatLngExpression = [23.7, 120.95];
 
+/** Stacking: car parks with a live count on top, then official ones, OpenStreetMap at the bottom. */
+const pinZ = (p: ParkingLot) => (p.live === "ok" && mainCount(p) ? 300 : p.source === "OSM" ? 0 : 150);
+
 function lotIcon(p: ParkingLot, selected: boolean) {
   const c = mainCount(p);
-  const text = p.live === "ok" && c ? (c.available > 999 ? "999+" : String(c.available)) : "P";
-  return L.divIcon({
-    className: "",
-    html: `<div class="pk-pin ${level(p)} src-${p.source.toLowerCase()}${selected ? " sel" : ""}"><i>${SOURCE[p.source].badge}</i>${text}</div>`,
-    iconSize: [0, 0],
-  });
+  const letter = SOURCE[p.source].badge;
+  const sel = selected ? " sel" : "";
+  // With live spaces: the source letter and the count, coloured by how full it is.
+  // Without: just the source letter, in the source's colour (T / 新 / O).
+  const html =
+    p.live === "ok" && c
+      ? `<div class="pk-pin ${level(p)}${sel}"><b>${letter}</b>${c.available > 999 ? "999+" : c.available}</div>`
+      : `<div class="pk-pin letter src-${p.source.toLowerCase()}${sel}">${letter}</div>`;
+  return L.divIcon({ className: "", html, iconSize: [0, 0] });
 }
 
 function ParkingMap({
@@ -664,7 +670,7 @@ function ParkingMap({
     }).addTo(g);
     for (const p of lots) {
       // Tapping a pin selects it (highlighted here, opened in the list); no popup bubble.
-      const mk = L.marker([p.lat, p.lon], { icon: lotIcon(p, false), title: p.name, riseOnHover: true })
+      const mk = L.marker([p.lat, p.lon], { icon: lotIcon(p, false), title: p.name, riseOnHover: true, zIndexOffset: pinZ(p) })
         .on("click", () => cb.current.onSelect(p.id))
         .addTo(g);
       markers.current.set(p.id, mk);
@@ -684,7 +690,7 @@ function ParkingMap({
       const p = lots.find((x) => x.id === id);
       if (!p) continue;
       mk.setIcon(lotIcon(p, id === selected));
-      mk.setZIndexOffset(id === selected ? 900 : 0);
+      mk.setZIndexOffset(id === selected ? 900 : pinZ(p));
       // Picked in the list: make sure its pin is on screen.
       if (id === selected && map.current && !map.current.getBounds().contains(mk.getLatLng())) map.current.panTo(mk.getLatLng());
     }
