@@ -76,7 +76,8 @@ export function Section({
   // the render, which made a fresh countdown start at 10:01 instead of 10:00.
   const now = Date.now();
   const fresh = freshness(state, maxAgeSec, now);
-  const left = state.nextAt == null ? null : Math.min(state.intervalSec, (state.nextAt - now) / 1000);
+  // Polls run on the page's beat, so the next one is up to 1.5 intervals away (see usePolling).
+  const left = state.nextAt == null ? null : Math.min(state.intervalSec * 1.5, (state.nextAt - now) / 1000);
   const layout = useLayoutEdit();
   const panel = isPanel(className) ? className : null;
   const movable = layout.editing && panel && canMove(layout.mode, panel) && panel;

@@ -4,7 +4,7 @@ import type React from "react";
 import { REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
 import { type WeatherPlace, placeKey, useSettings } from "../settings";
 import { clock } from "../format";
-import { type Loaded, getBatched, getJSON, moveTo, usePolling, useReorder } from "../hooks";
+import { type Loaded, batch, getBatched, moveTo, usePolling, useReorder } from "../hooks";
 import type { Observation, ObservationResponse } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
@@ -71,21 +71,26 @@ function pickStation(loc: WeatherPlace, obs: Observation[]): Observation | undef
   );
 }
 
+/** All weather cards' places in one Open-Meteo call (see batch); each card gets its own, in its order. */
 async function loadForecasts(places: WeatherPlace[]): Promise<Loaded<Forecast[]>> {
-  const p = new URLSearchParams({
-    latitude: places.map((l) => l.latitude).join(","),
-    longitude: places.map((l) => l.longitude).join(","),
-    current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m",
-    hourly: "temperature_2m,precipitation_probability,weather_code,is_day",
-    daily: "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-    timezone: "Asia/Taipei",
-    // Hourly: 12 h of history + the current hour + 23 h ahead, so "now" can sit in the middle.
-    past_hours: "12",
-    forecast_hours: "24",
+  const at = (l: WeatherPlace) => `${l.latitude},${l.longitude}`;
+  const { data, items } = await batch<Forecast | Forecast[]>("open-meteo", places.map(at), (all) => {
+    const p = new URLSearchParams({
+      latitude: all.map((a) => a.split(",")[0]).join(","),
+      longitude: all.map((a) => a.split(",")[1]).join(","),
+      current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m",
+      hourly: "temperature_2m,precipitation_probability,weather_code,is_day",
+      daily: "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+      timezone: "Asia/Taipei",
+      // Hourly: 12 h of history + the current hour + 23 h ahead, so "now" can sit in the middle.
+      past_hours: "12",
+      forecast_hours: "24",
+    });
+    return `https://api.open-meteo.com/v1/forecast?${p}`;
   });
-  const { data } = await getJSON<Forecast | Forecast[]>(`https://api.open-meteo.com/v1/forecast?${p}`);
+  const list = Array.isArray(data) ? data : [data];
   // Called straight from the browser (no Worker cache), so the data is as of now.
-  return { data: Array.isArray(data) ? data : [data], dataTime: Date.now(), stale: false };
+  return { data: places.map((l) => list[items.indexOf(at(l))]), dataTime: Date.now(), stale: false };
 }
 
 // After the user scrolls the hourly strips away, bring "now" back to the centre after this long.

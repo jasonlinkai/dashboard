@@ -590,7 +590,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .layout-bar {
   position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 0 4px; min-width: 0;
 }
-.layout-bar-hint { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layout-bar-hint { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .layout-bar button:not(.icon-btn) {
   flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 14px;
 }
@@ -614,6 +614,12 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 }
 /* Hidden cards waiting in the edit bar: tap to bring one back. */
 .layout-bar .layout-chip { border-style: dashed; padding: 5px 10px; }
+.layout-add {
+  flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px;
+  padding: 5px 10px; font: inherit; font-size: 14px;
+}
+/* Everything after 恢復預設 (hidden cards, add, finish) sits at the right end. */
+.layout-reset + * { margin-left: auto; }
 /* Many hidden cards: the bar scrolls sideways instead of pushing buttons off screen. */
 .layout-bar { overflow-x: auto; scrollbar-width: none; }
 .layout-bar::-webkit-scrollbar { display: none; }

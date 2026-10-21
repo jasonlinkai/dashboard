@@ -28,7 +28,20 @@ export interface Polled<T> {
 }
 
 /**
- * Fetches immediately, then `intervalSec` after each fetch finishes, so `nextAt` is an exact
+ * Every poll on the page refreshes on a shared beat: the next multiple of its interval from a
+ * starting point picked at random when the page loads. Cards that poll the same endpoint then
+ * fetch together (getBatched merges them), however they were started; and pages of different
+ * people don't all hit the server in the same second. At least half an interval ahead, so a load
+ * that just happened (new settings) isn't followed by another right away.
+ */
+const PHASE = Math.random() * 60_000;
+const nextBeat = (intervalSec: number, now: number) => {
+  const ms = intervalSec * 1000;
+  return PHASE + Math.ceil((now + ms / 2 - PHASE) / ms) * ms;
+};
+
+/**
+ * Fetches immediately, then on the page's beat (see nextBeat), so `nextAt` is an exact
  * countdown target. After the first load it pauses while the page is hidden and refreshes as soon as it is shown again
  * (e.g. waking the iPad). Keeps the last good data on error so a flaky network doesn't blank the screen.
  */
@@ -68,13 +81,13 @@ export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: numbe
         const { data, dataTime, stale } = await loadRef.current();
         if (!active) return;
         const now = Date.now();
-        setState({ data, dataTime, stale, error: null, updated: now, loading: false, nextAt: now + intervalSec * 1000, intervalSec, dataKey: key, key });
+        setState({ data, dataTime, stale, error: null, updated: now, loading: false, nextAt: nextBeat(intervalSec, now), intervalSec, dataKey: key, key });
       } catch (e) {
         if (!active) return;
         const error = e instanceof Error ? e.message : String(e);
-        setState((s) => ({ ...s, error, loading: false, nextAt: Date.now() + intervalSec * 1000, intervalSec }));
+        setState((s) => ({ ...s, error, loading: false, nextAt: nextBeat(intervalSec, Date.now()), intervalSec }));
       }
-      timer = setTimeout(tick, intervalSec * 1000);
+      timer = setTimeout(tick, nextBeat(intervalSec, Date.now()) - Date.now());
     };
 
     const onVisible = () => {
@@ -112,27 +125,30 @@ export async function getJSON<T>(url: string): Promise<Loaded<T>> {
 }
 
 /**
- * Cards of one type (天氣, 天氣 2 …) poll on the same beat. List requests to the same endpoint made
- * within a moment go out as one, asking for everything any of them wants; every caller gets that
- * combined answer and keeps its own part. So more cards don't mean more requests to the server.
+ * Cards of one type (天氣, 天氣 2 …) poll on the same beat (see usePolling). Requests for lists
+ * of items to the same endpoint made within a moment go out as one, for every item any of them
+ * wants (`url` builds it); every caller gets that combined answer, with the item order it was
+ * asked in, and keeps its own part. So more cards don't mean more requests.
  */
-// shortcut: cards whose polls drift apart (one's content just changed) fetch separately until the
-// page reloads; bounded by MAX_PER_TYPE. Align them to a shared clock if that ever matters.
-const batches = new Map<string, { items: Set<string>; done: Promise<Loaded<unknown>> }>();
-export function getBatched<T>(path: string, param: string, items: string[]): Promise<Loaded<T>> {
-  let b = batches.get(path);
+const batches = new Map<string, { items: Set<string>; done: Promise<Loaded<unknown> & { items: string[] }> }>();
+export function batch<T>(key: string, items: string[], url: (all: string[]) => string): Promise<Loaded<T> & { items: string[] }> {
+  let b = batches.get(key);
   if (!b) {
     const all = new Set<string>();
-    const done = new Promise((r) => setTimeout(r, 50)).then(() => {
-      batches.delete(path);
-      return getJSON<T>(`${path}?${param}=${encodeURIComponent([...all].join(","))}`);
+    const done = new Promise((r) => setTimeout(r, 50)).then(async () => {
+      batches.delete(key);
+      const list = [...all];
+      return { ...(await getJSON<T>(url(list))), items: list };
     });
     b = { items: all, done };
-    batches.set(path, b);
+    batches.set(key, b);
   }
   for (const i of items) b.items.add(i);
-  return b.done as Promise<Loaded<T>>;
+  return b.done as Promise<Loaded<T> & { items: string[] }>;
 }
+/** batch() for our own list endpoints: ?param=a,b,c, answered with records the caller picks from. */
+export const getBatched = <T,>(path: string, param: string, items: string[]) =>
+  batch<T>(path, items, (all) => `${path}?${param}=${encodeURIComponent(all.join(","))}`);
 
 /** Re-renders every `ms` — used for the clock and "x 分鐘前" labels. */
 export function useNow(ms = 1000): number {

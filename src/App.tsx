@@ -309,6 +309,10 @@ export default function App() {
                     ? "拖動卡片或分頁調整位置"
                     : "拖動底部分頁調整順序"}
               </span>
+              {/* Left, by the hint: away from the finish button so it isn't tapped by mistake. */}
+              <button className="layout-reset" onClick={resetLayout}>
+                恢復預設
+              </button>
               {hidden.map((p) => (
                 <button key={p} className="layout-chip" onClick={() => unhide(p)} aria-label={`顯示${name(p)}`} title={`顯示${name(p)}`}>
                   ＋{name(p)}
@@ -329,7 +333,6 @@ export default function App() {
                   ))}
                 </select>
               )}
-              <button onClick={resetLayout}>恢復預設</button>
               {/* Same place as the header's layout button: tap it again to finish. */}
               <button
                 className="icon-btn layout-toggle"
