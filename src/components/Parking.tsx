@@ -8,7 +8,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON } from "../hooks";
 import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse, ParkingSource, SpaceCount } from "../shared";
 import { toast } from "../toast";
-import { GearIcon } from "./GearIcon";
 import { SkeletonLots } from "./Skeleton";
 
 const RADII = [300, 500, 1000, 2000] as const;
@@ -372,9 +371,6 @@ export default function Parking({ onClose }: { onClose: () => void }) {
     <div className="parking" role="dialog" aria-modal="true" aria-labelledby="parking-title">
       <header className="pk-head">
         <h2 id="parking-title">停車場搜尋</h2>
-        <button className="card-gear pk-gear" onClick={() => setShowSettings(true)} aria-label="停車場設定" title="停車場設定">
-          <GearIcon />
-        </button>
         <button className="modal-close" onClick={onClose} aria-label="關閉">
           ✕
         </button>
@@ -485,7 +481,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
               {c.coveredBy
                 ? `TDX 沒有${c.name}的停車場資料，${c.name}改用${c.coveredBy}`
                 : c.lots === "empty"
-                  ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（可在右上角 ⚙ 設定打開 OSM 來源看 OpenStreetMap 上的停車場）`
+                  ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（可按搜尋列下方的「調整」打開 OSM 來源，看 OpenStreetMap 上的停車場）`
                   : c.lots === "error"
                     ? `⚠ ${c.name}停車場資料暫時無法取得（${c.error ?? ""}）`
                     : c.live === "error"
@@ -503,7 +499,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
             ))}
           {data && !loading && data.lots.length > 0 && lots.length === 0 && (
             <p className="pk-note">
-              附近的 {data.lots.length} 個停車場都被篩選隱藏了，可以在右上角 ⚙ 設定打開其他來源
+              附近的 {data.lots.length} 個停車場都被篩選隱藏了，可以按搜尋列下方的「調整」打開其他來源
               {!sources.includes("OSM") && "（OSM 預設關閉：OpenStreetMap 的停車場常是私人或已不存在，只有位置）"}。
             </p>
           )}
