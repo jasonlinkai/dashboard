@@ -34,6 +34,7 @@ import {
   cardIds,
   findSpot,
   isPanel,
+  overLimit,
   typeOf,
   useSettings,
   validate,
@@ -213,16 +214,21 @@ export default function App() {
       train: { trains: [] },
       news: { news: settings.news, newsOrder: settings.newsOrder },
     }[type];
-    // A free spot on each board (this screen's minimum here); none: hidden on that layout.
+    // A free spot on each board (this screen's minimum here). None on this screen: nothing is
+    // added; none on the other layout: hidden there until it is made room for.
     const next = { ...layout, hidden: { ...layout.hidden } };
     for (const m of ["wide", "tall"] as const) {
       const r = roomOn(m, id, m === mode ? here(type) : BOARD_MIN);
+      if (!r && m === mode) return toast(`畫面上沒有空位放新的${PANEL_NAMES[type]}，請先縮小其他板塊`, "error");
       next[m] = { ...layout[m], [id]: r ?? { x: 0, y: 0, ...BOARD_MIN } };
       if (!r) next.hidden[m] = [...layout.hidden[m], id];
     }
+    const added = { ...settings, extras: [...settings.extras, { id, type, ...start }], layout: next };
+    // Checked here too (setSettings would refuse it), so a card that isn't added doesn't open its settings.
+    const over = overLimit(added);
+    if (over) return toast(`無法新增：${over}`, "error");
     flip.capture();
-    setSettings({ ...settings, extras: [...settings.extras, { id, type, ...start }], layout: next });
-    if (mode !== "phone" && next.hidden[mode].includes(id)) toast("沒有空位，新的板塊先放在上方的「＋」裡；縮小其他板塊後再點它顯示", "error");
+    setSettings(added);
     setSettingsCard(id);
     setSettingsSection(SECTION_OF[type]);
     setShowSettings(true);
