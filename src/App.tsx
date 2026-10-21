@@ -252,8 +252,8 @@ export default function App() {
         const next =
           how === "line"
             ? dx
-              ? moveLine(boxes, p, "x", r.x + r.w + dx, hidden)
-              : moveLine(boxes, p, "y", r.y + r.h + dy, hidden)
+              ? moveLine(boxes, p, "x", r.x + r.w + dx, hidden, here())
+              : moveLine(boxes, p, "y", r.y + r.h + dy, hidden, here())
             : { ...boxes, [p]: how === "resize" ? { ...r, w: r.w + dx, h: r.h + dy } : { ...r, x: r.x + dx, y: r.y + dy } };
         const said = changes(next);
         if (setBoxes(next)) return setAnnounce(said);

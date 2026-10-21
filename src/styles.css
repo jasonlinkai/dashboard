@@ -658,6 +658,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .card-edge-x::after { width: 4px; height: 36px; }
 .card-edge-y { left: 0; right: 28px; bottom: 0; height: 14px; cursor: ns-resize; }
 .card-edge-y::after { width: 36px; height: 4px; }
+/* Left and top edges too, below the title row so they don't cover its buttons. */
+.card-edge-x0 { top: 44px; bottom: 28px; left: 0; width: 14px; cursor: ew-resize; }
+.card-edge-x0::after { width: 4px; height: 36px; }
+.card-edge-y0 { left: 40%; right: 40%; top: 0; height: 8px; cursor: ns-resize; }
+.card-edge-y0::after { width: 36px; height: 4px; }
 /* Where a card carried over free cells would land; red when it would cover another card. */
 .panel-preview {
   border: 2px dashed var(--blue); border-radius: 14px; pointer-events: none; z-index: 10;

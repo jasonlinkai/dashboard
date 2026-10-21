@@ -186,15 +186,26 @@ export { findSpot } from "./settings";
 export const BOARD_MIN = { w: MIN_W, h: MIN_H };
 
 /**
- * Drag the line along a card's right (x) or bottom (y) edge to `to`: the cards ending at that line
- * and the cards starting at it, as far as they touch along it, all follow, so neighbours resize
- * together. The caller checks the result with allFit.
+ * Drag the line along one of a card's edges (x: left / right, y: top / bottom; `start` for the
+ * left or top one) to `to`. The cards ending at that line and the cards starting at it, as far as
+ * they touch along it, all follow, so neighbours resize together. A neighbour squeezed below `min`
+ * pushes its own far edge on, and so on down the row, so a card can grow until everything on
+ * that side is at its minimum. The caller checks the result with allFit.
  */
-export function moveLine(boxes: Boxes, p: CardId, axis: "x" | "y", to: number, hidden: readonly CardId[]): Boxes {
+export function moveLine(
+  boxes: Boxes,
+  p: CardId,
+  axis: "x" | "y",
+  to: number,
+  hidden: readonly CardId[],
+  min: { w: number; h: number },
+  start = false,
+  depth = 0,
+): Boxes {
   const [pos, size, cross, crossSize] = axis === "x" ? (["x", "w", "y", "h"] as const) : (["y", "h", "x", "w"] as const);
-  const line = boxes[p][pos] + boxes[p][size];
-  const before = new Set<CardId>([p]);
-  const after = new Set<CardId>();
+  const line = start ? boxes[p][pos] : boxes[p][pos] + boxes[p][size];
+  const before = new Set<CardId>(start ? [] : [p]);
+  const after = new Set<CardId>(start ? [p] : []);
   const touches = (a: Rect, b: Rect) => a[cross] < b[cross] + b[crossSize] && b[cross] < a[cross] + a[crossSize];
   for (let grew = true; grew; ) {
     grew = false;
@@ -206,9 +217,18 @@ export function moveLine(boxes: Boxes, p: CardId, axis: "x" | "y", to: number, h
     }
   }
   const d = to - line;
-  const next = { ...boxes };
+  let next = { ...boxes };
   for (const q of before) next[q] = { ...boxes[q], [size]: boxes[q][size] + d };
   for (const q of after) next[q] = { ...boxes[q], [pos]: boxes[q][pos] + d, [size]: boxes[q][size] - d };
+  // Squeezed neighbours push on (depth: a row has at most a handful of cards).
+  if (depth < 8)
+    for (const q of [...before, ...after]) {
+      const short = min[size] - next[q][size];
+      if (short <= 0 || q === p) continue;
+      next = after.has(q)
+        ? moveLine(next, q, axis, next[q][pos] + next[q][size] + short, hidden, min, false, depth + 1)
+        : moveLine(next, q, axis, next[q][pos] - short, hidden, min, true, depth + 1);
+    }
   return next;
 }
 
@@ -242,8 +262,8 @@ export function usePanelDrag(
       y: number;
       lifted: boolean;
       target: HTMLElement | null;
-      /** Resizing by the corner, or moving the line along its right / bottom edge, instead of moving it. */
-      resize: "corner" | "x" | "y" | null;
+      /** Resizing by the corner, or moving the line along one of its edges (x0 / y0: left / top), instead of moving it. */
+      resize: "corner" | "x" | "y" | "x0" | "y0" | null;
       /** The board after letting go (null: nothing changes). */
       spot: Boxes | null;
     } | null = null;
@@ -276,7 +296,7 @@ export function usePanelDrag(
       const el = (e.target as Element).closest(".card");
       if (!(el instanceof HTMLElement) || el.parentElement !== grid || !movable(mode)) return;
       const handle = latest.current.boxes && (e.target as Element).closest<HTMLElement>("[data-resize]");
-      const resize = handle ? (handle.dataset.resize as "corner" | "x" | "y") : null;
+      const resize = handle ? (handle.dataset.resize as "corner" | "x" | "y" | "x0" | "y0") : null;
       drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, lifted: false, target: null, resize, spot: null };
       try {
         el.setPointerCapture(e.pointerId); // keep getting moves when the pointer leaves the card
@@ -303,7 +323,12 @@ export function usePanelDrag(
         const next =
           drag.resize === "corner"
             ? { ...boxes, [p]: { ...r, w: clamp(c.x - r.x + 1, 1, GRID - r.x), h: clamp(c.y - r.y + 1, 1, GRID - r.y) } }
-            : moveLine(boxes, p, drag.resize, Math.round((drag.resize === "x" ? e.clientX - grid.getBoundingClientRect().left : e.clientY - grid.getBoundingClientRect().top) / (drag.resize === "x" ? c.stepX : c.stepY)), hidden);
+            : (() => {
+                const axis = drag.resize[0] as "x" | "y";
+                const g = grid.getBoundingClientRect();
+                const at = Math.round(axis === "x" ? (e.clientX - g.left) / c.stepX : (e.clientY - g.top) / c.stepY);
+                return moveLine(boxes, p, axis, at, hidden, minCells(grid), drag.resize.length > 1);
+              })();
         if (allFit(grid, next, hidden, boxes)) {
           drag.spot = next;
           show(next);

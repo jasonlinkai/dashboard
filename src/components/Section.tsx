@@ -202,6 +202,8 @@ export function Section({
         <>
           <span className="card-edge card-edge-x" data-resize="x" aria-hidden title="拖動調整寬度（相鄰板塊一起調整）" />
           <span className="card-edge card-edge-y" data-resize="y" aria-hidden title="拖動調整高度（相鄰板塊一起調整）" />
+          <span className="card-edge card-edge-x0" data-resize="x0" aria-hidden title="拖動調整寬度（相鄰板塊一起調整）" />
+          <span className="card-edge card-edge-y0" data-resize="y0" aria-hidden title="拖動調整高度（相鄰板塊一起調整）" />
           <span className="card-resize" data-resize="corner" aria-hidden title="拖動單獨調整大小" />
         </>
       )}
