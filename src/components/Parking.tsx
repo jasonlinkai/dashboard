@@ -763,23 +763,14 @@ function ParkingMap({
     };
   }, []);
 
-  // Explain only what can be seen: the colours of the pins on the map (before a search, the
-  // sources switched on), and the free-space numbers only when some pin shows one.
-  const legendKey = useMemo(() => {
-    const shown = lots.length ? ALL_SOURCES.filter((x) => lots.some((p) => p.source === x)) : sources;
-    const numbers = lots.some((p) => p.live === "ok" && mainCount(p));
-    return `${shown.join(",")}|${numbers}`;
-  }, [lots, sources]);
+  // Legend: only the sources switched on in the settings (an off source has no pins to explain).
   useEffect(() => {
     const div = legendEl.current;
     if (!div) return;
-    const [list, numbers] = legendKey.split("|");
-    const shown = (list ? list.split(",") : []) as ParkingSource[];
     div.innerHTML =
-      shown.map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`).join("") +
-      (numbers === "true" ? '<span class="pk-legend-note">數字＝剩餘車位<br>黃框快滿・紅框已滿</span>' : "");
-    div.style.display = div.innerHTML ? "" : "none";
-  }, [legendKey]);
+      sources.map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`).join("") +
+      '<span class="pk-legend-note">數字＝剩餘車位<br>黃框快滿・紅框已滿</span>';
+  }, [sources]);
 
   // Destination, radius and car parks.
   useEffect(() => {
