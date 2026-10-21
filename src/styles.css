@@ -463,6 +463,9 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grid[data-tab="transit"] > .train { display: flex; }
 /* Bus takes what it needs, but at most half: a long bus list scrolls instead of squeezing the trains. */
 .grid[data-tab="transit"] { grid-template-rows: fit-content(50%) minmax(0, 1fr); }
+/* Bus and train in the order chosen in edit mode (App sets the vars; the first takes the top row). */
+.grid > .bus { order: var(--transit-bus, 0); }
+.grid > .train { order: var(--transit-train, 1); }
 .grid[data-tab="markets"] .tile-price { font-size: 24px; }
 
 /* Tablet and desktop: each card lays itself out by the shape of the slot it sits in, not by the
@@ -612,11 +615,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .card-move svg { width: 100%; height: 100%; display: block; fill: currentColor; }
 .card-move:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 /* Edit mode: a card is one thing to pick up; what's inside doesn't scroll or open links. */
-.grid.editing > .card {
+.grid.editing > .card-movable {
   cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none;
   outline: 2px dashed color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: -2px;
 }
-.grid.editing > .card > :not(.card-head), .grid.editing .card-head > :not(.card-move) { pointer-events: none; }
+.grid.editing > .card-movable > :not(.card-head), .grid.editing > .card-movable > .card-head > :not(.card-move) { pointer-events: none; }
 .grid.panel-dragging, .grid.panel-dragging > .card { cursor: grabbing; }
 /* The carried card: half see-through, above the rest, following the pointer (transform set in JS). */
 .grid > .card.panel-lifted {
@@ -626,6 +629,17 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grid > .card.panel-target {
   outline: 3px solid var(--blue); outline-offset: -3px;
   background: color-mix(in srgb, var(--blue) 14%, color-mix(in srgb, var(--card) 62%, transparent));
+}
+
+/* Phone: the bottom tabs are dragged sideways to reorder (the parking button stays put). */
+.tabbar.editing [data-tab-id] {
+  touch-action: none; -webkit-user-select: none; user-select: none; cursor: grab;
+  outline: 1.5px dashed color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: -3px;
+}
+.tabbar.editing [data-tab-id]:focus-visible { outline: 2px solid var(--blue); }
+.tabbar [data-tab-id].tab-lifted {
+  position: relative; z-index: 2; opacity: 0.75; cursor: grabbing;
+  background: var(--card-2); box-shadow: 0 6px 18px rgb(0 0 0 / 0.4), inset 0 0 0 2px var(--blue);
 }
 
 /* ---------- Toasts ---------- */

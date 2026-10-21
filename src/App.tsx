@@ -13,8 +13,9 @@ import { ScreenSaver } from "./components/ScreenSaver";
 import { useFx, useSaver, useTheme } from "./theme";
 import { type ContentSection, onOpenSettings } from "./openSettings";
 import { toast } from "./toast";
-import { DEFAULT_LAYOUT, type LayoutMode, PANEL_NAMES, PANELS, type Panel, useSettings } from "./settings";
-import { LayoutEditContext, type Rects, cardOf, neighbor, onEditLayout, useFlip, useLayoutMode, usePanelDrag } from "./layoutEdit";
+import { DEFAULT_LAYOUT, type LayoutMode, PANEL_NAMES, PANELS, PHONE_TABS, type Panel, type PhoneTab, useSettings } from "./settings";
+import { LayoutEditContext, type Rects, cardOf, neighbor, onEditLayout, useFlip, useLayoutMode, usePanelDrag, useTabDrag } from "./layoutEdit";
+import { moveTo } from "./hooks";
 
 // Leaflet only loads when the parking search is opened.
 const Parking = lazy(() => import("./components/Parking"));
@@ -23,18 +24,19 @@ const dateFmt = new Intl.DateTimeFormat("zh-TW", { month: "long", day: "numeric"
 const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
 
 // On a phone everything can't fit on one screen, so sections become tabs (CSS shows them only there).
-const TABS = [
-  ["markets", "行情", "📈"],
-  ["weather", "天氣", "⛅"],
-  ["transit", "交通", "🚌"],
-  ["news", "新聞", "📰"],
-] as const;
-type Tab = (typeof TABS)[number][0];
+// Their order is in the settings (layout.tabs).
+const TABS: Record<Tab, [label: string, icon: string]> = {
+  markets: ["行情", "📈"],
+  weather: ["天氣", "⛅"],
+  transit: ["交通", "🚌"],
+  news: ["新聞", "📰"],
+};
+type Tab = PhoneTab;
 
 function loadTab(): Tab {
   try {
     const t = localStorage.getItem("tab");
-    if (TABS.some(([id]) => id === t)) return t as Tab;
+    if (PHONE_TABS.some((id) => id === t)) return t as Tab;
   } catch {}
   return "markets";
 }
@@ -65,26 +67,38 @@ export default function App() {
   const [editing, setEditing] = useState(false);
   const [announce, setAnnounce] = useState("");
   const gridRef = useRef<HTMLElement>(null);
-  const flip = useFlip(gridRef, JSON.stringify(settings.layout));
+  const navRef = useRef<HTMLElement>(null);
+  const { layout } = settings;
+  const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, layout.transit]));
+  const tabFlip = useFlip(navRef, layout.tabs.join(), true);
   useEffect(() => onEditLayout(() => setEditing(true)), []);
-  const setSlots = (m: LayoutMode, slots: Panel[], first?: Rects) => {
+  // Phone: the slots are bus and train in the transit tab.
+  const slotKey = mode === "phone" ? "transit" : mode;
+  const setSlots = (m: LayoutMode | "transit", slots: Panel[], first?: Rects) => {
     flip.capture(first);
-    setSettings({ ...settings, layout: { ...settings.layout, [m]: slots } });
+    setSettings({ ...settings, layout: { ...layout, [m]: slots } });
   };
   const swap = (a: Panel, b: Panel, first?: Rects) => {
-    if (mode === "phone" || a === b) return;
-    const slots = [...settings.layout[mode]];
+    const slots = [...layout[slotKey]];
     const i = slots.indexOf(a);
     const j = slots.indexOf(b);
+    if (a === b || i < 0 || j < 0) return;
     [slots[i], slots[j]] = [slots[j], slots[i]];
-    setSlots(mode, slots, first);
+    setSlots(slotKey, slots, first);
     setAnnounce(`${PANEL_NAMES[a]}和${PANEL_NAMES[b]}交換了位置，${PANEL_NAMES[a]}現在在第 ${j + 1} 格`);
   };
   usePanelDrag(gridRef, editing, mode, swap);
+  const moveTab = (from: number, to: number) => {
+    if (to < 0 || to >= layout.tabs.length || from === to) return;
+    tabFlip.capture();
+    setSettings({ ...settings, layout: { ...layout, tabs: moveTo(layout.tabs, from, to) } });
+    setAnnounce(`${TABS[layout.tabs[from]][0]}分頁移到第 ${to + 1} 個`);
+  };
+  useTabDrag(navRef, editing && mode === "phone", moveTab);
   const edit = {
     editing,
     mode,
-    slot: (p: Panel) => (mode === "phone" ? 0 : settings.layout[mode].indexOf(p)),
+    slot: (p: Panel) => layout[slotKey].indexOf(p),
     move: (p: Panel, key: string) => {
       const grid = gridRef.current;
       const el = grid && cardOf(grid, p);
@@ -94,15 +108,17 @@ export default function App() {
       return true;
     },
   };
-  // Grid areas from the slot lists: --wide-markets: w0 and so on (styles.css picks the layout).
-  const areas = Object.fromEntries(
-    (["wide", "tall"] as const).flatMap((m) => settings.layout[m].map((p, i) => [`--${m}-${p}`, `${m[0]}${i}`])),
-  ) as CSSProperties;
-  // Entering edit mode puts focus on the first card's move button, for keyboard users.
+  // Grid areas from the slot lists: --wide-markets: w0 and so on (styles.css picks the layout);
+  // on a phone, --transit-bus / --transit-train order the transit tab.
+  const areas = Object.fromEntries([
+    ...(["wide", "tall"] as const).flatMap((m) => layout[m].map((p, i) => [`--${m}-${p}`, `${m[0]}${i}`])),
+    ...layout.transit.map((p, i) => [`--transit-${p}`, i]),
+  ]) as CSSProperties;
+  // Entering edit mode puts focus on the first thing to move, for keyboard users.
   useEffect(() => {
     if (!editing) return;
-    const first = mode === "phone" ? null : settings.layout[mode][0];
-    if (first) gridRef.current?.querySelector<HTMLElement>(`.card.${first} .card-move`)?.focus();
+    if (mode === "phone") navRef.current?.querySelector<HTMLElement>("[data-tab-id]")?.focus();
+    else gridRef.current?.querySelector<HTMLElement>(`.card.${layout[mode][0]} .card-move`)?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEditing(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -111,6 +127,11 @@ export default function App() {
   }, [editing, mode]);
   const resetLayout = () => {
     if (mode !== "phone") setSlots(mode, DEFAULT_LAYOUT[mode]);
+    else {
+      flip.capture();
+      tabFlip.capture();
+      setSettings({ ...settings, layout: { ...layout, tabs: DEFAULT_LAYOUT.tabs, transit: DEFAULT_LAYOUT.transit } });
+    }
     setAnnounce("已恢復預設版面");
     toast("已恢復預設版面");
   };
@@ -129,7 +150,11 @@ export default function App() {
         <header className={`top ${editing ? "top-editing" : ""}`}>
           {editing && (
             <div className="layout-bar" role="toolbar" aria-label="調整版面">
-              <span className="layout-bar-hint">{mode === "phone" ? "調整版面" : "拖動板塊，放到另一格就會交換位置"}</span>
+              <span className="layout-bar-hint">{mode !== "phone"
+                  ? "拖動板塊，放到另一格就會交換位置"
+                  : tab === "transit"
+                    ? "拖動卡片或分頁調整位置"
+                    : "拖動底部分頁調整順序"}</span>
               <button onClick={resetLayout}>恢復預設</button>
               <button className="layout-done" onClick={() => setEditing(false)}>
                 完成
@@ -160,11 +185,25 @@ export default function App() {
             <News />
           </main>
         </LayoutEditContext.Provider>
-        <nav className="tabbar">
-          {TABS.map(([id, label, icon]) => (
-            <button key={id} aria-selected={tab === id} onClick={() => choose(id)}>
-              <span className="tab-icon">{icon}</span>
-              {label}
+        <nav ref={navRef} className={`tabbar ${editing ? "editing" : ""}`}>
+          {layout.tabs.map((id, i) => (
+            <button
+              key={id}
+              data-tab-id={id}
+              aria-selected={tab === id}
+              onClick={() => choose(id)}
+              aria-label={
+                editing ? `${TABS[id][0]}分頁，第 ${i + 1} 個（共 ${layout.tabs.length} 個）。按左右方向鍵移動位置` : undefined
+              }
+              aria-keyshortcuts={editing ? "ArrowLeft ArrowRight" : undefined}
+              onKeyDown={(e) => {
+                if (!editing || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+                e.preventDefault();
+                moveTab(i, i + (e.key === "ArrowLeft" ? -1 : 1));
+              }}
+            >
+              <span className="tab-icon">{TABS[id][1]}</span>
+              {TABS[id][0]}
             </button>
           ))}
           <button onClick={() => setShowParking(true)}>

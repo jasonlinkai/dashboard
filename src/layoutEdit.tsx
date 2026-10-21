@@ -2,7 +2,7 @@
 // onto another slot (Pointer Events), and the FLIP animation that plays when cards change places.
 
 import { type RefObject, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type LayoutMode, PANELS, type Panel } from "./settings";
+import { type LayoutMode, PANELS, type Panel, TRANSIT } from "./settings";
 
 export type Mode = LayoutMode | "phone";
 
@@ -49,8 +49,13 @@ const cardsIn = (grid: HTMLElement) =>
   [...grid.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.classList.contains("card"));
 export const cardOf = (grid: HTMLElement, p: Panel) => cardsIn(grid).find((c) => c.classList.contains(p));
 
+/** Cards that can be picked up: all of them on a tablet or desktop; on a phone, bus and train (the transit tab). */
+export const movable = (mode: Mode, p: Panel) => mode !== "phone" || (TRANSIT as readonly Panel[]).includes(p);
+
 export type Rects = Map<HTMLElement, DOMRect>;
 export const measure = (grid: HTMLElement | null): Rects => new Map(grid ? cardsIn(grid).map((c) => [c, c.getBoundingClientRect()]) : []);
+const measureTabs = (nav: HTMLElement | null): Rects =>
+  new Map(nav ? [...nav.querySelectorAll<HTMLElement>("[data-tab-id]:not(.tab-lifted)")].map((t) => [t, t.getBoundingClientRect()]) : []);
 
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -79,14 +84,14 @@ function play(first: Rects) {
  * FLIP: call `capture()` (or pass the rects measured while a card was being carried) right before
  * changing the layout; once React has moved the cards, each one animates from its old place.
  */
-export function useFlip(gridRef: RefObject<HTMLElement | null>, key: string) {
+export function useFlip(gridRef: RefObject<HTMLElement | null>, key: string, tabs?: boolean) {
   const first = useRef<Rects | null>(null);
   useLayoutEffect(() => {
     if (first.current) play(first.current);
     first.current = null;
   }, [key]);
   return {
-    capture: (rects?: Rects) => (first.current = rects ?? measure(gridRef.current)),
+    capture: (rects?: Rects) => (first.current = rects ?? (tabs ? measureTabs : measure)(gridRef.current)),
     /** Nothing moves in the layout (a card dropped where it can't go): just slide back. */
     play,
   };
@@ -134,7 +139,7 @@ export function usePanelDrag(
 
   useEffect(() => {
     const grid = gridRef.current;
-    if (!grid || !enabled || mode === "phone") return;
+    if (!grid || !enabled) return;
     let drag: { el: HTMLElement; id: number; x: number; y: number; lifted: boolean; target: HTMLElement | null } | null = null;
 
     const clear = () => {
@@ -155,7 +160,7 @@ export function usePanelDrag(
     const down = (e: PointerEvent) => {
       if (drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
       const el = (e.target as Element).closest(".card");
-      if (!(el instanceof HTMLElement) || el.parentElement !== grid) return;
+      if (!(el instanceof HTMLElement) || el.parentElement !== grid || !movable(mode, panelOf(el))) return;
       drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, lifted: false, target: null };
       try {
         el.setPointerCapture(e.pointerId); // keep getting moves when the pointer leaves the card
@@ -176,7 +181,7 @@ export function usePanelDrag(
       const { el } = drag;
       const target =
         cardsIn(grid).find((c) => {
-          if (c === el) return false;
+          if (c === el || !movable(mode, panelOf(c))) return false;
           const b = c.getBoundingClientRect();
           return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
         }) ?? null;
@@ -210,8 +215,9 @@ export function usePanelDrag(
     grid.addEventListener("pointerup", up);
     grid.addEventListener("pointercancel", pointerCancel);
     window.addEventListener("keydown", key, true);
+    const portrait = matchMedia("(orientation: portrait)");
+    portrait.addEventListener("change", turned);
     screen.orientation?.addEventListener("change", turned);
-    window.addEventListener("orientationchange", turned);
     return () => {
       clear();
       grid.removeEventListener("pointerdown", down);
@@ -219,8 +225,116 @@ export function usePanelDrag(
       grid.removeEventListener("pointerup", up);
       grid.removeEventListener("pointercancel", pointerCancel);
       window.removeEventListener("keydown", key, true);
+      portrait.removeEventListener("change", turned);
       screen.orientation?.removeEventListener("change", turned);
-      window.removeEventListener("orientationchange", turned);
     };
   }, [gridRef, enabled, mode]);
+}
+
+/**
+ * Phone edit mode: drag a bottom tab sideways to reorder. The tabs make way as it passes over them
+ * (`onMove` reorders right away); the carried tab stays under the finger.
+ */
+export function useTabDrag(
+  navRef: RefObject<HTMLElement | null>,
+  enabled: boolean,
+  onMove: (from: number, to: number) => void,
+) {
+  const latest = useRef(onMove);
+  latest.current = onMove;
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav || !enabled) return;
+    const tabs = () => [...nav.querySelectorAll<HTMLElement>("[data-tab-id]")];
+    let drag: { el: HTMLElement; id: number; x: number; grab: number; lifted: boolean } | null = null;
+    let swallowClick = false;
+
+    /** Keep the carried tab under the finger, wherever its place in the row is now. */
+    const follow = (x: number) => {
+      if (!drag) return;
+      drag.el.style.transform = "";
+      const slot = drag.el.getBoundingClientRect();
+      drag.el.style.transform = `translateX(${x - drag.grab - slot.left}px)`;
+    };
+    const end = (slideBack: boolean) => {
+      if (!drag) return;
+      const { el, lifted } = drag;
+      const first: Rects | null = lifted && slideBack ? new Map([[el, el.getBoundingClientRect()]]) : null;
+      el.classList.remove("tab-lifted");
+      el.style.transform = "";
+      nav.classList.remove("tab-dragging");
+      drag = null;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      if (lifted) {
+        swallowClick = true; // the click that follows letting go mustn't switch tabs
+        setTimeout(() => (swallowClick = false), 400);
+      }
+      if (first) play(first); // from where it was let go into its place
+    };
+    const down = (e: PointerEvent) => {
+      if (drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+      const el = (e.target as Element).closest<HTMLElement>("[data-tab-id]");
+      if (!el) return;
+      const box = el.getBoundingClientRect();
+      drag = { el, id: e.pointerId, x: e.clientX, grab: e.clientX - box.left, lifted: false };
+      // On window: React moves the tab within the row as it goes, which drops pointer capture.
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", cancel);
+    };
+    const move = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (!drag.lifted) {
+        if (Math.abs(e.clientX - drag.x) < 6) return;
+        drag.lifted = true;
+        drag.el.classList.add("tab-lifted");
+        nav.classList.add("tab-dragging");
+        navigator.vibrate?.(10);
+      }
+      const list = tabs();
+      const from = list.indexOf(drag.el);
+      const to = list.findIndex((t) => {
+        if (t === drag!.el) return false;
+        const b = t.getBoundingClientRect();
+        return e.clientX >= b.left && e.clientX <= b.right;
+      });
+      if (from >= 0 && to >= 0) latest.current(from, to);
+      const x = e.clientX;
+      follow(x);
+      requestAnimationFrame(() => follow(x)); // again once React has moved it
+    };
+    const up = (e: PointerEvent) => drag && e.pointerId === drag.id && end(true);
+    const cancel = (e: PointerEvent) => drag && e.pointerId === drag.id && end(true);
+    const click = (e: MouseEvent) => {
+      if (!swallowClick) return;
+      e.preventDefault();
+      e.stopPropagation();
+      swallowClick = false;
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && drag) {
+        e.stopImmediatePropagation();
+        end(true);
+      }
+    };
+    const turned = () => end(true);
+
+    nav.addEventListener("pointerdown", down);
+    nav.addEventListener("click", click, true);
+    window.addEventListener("keydown", key, true);
+    const portrait = matchMedia("(orientation: portrait)");
+    portrait.addEventListener("change", turned);
+    screen.orientation?.addEventListener("change", turned);
+    return () => {
+      end(false);
+      nav.removeEventListener("pointerdown", down);
+      nav.removeEventListener("click", click, true);
+      window.removeEventListener("keydown", key, true);
+      portrait.removeEventListener("change", turned);
+      screen.orientation?.removeEventListener("change", turned);
+    };
+  }, [navRef, enabled]);
 }

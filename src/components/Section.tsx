@@ -1,5 +1,5 @@
 import { type ReactNode, useRef } from "react";
-import { editLayout, isPanel, useLayoutEdit } from "../layoutEdit";
+import { editLayout, isPanel, movable as canMove, useLayoutEdit } from "../layoutEdit";
 import { PANEL_NAMES } from "../settings";
 import { mmss } from "../format";
 import { type Polled, useNow } from "../hooks";
@@ -78,7 +78,7 @@ export function Section({
   const left = state.nextAt == null ? null : Math.min(state.intervalSec, (state.nextAt - now) / 1000);
   const layout = useLayoutEdit();
   const panel = isPanel(className) ? className : null;
-  const movable = layout.editing && layout.mode !== "phone" && panel;
+  const movable = layout.editing && panel && canMove(layout.mode, panel) && panel;
   // Holding the title for half a second starts rearranging the cards.
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const release = () => {
@@ -87,12 +87,12 @@ export function Section({
   };
 
   return (
-    <section className={`card ${className} ${fresh?.warn ? "card-warn" : ""}`}>
+    <section className={`card ${className} ${fresh?.warn ? "card-warn" : ""} ${movable ? "card-movable" : ""}`}>
       <header className="card-head">
         {movable && (
           <button
             className="card-move"
-            aria-label={`移動${PANEL_NAMES[panel]}，目前在第 ${layout.slot(panel) + 1} 格（共 5 格）。按方向鍵和那一邊的板塊交換位置`}
+            aria-label={`移動${PANEL_NAMES[panel]}，目前在第 ${layout.slot(panel) + 1} 格（共 ${layout.mode === "phone" ? 2 : 5} 格）。按方向鍵和那一邊的板塊交換位置`}
             aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
             title="拖動或用方向鍵移動"
             onKeyDown={(e) => {

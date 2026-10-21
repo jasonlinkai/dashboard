@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { NEWS_BY_ID } from "../news-sources";
-import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, PANEL_NAMES, type Settings, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
+import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, PANEL_NAMES, type PhoneTab, type Settings, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
 import type { ThemePref } from "../theme";
 import { toast } from "../toast";
 
@@ -17,10 +17,15 @@ interface Pending {
   from: string;
 }
 
+const LAYOUT_PARTS = { wide: "橫向", tall: "直向", tabs: "手機分頁", transit: "手機交通" } as const;
+const TAB_NAMES: Record<PhoneTab, string> = { markets: "行情", weather: "天氣", transit: "交通", news: "新聞" };
 const layoutSummary = ({ layout }: Settings) =>
-  (["wide", "tall"] as const)
-    .filter((m) => layout[m].join() !== DEFAULT_LAYOUT[m].join())
-    .map((m) => `${m === "wide" ? "橫向" : "直向"}：${layout[m].map((p) => PANEL_NAMES[p]).join("、")}`)
+  (Object.keys(LAYOUT_PARTS) as (keyof typeof LAYOUT_PARTS)[])
+    .filter((k) => layout[k].join() !== DEFAULT_LAYOUT[k].join())
+    .map((k) => {
+      const names = k === "tabs" ? layout.tabs.map((t) => TAB_NAMES[t]) : layout[k].map((p) => PANEL_NAMES[p]);
+      return `${LAYOUT_PARTS[k]}：${names.join("、")}`;
+    })
     .join("；") || "預設";
 
 /** Human-readable summary of a settings object, for the confirm step. */

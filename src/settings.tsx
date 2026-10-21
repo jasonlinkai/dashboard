@@ -60,6 +60,11 @@ export const PANELS = ["markets", "weather", "bus", "train", "news"] as const;
 export type Panel = (typeof PANELS)[number];
 export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", weather: "天氣", bus: "公車", train: "火車", news: "新聞" };
 
+/** The phone's bottom tabs (the parking button always comes last). */
+export const PHONE_TABS = ["markets", "weather", "transit", "news"] as const;
+export type PhoneTab = (typeof PHONE_TABS)[number];
+export const TRANSIT = ["bus", "train"] as const;
+
 /**
  * Slot → card, one list per layout. Slot i is the grid area named w{i} / t{i} in styles.css:
  * wide (desktop, landscape tablet): "w0 w0 w0" "w1 w2 w4" "w1 w3 w4";
@@ -68,11 +73,17 @@ export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", wea
 export interface Layout {
   wide: Panel[];
   tall: Panel[];
+  /** Phone: order of the bottom tabs. */
+  tabs: PhoneTab[];
+  /** Phone: bus and train in the transit tab, top (or left) first. */
+  transit: Panel[];
 }
-export type LayoutMode = keyof Layout;
+export type LayoutMode = "wide" | "tall";
 export const DEFAULT_LAYOUT: Layout = {
   wide: ["markets", "weather", "bus", "train", "news"],
   tall: ["markets", "weather", "bus", "train", "news"],
+  tabs: [...PHONE_TABS],
+  transit: [...TRANSIT],
 };
 
 // ---------- Catalogs and limits ----------
@@ -323,13 +334,18 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
   const layout: Layout = { ...DEFAULT_LAYOUT };
   if (raw.layout !== undefined && !isObj(raw.layout)) err("layout 必須是物件");
   else if (isObj(raw.layout)) {
-    for (const mode of ["wide", "tall"] as const) {
-      const slots = raw.layout[mode];
-      if (slots === undefined) continue;
-      const ok =
-        Array.isArray(slots) && slots.length === PANELS.length && PANELS.every((p) => slots.includes(p));
-      if (!ok) err(`layout.${mode} 要列出 ${PANELS.join("、")} 各一次（依格位順序）`);
-      else layout[mode] = slots as Panel[];
+    const lists = [
+      ["wide", PANELS, "依格位順序"],
+      ["tall", PANELS, "依格位順序"],
+      ["tabs", PHONE_TABS, "手機底部分頁的順序"],
+      ["transit", TRANSIT, "手機交通分頁由上而下"],
+    ] as const;
+    for (const [key, all, what] of lists) {
+      const list = raw.layout[key];
+      if (list === undefined) continue;
+      const ok = Array.isArray(list) && list.length === all.length && all.every((p) => list.includes(p));
+      if (!ok) err(`layout.${key} 要列出 ${all.join("、")} 各一次（${what}）`);
+      else (layout[key] as string[]) = list as string[];
     }
   }
 
