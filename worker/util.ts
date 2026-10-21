@@ -6,6 +6,11 @@ export interface Env {
   TDX: DurableObjectNamespace;
   TDX_CLIENT_ID?: string;
   TDX_CLIENT_SECRET?: string;
+  /** Optional 2nd and 3rd site keys; calls are spread across all of them. */
+  TDX_CLIENT_ID_2?: string;
+  TDX_CLIENT_SECRET_2?: string;
+  TDX_CLIENT_ID_3?: string;
+  TDX_CLIENT_SECRET_3?: string;
   CWA_API_KEY?: string;
 }
 

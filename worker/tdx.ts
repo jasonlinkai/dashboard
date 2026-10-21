@@ -9,10 +9,19 @@ const API = "https://tdx.transportdata.tw/api/basic";
 // Everything below is per key: the site's own, or a visitor's own key sent with the request.
 const tokens = new Map<string, { value: string; expires: number }>();
 
-function credsFor(env: Env): TdxCreds | null {
-  const own = tdxCreds.getStore();
-  if (own) return own;
-  return env.TDX_CLIENT_ID && env.TDX_CLIENT_SECRET ? { id: env.TDX_CLIENT_ID, secret: env.TDX_CLIENT_SECRET } : null;
+/**
+ * The site's own keys: TDX_CLIENT_ID / TDX_CLIENT_SECRET, plus optional _2 and _3 (TDX lets one
+ * member create up to three keys). Each key has its own per-minute quota, so calls are spread
+ * across them; see pickSiteKey.
+ */
+export function siteKeys(env: Env): TdxCreds[] {
+  const keys: TdxCreds[] = [];
+  for (const suffix of ["", "_2", "_3"]) {
+    const id = env[`TDX_CLIENT_ID${suffix}` as keyof Env] as string | undefined;
+    const secret = env[`TDX_CLIENT_SECRET${suffix}` as keyof Env] as string | undefined;
+    if (id?.trim() && secret?.trim() && !keys.some((k) => k.id === id.trim())) keys.push({ id: id.trim(), secret: secret.trim() });
+  }
+  return keys;
 }
 
 async function accessToken(creds: TdxCreds, own: boolean): Promise<string> {
@@ -45,30 +54,73 @@ export async function checkCreds(env: Env): Promise<{ ok: true }> {
 // so we never burn the minute on 429s; callers fall back to their last cached value.
 const BUDGET_PER_MIN = 4;
 const recentCalls = new Map<string, number[]>();
+/** Site keys whose login failed, left alone until this time so we don't retry them on every call. */
+const loginFailedUntil = new Map<string, number>();
+
+/** This key's calls in the last minute (pruned in place). */
+function recentFor(id: string, now: number): number[] {
+  const recent = recentCalls.get(id) ?? [];
+  while (recent.length && now - recent[0] > 60_000) recent.shift();
+  recentCalls.set(id, recent);
+  return recent;
+}
+
+/**
+ * The site key with the most quota left this minute (ties: the one used least recently), so
+ * calls rotate across the keys and one key isn't used up while the others sit idle.
+ */
+function pickSiteKey(keys: TdxCreds[], now: number, skip: Set<string>): TdxCreds | null {
+  let best: TdxCreds | null = null;
+  let bestScore = Infinity;
+  for (const k of keys) {
+    if (skip.has(k.id) || (loginFailedUntil.get(k.id) ?? 0) > now) continue;
+    const recent = recentFor(k.id, now);
+    if (recent.length >= BUDGET_PER_MIN) continue;
+    const score = recent.length * 1e13 + (recent.at(-1) ?? 0);
+    if (score < bestScore) (best = k), (bestScore = score);
+  }
+  return best;
+}
 
 /** `path` is under /api/basic unless it starts with /api/ (e.g. /api/advanced/V3/Map/...). */
 export async function tdx(env: Env, path: string, query: Record<string, string> = {}): Promise<unknown> {
-  const creds = credsFor(env);
-  if (!creds) throw new Error("尚未設定 TDX 金鑰");
-  const own = Boolean(tdxCreds.getStore());
-  const now = Date.now();
-  const recent = recentCalls.get(creds.id) ?? [];
-  while (recent.length && now - recent[0] > 60_000) recent.shift();
-  recentCalls.set(creds.id, recent);
-  const full = own ? "你的 TDX 金鑰每分鐘查詢額度已滿，稍後自動更新" : "TDX 每分鐘查詢額度已滿，稍後自動更新";
-  if (recent.length >= BUDGET_PER_MIN) throw new Error(full);
-  const auth = await accessToken(creds, own);
-  recent.push(now);
+  const visitor = tdxCreds.getStore();
+  const keys = visitor ? [visitor] : siteKeys(env);
+  if (!keys.length) throw new Error("尚未設定 TDX 金鑰");
+  const full = visitor ? "你的 TDX 金鑰每分鐘查詢額度已滿，稍後自動更新" : "TDX 每分鐘查詢額度已滿，稍後自動更新";
   const qs = new URLSearchParams({ ...query, $format: "JSON" });
-  const res = await fetch(`${path.startsWith("/api/") ? API.replace("/api/basic", "") : API}${path}?${qs}`, {
-    headers: { Authorization: `Bearer ${auth}`, "Accept-Encoding": "br, gzip" },
-  });
-  if (res.status === 429) throw new Error(full);
-  if (!res.ok) throw new Error(`TDX ${res.status}`);
-  return res.json();
+  const url = `${path.startsWith("/api/") ? API.replace("/api/basic", "") : API}${path}?${qs}`;
+  // A key TDX says is used up (429, e.g. also used from elsewhere) is skipped for the rest of
+  // this call and the next key tried; its quota is marked full locally for the minute.
+  const skip = new Set<string>();
+  for (;;) {
+    const now = Date.now();
+    const creds = pickSiteKey(keys, now, skip);
+    if (!creds) throw new Error(full);
+    let auth: string;
+    try {
+      auth = await accessToken(creds, Boolean(visitor));
+    } catch (e) {
+      // A site key that can't log in shouldn't take the others down with it.
+      if (visitor || keys.length === 1) throw e;
+      loginFailedUntil.set(creds.id, now + 5 * 60_000);
+      skip.add(creds.id);
+      continue;
+    }
+    const recent = recentFor(creds.id, now);
+    recent.push(now);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${auth}`, "Accept-Encoding": "br, gzip" } });
+    if (res.status === 429) {
+      while (recent.length < BUDGET_PER_MIN) recent.push(now);
+      skip.add(creds.id);
+      continue;
+    }
+    if (!res.ok) throw new Error(`TDX ${res.status}`);
+    return res.json();
+  }
 }
 
-export const tdxConfigured = (env: Env) => Boolean(tdxCreds.getStore() || (env.TDX_CLIENT_ID && env.TDX_CLIENT_SECRET));
+export const tdxConfigured = (env: Env) => Boolean(tdxCreds.getStore() || siteKeys(env).length);
 
 const zh = (v: any): string => v?.Zh_tw ?? "";
 const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;
