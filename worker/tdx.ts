@@ -32,7 +32,7 @@ async function accessToken(creds: TdxCreds, own: boolean): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "client_credentials", client_id: creds.id, client_secret: creds.secret }),
   });
-  if (!res.ok) throw new Error(own ? "你的 TDX 金鑰無法登入，請到設定檢查" : `TDX 登入失敗 (${res.status})，請檢查金鑰`);
+  if (!res.ok) throw new Error(own ? "你的 TDX 金鑰無法登入，請到「設定 → 金鑰」檢查" : `TDX 登入失敗 (${res.status})，請檢查金鑰`);
   const body = (await res.json()) as { access_token: string; expires_in: number };
   const expires = Date.now() + (body.expires_in - 300) * 1000;
   tokens.set(creds.id, { value: body.access_token, expires });

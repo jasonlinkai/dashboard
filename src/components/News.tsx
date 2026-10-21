@@ -71,7 +71,7 @@ export function News() {
     >
       {tabs}
       <ol className="news-list scroll" ref={listRef}>
-        {!topic && <li className="hint">所有新聞分類都設為不顯示，可在右上角「設定 → 新聞」開啟。</li>}
+        {!topic && <li className="hint">所有新聞分類都設為不顯示，可在右上角「設定 → 顯示內容 → 新聞」開啟。</li>}
         {topic && !items && (state.error ? <li className="hint error">{state.error}</li> : <SkeletonItems rows={8} />)}
         {items?.map((n) => (
           <li key={n.link}>

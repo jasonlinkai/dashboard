@@ -78,7 +78,7 @@ export function TdxKeySetting() {
 
   return (
     <div className="setting">
-      <div className="setting-label">TDX 金鑰（選填，建議設定）</div>
+      <div className="setting-label">選填，建議設定</div>
       <div className="key-why">
         <p>
           <b>為什麼建議設定？</b>公車、火車、停車的即時資料來自交通部 TDX。網站內建的金鑰是<b>所有使用者共用</b>的，每把每分鐘只能查 5 次；

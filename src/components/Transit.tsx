@@ -10,7 +10,7 @@ import { Section } from "./Section";
 import { SkeletonBar, SkeletonRows, SkeletonStops } from "./Skeleton";
 import { toast } from "../toast";
 
-const NOT_CONFIGURED = <p className="hint">網站尚未設定 TDX 金鑰，可在右上角「設定」填入你自己的金鑰。</p>;
+const NOT_CONFIGURED = <p className="hint">網站尚未設定 TDX 金鑰，可在右上角「設定 → 金鑰」填入你自己的金鑰。</p>;
 
 const sameRoute = (a: BusArrival, s: BusStop) => a.route === s.route && (a.city ?? s.city) === s.city;
 

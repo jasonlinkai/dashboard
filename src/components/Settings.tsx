@@ -6,7 +6,7 @@ import { About } from "./About";
 import { Backup } from "./Backup";
 import type { ContentSection } from "../openSettings";
 import { ContentEditor } from "./ContentEditor";
-import { TdxKeySetting } from "./TdxKeySetting";
+import { KeySettings } from "./KeySettings";
 
 const THEMES: [ThemePref, string, string][] = [
   ["auto", "自動", "跟隨裝置的深淺色設定"],
@@ -18,7 +18,7 @@ const THEMES: [ThemePref, string, string][] = [
 const PAGES = [
   ["content", "顯示內容"],
   ["look", "外觀"],
-  ["tdx", "TDX 金鑰"],
+  ["keys", "金鑰"],
   ["backup", "備份"],
   ["about", "關於"],
 ] as const;
@@ -178,7 +178,7 @@ export function Settings({
             </>
           )}
           {page === "content" && <ContentEditor initial={section} onExit={onClose} />}
-          {page === "tdx" && <TdxKeySetting />}
+          {page === "keys" && <KeySettings />}
           {page === "backup" && <Backup theme={theme} fx={fx} onTheme={onTheme} onFx={onFx} />}
           {page === "about" && <About onShowSources={onShowSources} />}
         </div>
