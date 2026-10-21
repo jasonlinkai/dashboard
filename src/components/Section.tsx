@@ -1,6 +1,6 @@
 import { type ReactNode, useRef } from "react";
 import { editLayout, movable as canMove, useLayoutEdit } from "../layoutEdit";
-import { PANEL_NAMES, isPanel, useCard } from "../settings";
+import { PANEL_NAMES, isPanel, useCard, useSettings } from "../settings";
 import { mmss } from "../format";
 import { type Polled, useNow } from "../hooks";
 import { type ContentSection, openSettings } from "../openSettings";
@@ -85,8 +85,10 @@ export function Section({
   const card = useCard();
   const id = card?.id || className;
   const extra = !!card && card.n > 1;
-  const heading = extra ? `${title} ${card.n}` : title;
-  const name = panel ? (extra ? `${PANEL_NAMES[panel]} ${card.n}` : PANEL_NAMES[panel]) : title;
+  // The user's name for this card, if any (設定 → 顯示內容 → the card's page).
+  const custom = useSettings().settings.names[id];
+  const heading = custom ?? (extra ? `${title} ${card.n}` : title);
+  const name = custom ?? (panel ? (extra ? `${PANEL_NAMES[panel]} ${card.n}` : PANEL_NAMES[panel]) : title);
   // Holding the title for half a second starts rearranging the cards.
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const release = () => {

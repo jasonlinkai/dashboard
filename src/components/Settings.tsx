@@ -57,7 +57,7 @@ export function Settings({
   onSaverPreview: () => void;
   /** Close the settings and start rearranging the cards. */
   onEditLayout: () => void;
-  /** Opened from an extra card (e.g. 天氣 2): its name; its content stands in for the first card's here. */
+  /** With `section`: which card's page to open (an extra card's id, e.g. 天氣 2's). */
   card?: string;
   /** Open straight to this card's page (from the gear next to the card's title). */
   section?: ContentSection;
@@ -98,7 +98,7 @@ export function Settings({
           <button ref={closeRef} className="sub-back" onClick={onClose}>
             ‹ 返回
           </button>
-          <h2 id="settings-title">{card ? `設定・${card}` : "設定"}</h2>
+          <h2 id="settings-title">設定</h2>
         </header>
         <nav className="settings-tabs" role="tablist" aria-label="設定分類">
           {PAGES.map(([id, label]) => (
@@ -192,7 +192,7 @@ export function Settings({
               </div>
             </>
           )}
-          {page === "content" && <ContentEditor initial={section} onExit={onClose} />}
+          {page === "content" && <ContentEditor initial={section} initialCard={card} onExit={onClose} />}
           {page === "keys" && <KeySettings />}
           {page === "backup" && <Backup theme={theme} fx={fx} onTheme={onTheme} onFx={onFx} />}
           {page === "about" && <About onShowSources={onShowSources} />}

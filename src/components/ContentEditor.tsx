@@ -8,6 +8,14 @@ import { toast } from "../toast";
 import {
   BUS_CITIES,
   type BusCity,
+  type CardId,
+  CardSettings,
+  MAX_NAME,
+  PANEL_NAMES,
+  type Panel,
+  cardName,
+  cardView,
+  typeOf,
   type BusStop,
   INSTRUMENT_CATALOG,
   LIMITS,
@@ -19,6 +27,8 @@ import {
   instrumentOf,
   marketSymbol,
   orderedTopics,
+  useCard,
+  useLimit,
   useSettings,
 } from "../settings";
 import { SkeletonPicks } from "./Skeleton";
@@ -226,6 +236,9 @@ interface Town {
 const shortName = (town: string) => (town.length > 2 ? town.replace(/[區鎮鄉市]$/, "") : town);
 
 function WeatherAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
+  const limit = useLimit("weather");
+  // The page animation follows the first weather card only.
+  const fxCard = (useCard()?.n ?? 1) === 1;
   const [towns, setTowns] = useState<Town[] | null>(null);
   const [county, setCounty] = useState("新北市");
   const [townId, setTownId] = useState("");
@@ -239,7 +252,7 @@ function WeatherAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
   const picked = inCounty.find((t) => t.townId === townId);
   const places = s.weather;
   const update = (weather: WeatherPlace[]) => set({ ...s, weather });
-  const full = places.length >= LIMITS.weather;
+  const full = places.length >= limit;
   const label = name.trim() || (picked ? shortName(picked.town) : "");
   const duplicate = places.some((p) => p.name === label);
 
@@ -271,8 +284,8 @@ function WeatherAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
         ]}
         notes={[
           "大字的現在溫度是中央氣象署測站的實測值；同一區沒有平地測站時，改用鄰近或預報模型的數值，卡片上會註明。逐時預報來自 Open-Meteo。",
-          "新地點加在清單最後。排第一的地點決定整頁的天氣動畫，想換就在清單按「排序」把它拖到第一個。",
-          `最多 ${LIMITS.weather} 個地點，目前 ${places.length} 個；同一個顯示名稱不能重複。`,
+          fxCard ? "新地點加在清單最後。排第一的地點決定整頁的天氣動畫，想換就在清單按「排序」把它拖到第一個。" : "新地點加在清單最後。",
+          `最多 ${limit} 個地點，目前 ${places.length} 個；同一個顯示名稱不能重複。`,
         ]}
       />
       <div className="ed-add">
@@ -300,11 +313,14 @@ function WeatherAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
           新增
         </button>
       </div>
-      <p className="muted small">{full ? `最多 ${LIMITS.weather} 個地點。` : duplicate ? "已經有同名的地點，請換個顯示名稱。" : ""}</p>
+      <p className="muted small">{full ? `最多 ${limit} 個地點。` : duplicate ? "已經有同名的地點，請換個顯示名稱。" : ""}</p>
     </>
   );
 }
 function WeatherEditor({ s, set, sorting }: EditorProps) {
+  const limit = useLimit("weather");
+  // The page animation follows the first weather card only.
+  const fxCard = (useCard()?.n ?? 1) === 1;
   const places = s.weather;
   const update = (weather: WeatherPlace[]) => set({ ...s, weather });
   const [adding, setAdding] = useState(false);
@@ -318,7 +334,7 @@ function WeatherEditor({ s, set, sorting }: EditorProps) {
               {" "}
               {p.county}
               {p.town}
-              {i === 0 ? "・天氣動畫依此地" : ""}
+              {i === 0 && fxCard ? "・天氣動畫依此地" : ""}
             </span>
           </Row>
         ))}
@@ -326,12 +342,12 @@ function WeatherEditor({ s, set, sorting }: EditorProps) {
       {!sorting && (
         <AddButton
           label="新增地點"
-          full={places.length >= LIMITS.weather}
-          fullNote={`最多 ${LIMITS.weather} 個地點，請先刪除一個再新增。`}
+          full={places.length >= limit}
+          fullNote={`最多 ${limit} 個地點，請先刪除一個再新增。`}
           onClick={() => setAdding(true)}
         />
       )}
-      <p className="muted small">排第一的地點決定整頁的天氣動畫。</p>
+      {fxCard && <p className="muted small">排第一的地點決定整頁的天氣動畫。</p>}
       {adding && (
         <SubPage title="新增天氣地點" onClose={() => setAdding(false)}>
           <WeatherAdd s={s} set={set} onDone={() => setAdding(false)} />
@@ -360,10 +376,11 @@ const SYMBOL_EXAMPLES: [string, string][] = [
  * picker or search could never guarantee. Each one is checked for a quote before it is added.
  */
 function MarketsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
+  const limit = useLimit("markets");
   const items = s.markets;
   const update = (markets: MarketItem[]) => set({ ...s, markets });
   const used = new Set(items.map(marketSymbol));
-  const full = items.length >= LIMITS.markets;
+  const full = items.length >= limit;
   const [symbol, setSymbol] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -421,7 +438,7 @@ function MarketsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
             搜尋，報價頁網址最後一段就是代號，例如 …/quote/2330.TW 的代號是 2330.TW。
           </>,
           "報價來自 Yahoo 的非官方介面，可能延遲，僅供參考，交易請以券商報價為準。",
-          `最多 ${LIMITS.markets} 格，目前 ${items.length} 格；新的一格加在最後，可在清單按「排序」調整位置。`,
+          `最多 ${limit} 格，目前 ${items.length} 格；新的一格加在最後，可在清單按「排序」調整位置。`,
         ]}
       />
       {
@@ -464,6 +481,7 @@ function MarketsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => voi
   );
 }
 function MarketsEditor({ s, set, sorting }: EditorProps) {
+  const limit = useLimit("markets");
   const items = s.markets;
   const update = (markets: MarketItem[]) => set({ ...s, markets });
   const [adding, setAdding] = useState(false);
@@ -483,8 +501,8 @@ function MarketsEditor({ s, set, sorting }: EditorProps) {
       {!sorting && (
         <AddButton
           label="新增行情"
-          full={items.length >= LIMITS.markets}
-          fullNote={`最多 ${LIMITS.markets} 格，請先刪除一格再新增。`}
+          full={items.length >= limit}
+          fullNote={`最多 ${limit} 格，請先刪除一格再新增。`}
           onClick={() => setAdding(true)}
         />
       )}
@@ -525,6 +543,7 @@ function tripLabel(t: BusTrip, all: BusTrip[]) {
  * (loop routes pass a stop name twice, once each way).
  */
 function BusAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
+  const limit = useLimit("bus");
   const stops = s.bus;
   const update = (bus: BusStop[]) => set({ ...s, bus });
   const [city, setCity] = useState<BusCity>(stops[0]?.city ?? "NewTaipei");
@@ -535,7 +554,7 @@ function BusAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; o
   const [tripIndex, setTripIndex] = useState(0);
   const cities = new Set(stops.map((b) => b.city));
   const cityFull = !cities.has(city) && cities.size >= MAX_BUS_CITIES;
-  const full = stops.length >= LIMITS.bus;
+  const full = stops.length >= limit;
 
   // The city's route list (fetched once per city; the server keeps it for a day).
   const list = routes[city];
@@ -711,6 +730,7 @@ function BusAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; o
   );
 }
 function BusEditor({ s, set, sorting }: EditorProps) {
+  const limit = useLimit("bus");
   const stops = s.bus;
   const update = (bus: BusStop[]) => set({ ...s, bus });
   const [adding, setAdding] = useState(false);
@@ -734,8 +754,8 @@ function BusEditor({ s, set, sorting }: EditorProps) {
       {!sorting && (
         <AddButton
           label="新增公車站牌"
-          full={stops.length >= LIMITS.bus}
-          fullNote={`最多 ${LIMITS.bus} 筆，請先刪除一筆再新增。`}
+          full={stops.length >= limit}
+          fullNote={`最多 ${limit} 筆，請先刪除一筆再新增。`}
           onClick={() => setAdding(true)}
         />
       )}
@@ -764,6 +784,7 @@ function TrainTypePicker({ value, onChange }: { value: TrainType; onChange: (t: 
 }
 
 function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
+  const limit = useLimit("trains");
   const routes = s.trains;
   const [stations, setStations] = useState<string[]>([]);
   const [from, setFrom] = useState("");
@@ -782,7 +803,7 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
       .replace(/車?站$/, "");
   const known = (v: string) => !stations.length || stations.includes(norm(v));
   const dup = routes.some((r) => r.from === norm(from) && r.to === norm(to));
-  const ok = norm(from) && norm(to) && norm(from) !== norm(to) && known(from) && known(to) && !dup && routes.length < LIMITS.trains;
+  const ok = norm(from) && norm(to) && norm(from) !== norm(to) && known(from) && known(to) && !dup && routes.length < limit;
   const update = (trains: Settings["trains"]) => set({ ...s, trains });
 
   return (
@@ -797,7 +818,7 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
         notes={[
           "看板會列出從上車站出發、有停下車站的班次，以及預計誤點和臺鐵的營運公告。",
           "只有臺鐵，不含高鐵、捷運。想看回程，再加一條上下車站相反的路線。",
-          `最多 ${LIMITS.trains} 條。清單排第一的路線，是看板上預設打開的那一條。`,
+          `最多 ${limit} 條。清單排第一的路線，是看板上預設打開的那一條。`,
         ]}
       />
       <div className="ed-add">
@@ -825,8 +846,8 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
         </datalist>
       </div>
       <p className="muted small">
-        {routes.length >= LIMITS.trains
-          ? `最多 ${LIMITS.trains} 條。`
+        {routes.length >= limit
+          ? `最多 ${limit} 條。`
           : (from && !known(from)) || (to && !known(to))
             ? "找不到這個臺鐵車站，請從清單選擇。"
             : dup
@@ -855,6 +876,7 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
   );
 }
 function TrainsEditor({ s, set, sorting }: EditorProps) {
+  const limit = useLimit("trains");
   const routes = s.trains;
   const update = (trains: Settings["trains"]) => set({ ...s, trains });
   const [adding, setAdding] = useState(false);
@@ -890,8 +912,8 @@ function TrainsEditor({ s, set, sorting }: EditorProps) {
       {!sorting && (
         <AddButton
           label="新增火車路線"
-          full={routes.length >= LIMITS.trains}
-          fullNote={`最多 ${LIMITS.trains} 條，請先刪除一條再新增。`}
+          full={routes.length >= limit}
+          fullNote={`最多 ${limit} 條，請先刪除一條再新增。`}
           onClick={() => setAdding(true)}
         />
       )}
@@ -1045,60 +1067,93 @@ function summary(section: Section, s: Settings): string {
 
 const TITLES: Record<Section, string> = { weather: "天氣地點", markets: "市場行情", bus: "公車", trains: "火車", news: "新聞" };
 
+/** The card type each page edits. */
+const TYPE_OF: Record<Section, Panel> = { markets: "markets", weather: "weather", bus: "bus", trains: "train", news: "news" };
+
 /**
- * `initial`: a page opened from a card's gear. Leaving that page goes straight back to the
- * dashboard (`onExit`), since that's where the user came from.
+ * Lists every card (行情, 行情 2 …); each opens its own page. `initial` (+ `initialCard`): a page
+ * opened from a card's gear. Leaving that page goes straight back to the dashboard (`onExit`),
+ * since that's where the user came from.
  */
-export function ContentEditor({ initial, onExit }: { initial?: Section; onExit?: () => void }) {
-  const { settings, setSettings } = useSettings();
-  const [open, setOpen] = useState<Section | null>(initial ?? null);
+export function ContentEditor({ initial, initialCard, onExit }: { initial?: Section; initialCard?: CardId; onExit?: () => void }) {
+  const { settings } = useSettings();
+  const [open, setOpen] = useState<{ section: Section; card: CardId } | null>(
+    initial ? { section: initial, card: initialCard ?? TYPE_OF[initial] } : null,
+  );
   const fromCard = useRef(Boolean(initial));
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   const close = useCallback(() => (fromCard.current && onExitRef.current ? onExitRef.current() : setOpen(null)), []);
-  // Sorting is a mode of the open page; every page starts out in the normal mode.
-  const [sorting, setSorting] = useState(false);
-  const props = { s: settings, set: setSettings, sorting };
-  const count = open === "news" ? TOPICS.length : open ? settings[open].length : 0;
+  // A card's name in this list: the user's, else the page's short label (行情, 行情 2 …).
+  const listName = (card: CardId, label: string) =>
+    settings.names[card] ?? cardName({ ...settings, names: {} }, card).replace(PANEL_NAMES[typeOf(settings, card)], label);
   return (
     <div className="setting">
       <div className="setting-label">顯示內容</div>
       <div className="muted small">
-        點進去可以新增、刪除；右上角「排序」調整順序。也可以直接在看板上長按天氣卡片、行情方塊或火車路線，拖到想要的位置。
+        點進去可以新增、刪除、改名稱；右上角「排序」調整順序。也可以直接在看板上長按天氣卡片、行情方塊或火車路線，拖到想要的位置。
       </div>
       <ul className="ed-sections">
-        {SECTIONS.map(([id, label]) => (
-          <li key={id}>
-            <button className="ed-section" onClick={() => ((fromCard.current = false), setSorting(false), setOpen(id))}>
-              <span className="ed-section-name">{label}</span>
-              <span className="ed-section-sum muted small">{summary(id, settings)}</span>
-              <span className="ed-section-chev" aria-hidden>
-                ›
-              </span>
-            </button>
-          </li>
-        ))}
+        {SECTIONS.flatMap(([id, label]) =>
+          [TYPE_OF[id], ...settings.extras.filter((e) => e.type === TYPE_OF[id]).map((e) => e.id)].map((card) => (
+            <li key={card}>
+              <button className="ed-section" onClick={() => ((fromCard.current = false), setOpen({ section: id, card }))}>
+                <span className="ed-section-name">{listName(card, label)}</span>
+                <span className="ed-section-sum muted small">{summary(id, cardView(settings, card))}</span>
+                <span className="ed-section-chev" aria-hidden>
+                  ›
+                </span>
+              </button>
+            </li>
+          )),
+        )}
       </ul>
       {open && (
-        <SubPage
-          title={TITLES[open]}
-          onClose={close}
-          action={
-            count > 1 && (
-              <button className={`sub-action ${sorting ? "on" : ""}`} onClick={() => setSorting(!sorting)}>
-                {sorting ? "完成" : "排序"}
-              </button>
-            )
-          }
-        >
-          {sorting && <p className="ed-sort-hint">按住 ≡ 拖到想要的位置；好了按右上角「完成」。</p>}
-          {open === "weather" && <WeatherEditor {...props} />}
-          {open === "markets" && <MarketsEditor {...props} />}
-          {open === "bus" && <BusEditor {...props} />}
-          {open === "trains" && <TrainsEditor {...props} />}
-          {open === "news" && <NewsEditor {...props} />}
-        </SubPage>
+        // Inside, the page sees (and writes) this card's own content.
+        <CardSettings key={open.card} id={open.card}>
+          <CardPage section={open.section} card={open.card} onClose={close} />
+        </CardSettings>
       )}
     </div>
+  );
+}
+
+/** One card's page: its name, then its content editor. */
+function CardPage({ section, card, onClose }: { section: Section; card: CardId; onClose: () => void }) {
+  const { settings, setSettings } = useSettings();
+  // Sorting is a mode of the page; every page starts out in the normal mode.
+  const [sorting, setSorting] = useState(false);
+  const props = { s: settings, set: setSettings, sorting };
+  const count = section === "news" ? TOPICS.length : settings[section].length;
+  const plain = cardName({ ...settings, names: {} }, card);
+  const named = settings.names[card];
+  const rename = (v: string) => {
+    const { [card]: _, ...rest } = settings.names;
+    setSettings({ ...settings, names: v.trim() ? { ...rest, [card]: v } : rest });
+  };
+  return (
+    <SubPage
+      title={named || card !== TYPE_OF[section] ? `${TITLES[section]}・${named ?? plain}` : TITLES[section]}
+      onClose={onClose}
+      action={
+        count > 1 && (
+          <button className={`sub-action ${sorting ? "on" : ""}`} onClick={() => setSorting(!sorting)}>
+            {sorting ? "完成" : "排序"}
+          </button>
+        )
+      }
+    >
+      <label className="ed-name">
+        <span className="setting-label">板塊名稱</span>
+        <input value={named ?? ""} placeholder={plain} maxLength={MAX_NAME} onChange={(e) => rename(e.target.value)} />
+        <span className="muted small">留空就用「{plain}」。</span>
+      </label>
+      {sorting && <p className="ed-sort-hint">按住 ≡ 拖到想要的位置；好了按右上角「完成」。</p>}
+      {section === "weather" && <WeatherEditor {...props} />}
+      {section === "markets" && <MarketsEditor {...props} />}
+      {section === "bus" && <BusEditor {...props} />}
+      {section === "trains" && <TrainsEditor {...props} />}
+      {section === "news" && <NewsEditor {...props} />}
+    </SubPage>
   );
 }

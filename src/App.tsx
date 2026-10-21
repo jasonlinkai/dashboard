@@ -32,6 +32,7 @@ import {
   type Settings as SettingsData,
   TRANSIT,
   cardIds,
+  cardName,
   findSpot,
   isPanel,
   overLimit,
@@ -111,11 +112,7 @@ export default function App() {
   // Each layout (desktop, portrait tablet, phone) shows its own choice of cards.
   const hidden = layout.hidden[mode];
   const kind = (id: CardId) => typeOf(settings, id);
-  /** 天氣, 天氣 2 … */
-  const name = (id: CardId) => {
-    const n = isPanel(id) ? 1 : settings.extras.filter((e) => e.type === kind(id)).findIndex((e) => e.id === id) + 2;
-    return n > 1 ? `${PANEL_NAMES[kind(id)]} ${n}` : PANEL_NAMES[kind(id)];
-  };
+  const name = (id: CardId) => cardName(settings, id);
   const ids = cardIds(settings);
   const shownIds = ids.filter((id) => !hidden.includes(id));
   const shown = preview ?? (hidden.includes("weather") ? null : scene);
@@ -186,7 +183,8 @@ export default function App() {
       const { [p]: _t, ...tall } = layout.tall;
       const rest = Object.fromEntries(SCREENS.map((sc) => [sc, layout.hidden[sc].filter((q) => q !== p)])) as typeof layout.hidden;
       flip.capture();
-      setSettings({ ...settings, extras: settings.extras.filter((e) => e.id !== p), layout: { ...layout, wide, tall, hidden: rest } });
+      const { [p]: _n, ...names } = settings.names;
+      setSettings({ ...settings, extras: settings.extras.filter((e) => e.id !== p), names, layout: { ...layout, wide, tall, hidden: rest } });
       toast(`已移除${name(p)}`);
     }
     setTimeout(() => document.querySelector<HTMLElement>(".layout-bar .layout-toggle")?.focus()); // its button is gone
@@ -433,23 +431,21 @@ export default function App() {
         )}
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
         {showSettings && (
-          <CardSettings id={settingsCard ?? ""}>
-            <Settings
-              card={settingsCard && settingsCard in layout.wide ? name(settingsCard) : undefined}
-              theme={theme}
-              onTheme={setTheme}
-              fx={fx}
-              onFx={setFx}
-              wake={wake}
-              saver={saver}
-              onSaver={setSaver}
-              onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
-              onEditLayout={() => (setShowSettings(false), setSettingsSection(undefined), setEditing(true))}
-              section={settingsSection}
-              onShowSources={() => (setShowSettings(false), setSettingsSection(undefined), setShowInfo(true))}
-              onClose={() => (setShowSettings(false), setSettingsSection(undefined), setSettingsCard(undefined))}
-            />
-          </CardSettings>
+          <Settings
+            card={settingsCard}
+            theme={theme}
+            onTheme={setTheme}
+            fx={fx}
+            onFx={setFx}
+            wake={wake}
+            saver={saver}
+            onSaver={setSaver}
+            onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
+            onEditLayout={() => (setShowSettings(false), setSettingsSection(undefined), setEditing(true))}
+            section={settingsSection}
+            onShowSources={() => (setShowSettings(false), setSettingsSection(undefined), setShowInfo(true))}
+            onClose={() => (setShowSettings(false), setSettingsSection(undefined), setSettingsCard(undefined))}
+          />
         )}
       </div>
       <ScreenSaver minutes={saver} preview={saverPreview} onPreviewEnd={() => setSaverPreview(false)} />

@@ -56,6 +56,8 @@ export interface Settings {
   layout: Layout;
   /** More cards of a type, each with its own content (the fields above are each type's first card). */
   extras: Extra[];
+  /** Titles the user gave cards (by card id); the others use their type's name (天氣, 天氣 2 …). */
+  names: Record<CardId, string>;
 }
 
 /** The dashboard's cards. */
@@ -148,6 +150,21 @@ export type Extra = { id: CardId; type: Panel } & Partial<Pick<Settings, "weathe
 export const MAX_PER_TYPE = 3;
 export const cardIds = (s: Settings): CardId[] => [...PANELS, ...s.extras.map((e) => e.id)];
 export const typeOf = (s: Settings, id: CardId): Panel => (isPanel(id) ? id : s.extras.find((e) => e.id === id)!.type);
+export const MAX_NAME = 12;
+/** A card's title: the user's, else its type's name, numbered after the first (天氣 2). */
+export function cardName(s: Settings, id: CardId): string {
+  if (s.names[id]) return s.names[id];
+  const type = typeOf(s, id);
+  const n = isPanel(id) ? 1 : s.extras.filter((e) => e.type === type).findIndex((e) => e.id === id) + 2;
+  return n > 1 ? `${PANEL_NAMES[type]} ${n}` : PANEL_NAMES[type];
+}
+/** The settings as a card sees them: an extra card's own content in place of its type's top-level fields. */
+export function cardView(s: Settings, id: CardId): Settings {
+  const extra = s.extras.find((e) => e.id === id);
+  if (!extra) return s;
+  const fields: readonly (keyof Settings)[] = FIELDS[extra.type];
+  return { ...s, ...Object.fromEntries(fields.map((f) => [f, (extra as Record<string, unknown>)[f] ?? s[f]])) } as Settings;
+}
 
 /**
  * All cards of a type share one request, and the server caps its size (and TDX allows a few
@@ -251,6 +268,7 @@ export const DEFAULT_SETTINGS: Settings = {
   newsOrder: TOPICS.map(([id]) => id),
   layout: DEFAULT_LAYOUT,
   extras: [],
+  names: {},
 };
 
 // ---------- Derived helpers ----------
@@ -435,7 +453,7 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
       if (extras.filter((x) => x.type === e.type).length >= MAX_PER_TYPE - 1) return err(`extras[${i}]：每種板塊最多 ${MAX_PER_TYPE} 個`);
       const fields: readonly (keyof Settings)[] = FIELDS[e.type];
       const own = Object.fromEntries(fields.filter((f) => e[f] !== undefined).map((f) => [f, e[f]]));
-      const sub = validate({ ...raw, extras: [], layout: undefined, ...own });
+      const sub = validate({ ...raw, extras: [], layout: undefined, names: undefined, ...own });
       if (!sub.settings) return sub.errors.forEach((m) => err(`extras[${i}]（${e.id}）：${m}`));
       extras.push({ id: e.id, type: e.type, ...Object.fromEntries(fields.map((f) => [f, sub.settings![f]])) });
     });
@@ -514,8 +532,17 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     layout[m] = boxes;
   }
 
+  const names: Record<CardId, string> = {};
+  if (raw.names !== undefined && !isObj(raw.names)) err("names 必須是物件（板塊 id → 名稱）");
+  else if (isObj(raw.names))
+    for (const [id, n] of Object.entries(raw.names)) {
+      if (!ids.includes(id)) continue; // a removed card's name
+      if (typeof n !== "string" || !n.trim() || n.length > MAX_NAME) err(`names.${id} 要是 1～${MAX_NAME} 字的名稱`);
+      else names[id] = n.trim();
+    }
+
   if (errors.length) return { errors };
-  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, layout, extras }, errors };
+  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, layout, extras, names }, errors };
 }
 
 // ---------- Storage and React context ----------
@@ -553,7 +580,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (over) toast(over, "error");
     else setSettings(s);
   };
-  return <Ctx.Provider value={{ settings, setSettings: set }}>{children}</Ctx.Provider>;
+  return (
+    <RootCtx.Provider value={settings}>
+      <Ctx.Provider value={{ settings, setSettings: set }}>{children}</Ctx.Provider>
+    </RootCtx.Provider>
+  );
+}
+/** The whole settings, even inside a card (whose useSettings shows that card's content). */
+const RootCtx = createContext<Settings>(DEFAULT_SETTINGS);
+
+const LIMITED = { weather: "weather", markets: "markets", bus: "bus", trains: "train" } as const;
+/** How many items the card being edited may hold: the type's limit minus what its other cards use. */
+export function useLimit(f: keyof typeof LIMITED): number {
+  const root = useContext(RootCtx);
+  const type = LIMITED[f];
+  const own = useContext(CardCtx)?.id ?? type;
+  const count = (id: CardId) => (isPanel(id) ? root[f].length : (root.extras.find((e) => e.id === id)?.[f]?.length ?? 0));
+  const others = cardIds(root).filter((id) => id !== own && typeOf(root, id) === type);
+  return LIMITS[f] - others.reduce((n, id) => n + count(id), 0);
 }
 
 export const useSettings = () => useContext(Ctx);
@@ -576,9 +620,8 @@ export function CardSettings({ id, children }: { id: CardId; children: ReactNode
   if (extra) {
     n = s.extras.filter((e) => e.type === extra.type).indexOf(extra) + 2;
     const fields: readonly (keyof Settings)[] = FIELDS[extra.type];
-    const view = { ...s, ...Object.fromEntries(fields.map((f) => [f, (extra as Record<string, unknown>)[f] ?? s[f]])) } as Settings;
     value = {
-      settings: view,
+      settings: cardView(s, id),
       setSettings: (v) => {
         const own = Object.fromEntries(fields.map((f) => [f, v[f]]));
         const back = Object.fromEntries(fields.map((f) => [f, s[f]]));
