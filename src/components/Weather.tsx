@@ -153,7 +153,7 @@ class StripGroup {
  * One scrollable row: the past 12 hours (dimmed), the current hour (highlighted) and the next 23.
  * The current hour is kept centred (see StripGroup), and re-centred when the hour changes.
  */
-function Hourly({ f, group }: { f: Forecast; group: StripGroup }) {
+function Hourly({ f, group, nowTemp, nowIcon }: { f: Forecast; group: StripGroup; nowTemp: number; nowIcon: string }) {
   // Open-Meteo hourly times are local (Asia/Taipei) without an offset.
   const nowKey = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 13);
   const now = f.hourly.time.findIndex((t) => t.slice(0, 13) === nowKey);
@@ -171,8 +171,10 @@ function Hourly({ f, group }: { f: Forecast; group: StripGroup }) {
       {f.hourly.time.map((t, i) => (
         <div key={t} className={i === now ? "wx-now" : i < now ? "wx-past" : ""}>
           <div className="wx-h">{i === now ? "現在" : t.slice(11, 13)}</div>
-          <div>{wmo(f.hourly.weather_code[i], f.hourly.is_day[i] === 1)[1]}</div>
-          <div>{Math.round(f.hourly.temperature_2m[i])}°</div>
+          {/* "現在" shows what the big number shows (the station reading when there is one), so the
+              card never says two different temperatures for now; other hours are the forecast. */}
+          <div>{i === now ? nowIcon : wmo(f.hourly.weather_code[i], f.hourly.is_day[i] === 1)[1]}</div>
+          <div>{Math.round(i === now ? nowTemp : f.hourly.temperature_2m[i])}°</div>
           <div className="blue">{f.hourly.precipitation_probability[i] ?? 0}%</div>
         </div>
       ))}
@@ -211,8 +213,9 @@ function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; 
         <div className="wx-temp">
           <Flip value={`${Math.round(temp)}°`} />
           <span className="wx-range">
-            <span className="red">↑{Math.round(f.daily.temperature_2m_max[0])}°</span>
-            <span className="blue">↓{Math.round(f.daily.temperature_2m_min[0])}°</span>
+            {/* The forecast range, widened to include the current reading so it never contradicts it. */}
+            <span className="red">↑{Math.round(Math.max(f.daily.temperature_2m_max[0], temp))}°</span>
+            <span className="blue">↓{Math.round(Math.min(f.daily.temperature_2m_min[0], temp))}°</span>
           </span>
         </div>
         <div className="wx-meta small">體感 {Math.round(f.current.apparent_temperature)}°</div>
@@ -222,7 +225,7 @@ function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; 
           {obs && mountain(obs) && `・山區測站 ${Math.round(obs.altitude!)}m`}
         </div>
       </div>
-      <Hourly f={f} group={group} />
+      <Hourly f={f} group={group} nowTemp={temp} nowIcon={icon} />
     </a>
   );
 }
