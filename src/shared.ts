@@ -170,6 +170,8 @@ export interface ParkingLot {
   liveTimeIsFetch?: boolean;
   /** e.g. 限顧客使用 */
   note?: string;
+  /** Why other sources' records were taken to be this car park (e.g. 名稱相同、位置相近). */
+  mergedBecause?: string[];
 }
 
 export interface ParkingResponse {

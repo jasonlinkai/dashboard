@@ -286,16 +286,92 @@ async function osmNear(env: Env, origin: string, lat: number, lon: number, radiu
   }
 }
 
-/** Points this close are taken to be the same car park, whatever their names. */
-const SAME_PLACE_M = 30;
+// ---------- One pin per car park ----------
+// The same car park often appears in two sources with slightly different coordinates (the
+// entrance vs. the building) and names ("信義廣場地下停車場" vs. "Times 松勤街停車場"), so
+// several signals are combined; see sameLot.
+
+const UNNAMED = "停車場（未命名）";
+const CN_DIGIT: Record<string, string> = { 一: "1", 二: "2", 三: "3", 四: "4", 五: "5", 六: "6", 七: "7", 八: "8", 九: "9", 十: "10" };
+
+const fullWidth = (s: string) => s.replace(/[０-９Ａ-Ｚａ-ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+
+/** The distinctive part of a name: without generic words (停車場, 地下, 站 …), spaces or punctuation. */
+function nameKey(name: string): string {
+  if (!name || name === UNNAMED) return "";
+  return fullWidth(name)
+    .toLowerCase()
+    .replace(/臺/g, "台")
+    .replace(/[（(].*?[)）]/g, "")
+    // 臺中市's names: "東區-民營-台中自由P" → "台中自由"
+    .replace(/^[^-－]{1,4}區[-－][^-－]{1,4}[-－]/, "")
+    .replace(/p$/, "")
+    .replace(/停車場|停車塔|停車|附設|建築物|地下|平面|立體|室內|機械式?|公有|公共|收費|汽車|小型車|[0-9一二三四五六七八九十]+樓|b\d/g, "")
+    .replace(/[站場]$/g, "")
+    .replace(/[\s\-－_—・·.,、/]/g, "");
+}
+
+/** Similarity of two name keys: 1 when one contains the other, else shared character pairs (Dice). */
+function nameSimilarity(a: string, b: string): number {
+  if (!a || !b) return 0;
+  if (Math.min(a.length, b.length) >= 2 && (a.includes(b) || b.includes(a))) return 1;
+  const pairs = (s: string) => new Set([...s].slice(0, -1).map((c, i) => c + s[i + 1]));
+  const pa = pairs(a);
+  const pb = pairs(b);
+  if (!pa.size || !pb.size) return 0;
+  let shared = 0;
+  for (const x of pa) if (pb.has(x)) shared++;
+  return (2 * shared) / (pa.size + pb.size);
+}
+
+/** Road + section + lane + number ("信義路5段11號"), or "" when the address has no house number. */
+function addressKey(address: string): string {
+  const s = fullWidth(address)
+    .replace(/臺/g, "台")
+    .replace(/([一二三四五六七八九十])段/g, (_m, d: string) => `${CN_DIGIT[d]}段`)
+    .replace(/\s/g, "");
+  const m = /([^\d市縣區鄉鎮里村]{1,8}?(?:路|街|大道)(?:\d+段)?(?:\d+巷)?(?:\d+弄)?\d+(?:之\d+|-\d+)?號)/.exec(s);
+  return m ? m[1] : "";
+}
+
+/** Total spaces within 15% of each other (both must be known). */
+const sameSize = (a: number | null, b: number | null) => a != null && b != null && Math.abs(a - b) <= Math.max(3, 0.15 * Math.max(a, b));
+
+const totalOf = (p: ParkingLot) => p.car?.total ?? p.spaces?.total ?? (Number(/(\d+)\s*格/.exec(p.description)?.[1] ?? NaN) || null);
+
+/**
+ * Whether two records from different sources are the same car park, and why. Signals:
+ * distance, name, street address and size. A name that clearly differs keeps even very close
+ * points apart (two car parks can share a block); a matching name or address joins points
+ * further apart (sources often place a car park at its entrance vs. its building).
+ */
+function sameLot(a: ParkingLot, b: ParkingLot): string | null {
+  const d = metres(a.lat, a.lon, b.lat, b.lon);
+  if (d > 200) return null;
+  const ka = nameKey(a.name);
+  const kb = nameKey(b.name);
+  const sim = nameSimilarity(ka, kb);
+  const bothNamed = Boolean(ka && kb);
+  const addrA = addressKey(a.address);
+  const addrB = addressKey(b.address);
+  const sameAddr = Boolean(addrA && addrA === addrB);
+  if (sameAddr && (sim >= 0.3 || !bothNamed)) return "地址相同";
+  if (bothNamed && sim >= 0.8 && d <= 150) return "名稱相同、位置相近";
+  if (bothNamed && sim >= 0.5 && d <= 80) return "名稱相似、位置相近";
+  if (d <= 30) {
+    if (bothNamed && sim < 0.2) return null; // two different car parks side by side
+    return bothNamed ? "位置幾乎相同、名稱相似" : "位置幾乎相同";
+  }
+  if (!bothNamed && d <= 60 && sameSize(totalOf(a), totalOf(b))) return "位置相近、車位數相同";
+  return null;
+}
 
 /** How much a record tells the driver; the richest one of a merged car park is shown. */
 function richness(p: ParkingLot): number {
-  const named = p.source !== "OSM" || p.name !== "停車場（未命名）";
   return (
     (p.live === "ok" && (p.car || p.spaces) ? 8 : 0) +
     (p.fareEstimate ? 4 : p.fare && !/^依現場/.test(p.fare) ? 2 : 0) +
-    (named ? 2 : 0) +
+    (p.name !== UNNAMED ? 2 : 0) +
     (p.address ? 1 : 0) +
     (p.description ? 1 : 0) +
     (p.source === "OSM" ? 0 : 0.5) // tie: prefer the official record
@@ -303,27 +379,39 @@ function richness(p: ParkingLot): number {
 }
 
 /**
- * One pin per car park. Records from different sources within 30 m are merged: the richest
- * record is kept and blanks in it are filled from the others. Two records from the same source
- * are never merged (a source lists neighbouring car parks separately on purpose).
+ * One pin per car park. The richest record is kept and blanks in it are filled from the others
+ * that sameLot matches; each merged record is compared with every record already in the group,
+ * so a name from one source and an address from another can both count. Two records from the
+ * same source are never merged (a source lists neighbouring car parks separately on purpose).
  */
 function merge(all: ParkingLot[]): ParkingLot[] {
   const ranked = [...all].sort((a, b) => richness(b) - richness(a));
-  const out: ParkingLot[] = [];
+  const groups: { lot: ParkingLot; members: ParkingLot[] }[] = [];
   for (const p of ranked) {
-    const same = out.find((q) => !q.sources.includes(p.source) && metres(q.lat, q.lon, p.lat, p.lon) <= SAME_PLACE_M);
-    if (!same) {
-      out.push({ ...p, sources: [...p.sources] });
+    let best: { g: (typeof groups)[number]; why: string; d: number } | null = null;
+    for (const g of groups) {
+      if (g.lot.sources.includes(p.source)) continue;
+      for (const m of g.members) {
+        const why = sameLot(m, p);
+        const d = metres(m.lat, m.lon, p.lat, p.lon);
+        if (why && (!best || d < best.d)) best = { g, why, d };
+      }
+    }
+    if (!best) {
+      groups.push({ lot: { ...p, sources: [...p.sources] }, members: [p] });
       continue;
     }
+    const same = best.g.lot;
+    best.g.members.push(p);
     same.sources.push(p.source);
-    if (same.source === "OSM" && same.name === "停車場（未命名）" && p.name !== "停車場（未命名）") same.name = p.name;
+    (same.mergedBecause ??= []).push(best.why);
+    if (same.name === UNNAMED && p.name !== UNNAMED) same.name = p.name;
     if (!same.address && p.address) same.address = p.address;
     if (!same.fare && p.fare) (same.fare = p.fare), (same.fareEstimate = p.fareEstimate);
     if (!same.description && p.description) same.description = p.description;
     if (!same.note && p.note) same.note = p.note;
   }
-  return out;
+  return groups.map((g) => g.lot);
 }
 
 // ---------- Place search ----------

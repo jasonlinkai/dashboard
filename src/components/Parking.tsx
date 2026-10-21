@@ -486,7 +486,9 @@ function LotItem({ lot, now, open, onToggle }: { lot: ParkingLot; now: number; o
             {lot.sources.map((s, i) => `${SOURCE[s].long}${i === 0 && lot.sources.length > 1 ? "（主要）" : ""}`).join("、")}
           </p>
           {lot.sources.length > 1 && (
-            <p className="muted tiny">多個來源在 30 公尺內標了停車場，視為同一個；顯示資訊最多的那筆，缺的欄位由其他來源補上。</p>
+            <p className="muted tiny">
+              這些來源視為同一個停車場（{[...new Set(lot.mergedBecause ?? [])].join("、")}）；顯示資訊最多的那筆，缺的欄位由其他來源補上。
+            </p>
           )}
           <a className="pk-btn primary pk-nav" href={navUrl(lot)} target="_blank" rel="noopener noreferrer">
             用 Google 地圖導航
