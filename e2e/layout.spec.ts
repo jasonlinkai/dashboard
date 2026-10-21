@@ -468,6 +468,22 @@ test.describe("card contents", () => {
       }
     });
 
+  test("a data problem is a red ⚠ in the title row; tap it for the details", async ({ page }) => {
+    await open(page, WIDE);
+    const head = card(page, "markets").locator(".card-head");
+    const warn = head.getByRole("button", { name: /^更新失敗/ });
+    await expect(warn).toBeVisible();
+    await expect(head.getByText("⚠ 更新失敗")).toHaveCount(0); // no line of red text any more
+    await warn.click();
+    const tip = page.locator(".status-tip:popover-open");
+    await expect(tip).toContainText("更新失敗");
+    const [w, t] = [(await warn.boundingBox())!, (await tip.boundingBox())!];
+    expect(t.y).toBeGreaterThan(w.y); // under the icon
+    expect(t.x + t.width).toBeLessThanOrEqual(WIDE.width);
+    await page.mouse.click(5, 790);
+    await expect(tip).toHaveCount(0);
+  });
+
   test("hourly strips don't rubber-band", async ({ page }) => {
     await open(page, WIDE);
     // The strip only renders with a forecast; check the rule itself.

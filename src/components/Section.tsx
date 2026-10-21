@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useId, useRef } from "react";
 import { editLayout, movable as canMove, useLayoutEdit } from "../layoutEdit";
 import { PANEL_NAMES, cardName, isPanel, useCard, useSettings } from "../settings";
 import { mmss } from "../format";
@@ -46,6 +46,38 @@ function freshness(state: Polled<unknown>, maxAgeSec: number, now: number): { te
   if (ageSec == null) return { text: "⚠ 無即時資料", warn: true };
   if (state.stale || ageSec > maxAgeSec) return { text: `⚠ 資料延遲 ${age(ageSec)}`, warn: true };
   return { text: `資料 ${hms.format(state.dataTime!)}`, warn: false };
+}
+
+/**
+ * A data problem as a red ⚠ instead of a line of red text: hovering shows it (title), a tap opens it
+ * in a bubble under the icon (a popover: tapping anywhere else closes it).
+ */
+function Warning({ text, detail }: { text: string; detail?: string }) {
+  const id = useId();
+  const tip = useRef<HTMLDivElement>(null);
+  const label = detail ? `${text}：${detail}` : text;
+  return (
+    <>
+      <button
+        className="status-warn"
+        popoverTarget={id}
+        aria-label={label}
+        title={label}
+        onClick={(e) => {
+          // Under the icon, its right edge lined up with the icon's (the icon sits at the card's right).
+          const b = e.currentTarget.getBoundingClientRect();
+          tip.current?.style.setProperty("top", `${b.bottom + 6}px`);
+          tip.current?.style.setProperty("right", `${Math.max(8, innerWidth - b.right)}px`);
+        }}
+      >
+        ⚠
+      </button>
+      <div ref={tip} id={id} popover="auto" className="status-tip" role="status">
+        <strong>{text}</strong>
+        {detail && <div>{detail}</div>}
+      </div>
+    </>
+  );
 }
 
 /** Phone: the card before / after this one of its type (none at the ends). */
@@ -204,11 +236,8 @@ export function Section({
               {left <= 0 ? "更新中…" : `${mmss(left)} 後更新`}
             </span>
           )}
-          {fresh && (
-            <span className={fresh.warn ? "error" : ""} title={fresh.title}>
-              ・{fresh.text}
-            </span>
-          )}
+          {fresh && !fresh.warn && <span title={fresh.title}>・{fresh.text}</span>}
+          {fresh?.warn && <Warning text={fresh.text.replace(/^⚠\s*/, "")} detail={fresh.title} />}
         </span>
       </header>
       {children}
