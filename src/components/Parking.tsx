@@ -123,7 +123,6 @@ function sortLots(lots: ParkingLot[], sort: Sort): ParkingLot[] {
   return list;
 }
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export default function Parking({ onClose }: { onClose: () => void }) {
   const saved = useMemo(load, []);
@@ -340,14 +339,19 @@ export default function Parking({ onClose }: { onClose: () => void }) {
       )}
 
       <div className="pk-controls">
-        <div className="segmented" role="radiogroup" aria-label="搜尋半徑">
-          {RADII.map((r) => (
-            <button key={r} role="radio" aria-checked={radius === r} onClick={() => setRadius(r)}>
-              {r < 1000 ? `${r}m` : `${r / 1000}km`}
-            </button>
-          ))}
+        <div className="pk-control">
+          <span className="muted small">範圍</span>
+          <div className="segmented" role="radiogroup" aria-label="搜尋半徑">
+            {RADII.map((r) => (
+              <button key={r} role="radio" aria-checked={radius === r} onClick={() => setRadius(r)}>
+                {r < 1000 ? `${r}m` : `${r / 1000}km`}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="segmented" role="radiogroup" aria-label="排序">
+        <div className="pk-control">
+          <span className="muted small">排序</span>
+          <div className="segmented" role="radiogroup" aria-label="列表排序">
           {(
             [
               ["distance", "距離"],
@@ -359,6 +363,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
               {label}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -654,11 +659,8 @@ function ParkingMap({
       zIndexOffset: 1000,
     }).addTo(g);
     for (const p of lots) {
+      // Tapping a pin selects it (highlighted here, opened in the list); no popup bubble.
       const mk = L.marker([p.lat, p.lon], { icon: lotIcon(p, false), title: p.name, riseOnHover: true })
-        .bindPopup(
-          `<b>${esc(p.name)}</b><br><span class="pk-popup-src">來源：${esc(p.sources.map((s) => SOURCE[s].long).join("、"))}</span><br>${esc(fmtDistance(p.distance))}・${esc(fareText(p))}<br><a class="pk-popup-nav" href="${navUrl(p)}" target="_blank" rel="noopener noreferrer">Google 地圖導航 ›</a>`,
-          { closeButton: false, autoPanPadding: [20, 20] },
-        )
         .on("click", () => cb.current.onSelect(p.id))
         .addTo(g);
       markers.current.set(p.id, mk);
@@ -679,7 +681,8 @@ function ParkingMap({
       if (!p) continue;
       mk.setIcon(lotIcon(p, id === selected));
       mk.setZIndexOffset(id === selected ? 900 : 0);
-      if (id === selected && !mk.isPopupOpen()) mk.openPopup();
+      // Picked in the list: make sure its pin is on screen.
+      if (id === selected && map.current && !map.current.getBounds().contains(mk.getLatLng())) map.current.panTo(mk.getLatLng());
     }
   }, [selected, lots]);
 
