@@ -59,7 +59,7 @@ export function ScreenSaver({ minutes, preview, onPreviewEnd }: { minutes: numbe
       root.style.setProperty("--shift-x", `${steps[k % 5]}px`);
       root.style.setProperty("--shift-y", `${steps[(k * 2 + 1) % 5]}px`);
     };
-    shift();
+    // First step a minute in, not on switching it on.
     const t = setInterval(shift, 60_000);
     return () => {
       clearInterval(t);
