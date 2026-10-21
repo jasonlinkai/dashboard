@@ -10,6 +10,7 @@ import { Bus, Train } from "./components/Transit";
 import { Weather } from "./components/Weather";
 import { Todo } from "./components/Todo";
 import { Confirm } from "./components/Confirm";
+import { LayoutHelp } from "./components/LayoutHelp";
 import { type Scene, type SceneKind, WeatherFx } from "./components/WeatherFx";
 import { useNow, useWakeLock } from "./hooks";
 import { ScreenSaver } from "./components/ScreenSaver";
@@ -142,6 +143,7 @@ export default function App() {
     ? PANELS.filter(has).map((t) => (picked[t] && ids.includes(picked[t]) && kind(picked[t]) === t ? picked[t] : t))
     : ids.filter((id) => !hidden.includes(id));
   const [confirmReset, setConfirmReset] = useState(false);
+  const [showLayoutHelp, setShowLayoutHelp] = useState(false);
   const shown = preview ?? (shownIds.includes("weather") ? scene : null);
   const [editing, setEditing] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -381,8 +383,12 @@ export default function App() {
         <header className={`top ${editing ? "top-editing" : ""}`}>
           {editing && (
             <div className="layout-bar" role="toolbar" aria-label="調整版面">
-              <span className="layout-bar-hint">拖到另一板塊上交換、拖到空位移動，拖右下角調整大小</span>
-              {/* Left, by the hint: away from the finish button so it isn't tapped by mistake. */}
+              <button className="icon-btn" onClick={() => setShowLayoutHelp(true)} aria-label="排版說明" title="排版說明">
+                <svg viewBox="0 0 24 24" aria-hidden>
+                  <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z" />
+                </svg>
+              </button>
+              {/* Left, by the help: away from the finish button so it isn't tapped by mistake. */}
               <button className="layout-reset" onClick={() => setConfirmReset(true)}>
                 恢復預設
               </button>
@@ -513,6 +519,7 @@ export default function App() {
           </Suspense>
         )}
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
+        {showLayoutHelp && mode !== "phone" && <LayoutHelp mode={mode} onClose={() => setShowLayoutHelp(false)} />}
         {confirmReset && (
           <Confirm
             title="恢復預設版面？"

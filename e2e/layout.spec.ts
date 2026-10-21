@@ -88,6 +88,18 @@ test.describe("tablet / desktop board", () => {
     await expect(bar(page)).toBeHidden();
   });
 
+  test("the help explains the system for this orientation; Esc closes only it", async ({ page }) => {
+    await open(page, TALL);
+    await startEditing(page);
+    await bar(page).getByRole("button", { name: "排版說明" }).click();
+    const help = page.getByRole("dialog", { name: "排版怎麼運作" });
+    await expect(help).toBeVisible();
+    await expect(help.locator("strong")).toHaveText("直向");
+    await page.keyboard.press("Escape");
+    await expect(help).toHaveCount(0);
+    await expect(bar(page)).toBeVisible();
+  });
+
   test("hide, then show again in its old box", async ({ page }) => {
     await open(page, WIDE);
     await startEditing(page);

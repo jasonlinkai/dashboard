@@ -629,7 +629,6 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 }
 /* The header's gear width plus the gap difference (header 12px, bar 8px). */
 .layout-bar-gap { flex: none; width: 30px; margin-left: 4px; }
-.layout-bar-hint { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .layout-bar button:not(.icon-btn) {
   flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 14px;
 }
@@ -738,6 +737,14 @@ dialog.confirm { padding: 16px 18px; color: var(--text); }
 dialog.confirm::backdrop { background: rgb(0 0 0 / 0.55); }
 dialog.confirm h2 { margin: 0 0 8px; font-size: 18px; }
 dialog.confirm p { margin: 0 0 16px; line-height: 1.5; }
+/* Layout help: long, so its text scrolls inside the dialog. */
+dialog.layout-help { width: min(520px, 100%); max-height: min(80vh, 720px); }
+dialog.layout-help[open] { display: flex; flex-direction: column; }
+.layout-help-body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; margin-bottom: 12px; }
+.layout-help-body h3 { margin: 14px 0 4px; font-size: 15px; }
+.layout-help-body h3:first-child { margin-top: 0; }
+.layout-help-body p, .layout-help-body ul { margin: 0 0 6px; line-height: 1.55; font-size: 14px; }
+.layout-help-body ul { padding-left: 20px; list-style: disc; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .confirm-actions button { border: 1px solid var(--line); background: var(--card-2); color: var(--text); border-radius: 999px; padding: 7px 16px; font-size: 15px; }
 .confirm-actions .confirm-ok { background: var(--red); border-color: var(--red); color: #fff; }
