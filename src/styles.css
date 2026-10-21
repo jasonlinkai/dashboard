@@ -627,6 +627,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .layout-bar {
   position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 0 4px; min-width: 0;
 }
+/* The header's gear width plus the gap difference (header 12px, bar 8px). */
+.layout-bar-gap { flex: none; width: 30px; margin-left: 4px; }
 .layout-bar-hint { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .layout-bar button:not(.icon-btn) {
   flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 14px;

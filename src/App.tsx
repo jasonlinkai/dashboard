@@ -421,6 +421,8 @@ export default function App() {
               >
                 <LayoutIcon />
               </button>
+              {/* Where the header's gear is, so the finish button sits right over the layout button. */}
+              <span className="layout-bar-gap" aria-hidden />
               <span className="sr-only" aria-live="polite">
                 {announce}
               </span>
@@ -434,9 +436,6 @@ export default function App() {
           <button className="info-btn" onClick={() => setShowInfo(true)} aria-label="資料可靠度說明" title="資料可靠度說明">
             i
           </button>
-          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="設定" title="設定">
-            <GearIcon />
-          </button>
           {!phone && (
             <button
               ref={layoutBtnRef}
@@ -449,6 +448,10 @@ export default function App() {
               <LayoutIcon />
             </button>
           )}
+          {/* Settings stays at the far right. */}
+          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="設定" title="設定">
+            <GearIcon />
+          </button>
         </header>
         <LayoutEditContext.Provider value={edit}>
           {/* Hidden cards aren't rendered at all, so they don't fetch either. */}
