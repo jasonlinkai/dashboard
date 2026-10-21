@@ -1,4 +1,6 @@
 const EMAIL = "loveguitar668@gmail.com";
+/** Build date and commit (vite.config.ts). */
+declare const __APP_VERSION__: string;
 
 /** Settings → 關於: who runs the board and how to reach them. */
 export function About({ onShowSources }: { onShowSources: () => void }) {
@@ -16,6 +18,11 @@ export function About({ onShowSources }: { onShowSources: () => void }) {
           </button>
           。
         </p>
+      </div>
+      <div className="setting">
+        <div className="setting-label">版本</div>
+        <p className="about-text">{__APP_VERSION__}</p>
+        <p className="muted small">回報問題時附上這行，方便對照是哪一版。新版部署後，開著的看板會在幾分鐘內自動更新。</p>
       </div>
       <div className="setting">
         <div className="setting-label">聯絡</div>
