@@ -2,7 +2,7 @@ import { type Instrument, QUOTE_LAG_MIN, REFRESH_SEC, STALE_AFTER_SEC, links } f
 import { instrumentOf, useSettings } from "../settings";
 import type React from "react";
 import { clock, clockDay, fmt, moveClass, signed } from "../format";
-import { getJSON, moveTo, usePolling, useReorder } from "../hooks";
+import { getBatched, moveTo, usePolling, useReorder } from "../hooks";
 import type { Quote } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
@@ -80,7 +80,7 @@ export function Markets() {
   const items = settings.markets.map(instrumentOf);
   const tilesRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, markets: moveTo(settings.markets, from, to) }));
   const symbols = items.map((i) => i.symbol).join(",");
-  const state = usePolling(() => getJSON<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols)}`), REFRESH_SEC.quotes, [symbols]);
+  const state = usePolling(() => getBatched<Quote[]>("/api/quotes", "symbols", symbols.split(",")), REFRESH_SEC.quotes, [symbols]);
   const bySymbol = new Map(state.data?.map((q) => [q.symbol, q]));
   const n = items.length;
   return (

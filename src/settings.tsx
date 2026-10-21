@@ -2,6 +2,7 @@
 // Kept per device in the browser; can be exported / imported as a JSON file (see validate()).
 
 import { type ReactNode, createContext, useContext, useEffect, useState } from "react";
+import { toast } from "./toast";
 import type { Instrument } from "./config";
 import { type BusCity, MAX_BUS_CITIES, isBusCity } from "./bus-cities";
 import { DEFAULT_NEWS, MAX_NEWS_SOURCES, NEWS_BY_ID, TOPICS, type Topic } from "./news-sources";
@@ -53,6 +54,8 @@ export interface Settings {
   newsOrder: Topic[];
   /** Which card sits in which slot of the tablet / desktop layouts. */
   layout: Layout;
+  /** More cards of a type, each with its own content (the fields above are each type's first card). */
+  extras: Extra[];
 }
 
 /** The dashboard's cards. */
@@ -76,13 +79,27 @@ export interface Rect {
   w: number;
   h: number;
 }
-export type Boxes = Record<Panel, Rect>;
+/** A card: a type's first one (id = the type, its content in the top-level fields) or an extra one. */
+export type CardId = string;
+export type Boxes = Record<CardId, Rect>;
 export const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 /** On the board, big enough, and clear of the other (shown) cards. */
-export const fits = (boxes: Boxes, p: Panel, r: Rect, hidden: readonly Panel[] = []) =>
+export const fits = (boxes: Boxes, p: CardId, r: Rect, hidden: readonly CardId[] = []) =>
   [r.x, r.y, r.w, r.h].every(Number.isInteger) &&
   r.x >= 0 && r.y >= 0 && r.w >= MIN_W && r.h >= MIN_H && r.x + r.w <= GRID && r.y + r.h <= GRID &&
-  PANELS.every((q) => q === p || hidden.includes(q) || !overlaps(boxes[q], r));
+  Object.keys(boxes).every((q) => q === p || hidden.includes(q) || !overlaps(boxes[q], r));
+
+/**
+ * Where a card can go: its own box if that is free, else the first free spot (from the top left)
+ * of each size tried in turn. Null: no room.
+ */
+export function findSpot(boxes: Boxes, p: CardId, hidden: readonly CardId[], sizes: { w: number; h: number }[]): Rect | null {
+  if (boxes[p] && fits(boxes, p, boxes[p], hidden)) return boxes[p];
+  for (const { w, h } of sizes)
+    for (let y = 0; y + h <= GRID; y++)
+      for (let x = 0; x + w <= GRID; x++) if (fits(boxes, p, { x, y, w, h }, hidden)) return { x, y, w, h };
+  return null;
+}
 
 /**
  * The fixed slots of the first version (a card per slot), still read from older files:
@@ -114,16 +131,51 @@ export interface Layout {
   tabs: PhoneTab[];
   /** Phone: bus and train in the transit tab, top (or left) first. */
   transit: Panel[];
-  /** Cards taken off the dashboard (everywhere). Their boxes are kept for when they come back. */
-  hidden: Panel[];
+  /** Cards taken off each layout (a phone too). Their boxes are kept for when they come back. */
+  hidden: Record<Screen, CardId[]>;
+}
+
+/** The settings fields each card type shows. An extra card has its own copy of them. */
+export const FIELDS = {
+  markets: ["markets"],
+  weather: ["weather"],
+  bus: ["bus"],
+  train: ["trains"],
+  news: ["news", "newsOrder"],
+} as const satisfies Record<Panel, readonly (keyof Settings)[]>;
+export type Extra = { id: CardId; type: Panel } & Partial<Pick<Settings, "weather" | "markets" | "bus" | "trains" | "news" | "newsOrder">>;
+/** Cards of one type, the first one included. */
+export const MAX_PER_TYPE = 3;
+export const cardIds = (s: Settings): CardId[] => [...PANELS, ...s.extras.map((e) => e.id)];
+export const typeOf = (s: Settings, id: CardId): Panel => (isPanel(id) ? id : s.extras.find((e) => e.id === id)!.type);
+
+/**
+ * All cards of a type share one request, and the server caps its size (and TDX allows a few
+ * calls a minute), so the limits count every card of the type together. Null when within them.
+ */
+export function overLimit(s: Settings): string | null {
+  const caps = [
+    ["weather", LIMITS.weather, "天氣地點"],
+    ["markets", LIMITS.markets, "行情項目"],
+    ["bus", LIMITS.bus, "公車站牌"],
+    ["trains", LIMITS.trains, "火車路線"],
+  ] as const;
+  for (const [f, max, label] of caps) {
+    const total = s[f].length + s.extras.reduce((n, e) => n + (e[f]?.length ?? 0), 0);
+    if (total > max) return `所有板塊的${label}合計最多 ${max} 個（目前 ${total} 個）`;
+  }
+  return null;
 }
 export type LayoutMode = "wide" | "tall";
+/** The three layouts: desktop and landscape tablet, portrait tablet, phone. */
+export type Screen = LayoutMode | "phone";
+export const SCREENS: Screen[] = ["wide", "tall", "phone"];
 export const DEFAULT_LAYOUT: Layout = {
   wide: fromSlots("wide", PANELS),
   tall: fromSlots("tall", PANELS),
   tabs: [...PHONE_TABS],
   transit: [...TRANSIT],
-  hidden: [],
+  hidden: { wide: [], tall: [], phone: [] },
 };
 
 // ---------- Catalogs and limits ----------
@@ -198,6 +250,7 @@ export const DEFAULT_SETTINGS: Settings = {
   news: DEFAULT_NEWS,
   newsOrder: TOPICS.map(([id]) => id),
   layout: DEFAULT_LAYOUT,
+  extras: [],
 };
 
 // ---------- Derived helpers ----------
@@ -370,33 +423,66 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     for (const [id] of TOPICS) if (!newsOrder.includes(id)) newsOrder.push(id);
   }
 
-  // Older files have no layout: the default slots.
-  const layout: Layout = { ...DEFAULT_LAYOUT, hidden: [] };
+  // Extra cards: each one's content is checked like the first card's (the rest of the file as is).
+  const extras: Extra[] = [];
+  const rawExtras = raw.extras ?? [];
+  if (!Array.isArray(rawExtras)) err("extras 必須是陣列");
+  else if (!errors.length)
+    rawExtras.forEach((e, i) => {
+      if (!isObj(e) || typeof e.id !== "string" || !/^[a-z]+-[a-z0-9]{1,12}$/.test(e.id) || !isPanel(e.type))
+        return err(`extras[${i}]：需要 id（例如 weather-2）與 type（${PANELS.join("、")}）`);
+      if (extras.some((x) => x.id === e.id)) return err(`extras[${i}]：id「${e.id}」重複`);
+      if (extras.filter((x) => x.type === e.type).length >= MAX_PER_TYPE - 1) return err(`extras[${i}]：每種板塊最多 ${MAX_PER_TYPE} 個`);
+      const fields: readonly (keyof Settings)[] = FIELDS[e.type];
+      const own = Object.fromEntries(fields.filter((f) => e[f] !== undefined).map((f) => [f, e[f]]));
+      const sub = validate({ ...raw, extras: [], layout: undefined, ...own });
+      if (!sub.settings) return sub.errors.forEach((m) => err(`extras[${i}]（${e.id}）：${m}`));
+      extras.push({ id: e.id, type: e.type, ...Object.fromEntries(fields.map((f) => [f, sub.settings![f]])) });
+    });
+  const over = errors.length ? null : overLimit({ ...DEFAULT_SETTINGS, weather, markets, bus, trains, extras });
+  if (over) err(over);
+
+  // Older files have no layout: the default boxes. Every card needs a box in both layouts.
+  const ids = [...PANELS, ...extras.map((e) => e.id)];
+  const layout: Layout = {
+    ...DEFAULT_LAYOUT,
+    wide: { ...DEFAULT_LAYOUT.wide },
+    tall: { ...DEFAULT_LAYOUT.tall },
+    hidden: { wide: [], tall: [], phone: [] },
+  };
+  const given: Record<LayoutMode, CardId[]> = { wide: [], tall: [] };
   if (raw.layout !== undefined && !isObj(raw.layout)) err("layout 必須是物件");
   else if (isObj(raw.layout)) {
-    const hidden = raw.layout.hidden ?? [];
-    if (!Array.isArray(hidden) || !hidden.every((p) => isPanel(p)) || new Set(hidden).size !== hidden.length || hidden.length >= PANELS.length)
-      err(`layout.hidden 要是 ${PANELS.join("、")} 裡不重複的幾個（至少留一個不隱藏）`);
-    else layout.hidden = [...(hidden as Panel[])];
+    // One list (before each layout had its own) applies to all three.
+    const h = raw.layout.hidden ?? [];
+    for (const sc of SCREENS) {
+      const list = Array.isArray(h) ? h : isObj(h) ? (h[sc] ?? []) : null;
+      if (!Array.isArray(list) || !list.every((p) => ids.includes(p)) || new Set(list).size !== list.length || list.length >= ids.length)
+        err(`layout.hidden.${sc} 要是板塊 id（${ids.join("、")}）裡不重複的幾個（至少留一個不隱藏）`);
+      else layout.hidden[sc] = [...(list as CardId[])];
+    }
     for (const m of ["wide", "tall"] as const) {
       const v = raw.layout[m];
       if (v === undefined) continue;
       // The first version stored a card per fixed slot.
       if (Array.isArray(v) && v.length === PANELS.length && PANELS.every((p) => v.includes(p))) {
         layout[m] = fromSlots(m, v as Panel[]);
+        given[m] = [...PANELS];
         continue;
       }
-      // A card added after the file was saved has no box: its default one if that is free, else it starts hidden.
-      const given = isObj(v) ? PANELS.filter((p) => v[p] !== undefined) : [];
-      const boxes = { ...DEFAULT_LAYOUT[m], ...(isObj(v) ? Object.fromEntries(given.map((p) => [p, v[p]])) : {}) } as Boxes;
-      const others = PANELS.filter((p) => !given.includes(p));
-      const ok = isObj(v) && given.every((p) => isObj(boxes[p]) && fits(boxes, p, boxes[p], [...layout.hidden, ...others]));
+      given[m] = isObj(v) ? ids.filter((p) => v[p] !== undefined) : [];
+      const boxes = Object.fromEntries(given[m].map((p) => [p, (v as Record<string, unknown>)[p]])) as Boxes;
+      // A hidden card's box only has to be on the board: other cards may have moved over it.
+      const ok =
+        isObj(v) &&
+        given[m].every(
+          (p) => isObj(boxes[p]) && (layout.hidden[m].includes(p) ? fits({ [p]: boxes[p] }, p, boxes[p]) : fits(boxes, p, boxes[p], layout.hidden[m])),
+        );
       if (!ok) {
-        err(`layout.${m} 要替每個板塊（${PANELS.join("、")}）給一個 {x, y, w, h}（0～${GRID} 的整數格，寬至少 ${MIN_W}、高至少 ${MIN_H}，不能重疊）`);
+        err(`layout.${m} 要替每個板塊給一個 {x, y, w, h}（0～${GRID} 的整數格，寬至少 ${MIN_W}、高至少 ${MIN_H}，不能重疊）`);
         continue;
       }
-      for (const p of others) if (!fits(boxes, p, boxes[p], layout.hidden) && !layout.hidden.includes(p)) layout.hidden.push(p);
-      layout[m] = Object.fromEntries(PANELS.map((p) => [p, { x: boxes[p].x, y: boxes[p].y, w: boxes[p].w, h: boxes[p].h }])) as Boxes;
+      layout[m] = Object.fromEntries(given[m].map((p) => [p, { x: boxes[p].x, y: boxes[p].y, w: boxes[p].w, h: boxes[p].h }]));
     }
     const lists = [
       ["tabs", PHONE_TABS, "手機底部分頁的順序"],
@@ -410,9 +496,26 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
       else (layout[key] as string[]) = list as string[];
     }
   }
+  // A card without a box (an extra, or a type added after the file was saved): its default box or
+  // a free spot; with no room it starts hidden (its box then only waits for the card to come back).
+  for (const m of ["wide", "tall"] as const) {
+    const boxes: Boxes = Object.fromEntries(given[m].map((p) => [p, layout[m][p]]));
+    for (const p of ids.filter((q) => !given[m].includes(q))) {
+      if (isPanel(p) && !given[m].length) boxes[p] = DEFAULT_LAYOUT[m][p];
+      else {
+        const spot = findSpot({ ...boxes, ...(isPanel(p) ? { [p]: DEFAULT_LAYOUT[m][p] } : {}) }, p, layout.hidden[m], [{ w: MIN_W, h: MIN_H }]);
+        if (spot) boxes[p] = spot;
+        else {
+          boxes[p] = { x: 0, y: 0, w: MIN_W, h: MIN_H };
+          if (!layout.hidden[m].includes(p)) layout.hidden[m].push(p);
+        }
+      }
+    }
+    layout[m] = boxes;
+  }
 
   if (errors.length) return { errors };
-  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, layout }, errors };
+  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, layout, extras }, errors };
 }
 
 // ---------- Storage and React context ----------
@@ -444,7 +547,48 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       else localStorage.setItem(KEY, JSON.stringify(settings));
     } catch {}
   }, [settings]);
-  return <Ctx.Provider value={{ settings, setSettings }}>{children}</Ctx.Provider>;
+  // Every change goes through the totals check (an editor only sees its own card's lists).
+  const set = (s: Settings) => {
+    const over = overLimit(s);
+    if (over) toast(over, "error");
+    else setSettings(s);
+  };
+  return <Ctx.Provider value={{ settings, setSettings: set }}>{children}</Ctx.Provider>;
 }
 
 export const useSettings = () => useContext(Ctx);
+
+const CardCtx = createContext<{ id: CardId; n: number } | null>(null);
+/** The card being rendered: its id, and its number among the cards of its type (1 = the first). */
+export const useCard = () => useContext(CardCtx);
+
+/**
+ * Renders one card. Inside, an extra card's own content stands in for its type's top-level fields
+ * (settings.weather and so on), and writes to those fields go back to the extra card, so the
+ * card components and the content editor work on any card unchanged.
+ */
+export function CardSettings({ id, children }: { id: CardId; children: ReactNode }) {
+  const root = useContext(Ctx);
+  const s = root.settings;
+  const extra = s.extras.find((e) => e.id === id);
+  let value = root;
+  let n = 1;
+  if (extra) {
+    n = s.extras.filter((e) => e.type === extra.type).indexOf(extra) + 2;
+    const fields: readonly (keyof Settings)[] = FIELDS[extra.type];
+    const view = { ...s, ...Object.fromEntries(fields.map((f) => [f, (extra as Record<string, unknown>)[f] ?? s[f]])) } as Settings;
+    value = {
+      settings: view,
+      setSettings: (v) => {
+        const own = Object.fromEntries(fields.map((f) => [f, v[f]]));
+        const back = Object.fromEntries(fields.map((f) => [f, s[f]]));
+        root.setSettings({ ...v, ...back, extras: v.extras.map((e) => (e.id === id ? { ...e, ...own } : e)) });
+      },
+    };
+  }
+  return (
+    <Ctx.Provider value={value}>
+      <CardCtx.Provider value={{ id, n }}>{children}</CardCtx.Provider>
+    </Ctx.Provider>
+  );
+}

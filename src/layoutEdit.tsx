@@ -2,8 +2,8 @@
 // (Pointer Events) onto another card, into free cells or by its corner to resize it, and the FLIP
 // animation that plays when cards change places.
 
-import { type RefObject, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type Boxes, GRID, type LayoutMode, MIN_H, MIN_W, PANELS, type Panel, type Rect, TRANSIT, fits } from "./settings";
+import { type CSSProperties, type RefObject, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type Boxes, type CardId, GRID, type LayoutMode, MIN_H, MIN_W, PANELS, type Panel, type Rect, TRANSIT, fits } from "./settings";
 
 export type Mode = LayoutMode | "phone";
 
@@ -37,22 +37,33 @@ export interface LayoutEdit {
   editing: boolean;
   mode: Mode;
   /** Where the card is, in words (for its move button's label). */
-  where: (p: Panel) => string;
-  /** Take the card off the dashboard (it comes back from the edit bar). */
-  hide: (p: Panel) => void;
+  where: (p: CardId) => string;
+  /** Take the card off the dashboard (it comes back from the edit bar); an extra card is removed. */
+  hide: (p: CardId) => void;
+  /** The card's place on the board: --wide / --tall grid areas (styles.css picks the layout's). */
+  style: (p: CardId) => CSSProperties;
   /** Arrow key: move a cell (or swap with the card that way); Shift: resize it; Alt: move its right / bottom edge with the neighbours. */
-  move: (p: Panel, key: string, how: "move" | "resize" | "line") => void;
+  move: (p: CardId, key: string, how: "move" | "resize" | "line") => void;
 }
-export const LayoutEditContext = createContext<LayoutEdit>({ editing: false, mode: "phone", where: () => "", hide: () => {}, move: () => {} });
+export const LayoutEditContext = createContext<LayoutEdit>({
+  editing: false,
+  mode: "phone",
+  where: () => "",
+  hide: () => {},
+  style: () => ({}),
+  move: () => {},
+});
 
 /** CSS grid-area for a box. */
 export const area = (r: Rect) => `${r.y + 1} / ${r.x + 1} / span ${r.h} / span ${r.w}`;
 export const useLayoutEdit = () => useContext(LayoutEditContext);
 
-const panelOf = (el: Element) => PANELS.find((p) => el.classList.contains(p))!;
+/** A card element's id (Section sets data-card) and type (its class). */
+const panelOf = (el: HTMLElement): CardId => el.dataset.card!;
+const kindOf = (el: Element) => PANELS.find((p) => el.classList.contains(p))!;
 const cardsIn = (grid: HTMLElement) =>
   [...grid.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.classList.contains("card"));
-export const cardOf = (grid: HTMLElement, p: Panel) => cardsIn(grid).find((c) => c.classList.contains(p));
+export const cardOf = (grid: HTMLElement, p: CardId) => cardsIn(grid).find((c) => c.dataset.card === p);
 
 /** Cards that can be picked up: all of them on a tablet or desktop; on a phone, bus and train (the transit tab). */
 export const movable = (mode: Mode, p: Panel) => mode !== "phone" || (TRANSIT as readonly Panel[]).includes(p);
@@ -152,32 +163,22 @@ const MIN_PX: Record<Panel, [w: number, h: number]> = {
   train: [280, 210],
   news: [260, 230],
 };
-/** That minimum in cells on this screen. */
+/** A card type's minimum in cells on this screen. */
 export function minCells(grid: HTMLElement, p: Panel) {
   const { stepX, stepY } = cellAt(grid, 0, 0);
   const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
   const [w, h] = MIN_PX[p];
   return { w: Math.ceil((w + gap) / stepX), h: Math.ceil((h + gap) / stepY) };
 }
-/** Every shown card on the board, clear of the others and at least its minimum size on this screen. */
-export function allFit(grid: HTMLElement, boxes: Boxes, hidden: readonly Panel[]) {
-  return PANELS.every((p) => {
-    const m = minCells(grid, p);
+/** Every shown card on the board, clear of the others and at least its type's minimum size on this screen. */
+export function allFit(grid: HTMLElement, boxes: Boxes, hidden: readonly CardId[], typeOf: (id: CardId) => Panel) {
+  return Object.keys(boxes).every((p) => {
+    const m = minCells(grid, typeOf(p));
     return hidden.includes(p) || (fits(boxes, p, boxes[p], hidden) && boxes[p].w >= m.w && boxes[p].h >= m.h);
   });
 }
 
-/**
- * Where a card coming back can go: its old box if that is free, else the first free spot (from
- * the top left) of each size tried in turn. Null: no room.
- */
-export function findSpot(boxes: Boxes, p: Panel, hidden: readonly Panel[], sizes: { w: number; h: number }[]): Rect | null {
-  if (fits(boxes, p, boxes[p], hidden)) return boxes[p];
-  for (const { w, h } of sizes)
-    for (let y = 0; y + h <= GRID; y++)
-      for (let x = 0; x + w <= GRID; x++) if (fits(boxes, p, { x, y, w, h }, hidden)) return { x, y, w, h };
-  return null;
-}
+export { findSpot } from "./settings";
 // shortcut: the layout not on screen can't be measured, so a card coming back there only gets the
 // board-wide minimum (it may be too small to read until that layout is adjusted); measure per size if it matters.
 export const BOARD_MIN = { w: MIN_W, h: MIN_H };
@@ -187,15 +188,15 @@ export const BOARD_MIN = { w: MIN_W, h: MIN_H };
  * and the cards starting at it, as far as they touch along it, all follow, so neighbours resize
  * together. The caller checks the result with allFit.
  */
-export function moveLine(boxes: Boxes, p: Panel, axis: "x" | "y", to: number, hidden: readonly Panel[]): Boxes {
+export function moveLine(boxes: Boxes, p: CardId, axis: "x" | "y", to: number, hidden: readonly CardId[]): Boxes {
   const [pos, size, cross, crossSize] = axis === "x" ? (["x", "w", "y", "h"] as const) : (["y", "h", "x", "w"] as const);
   const line = boxes[p][pos] + boxes[p][size];
-  const before = new Set<Panel>([p]);
-  const after = new Set<Panel>();
+  const before = new Set<CardId>([p]);
+  const after = new Set<CardId>();
   const touches = (a: Rect, b: Rect) => a[cross] < b[cross] + b[crossSize] && b[cross] < a[cross] + a[crossSize];
   for (let grew = true; grew; ) {
     grew = false;
-    for (const q of PANELS) {
+    for (const q of Object.keys(boxes)) {
       if (before.has(q) || after.has(q) || hidden.includes(q)) continue;
       const b = boxes[q];
       const side = b[pos] + b[size] === line ? before : b[pos] === line ? after : null;
@@ -222,12 +223,13 @@ export function usePanelDrag(
   mode: Mode,
   /** The boxes of the layout showing (null on a phone: swapping only). */
   boxes: Boxes | null,
-  hidden: readonly Panel[],
-  onSwap: (from: Panel, to: Panel, first: Rects) => void,
+  hidden: readonly CardId[],
+  typeOf: (id: CardId) => Panel,
+  onSwap: (from: CardId, to: CardId, first: Rects) => void,
   onBoxes: (next: Boxes, first: Rects) => void,
 ) {
-  const latest = useRef({ boxes, hidden, onSwap, onBoxes });
-  latest.current = { boxes, hidden, onSwap, onBoxes };
+  const latest = useRef({ boxes, hidden, typeOf, onSwap, onBoxes });
+  latest.current = { boxes, hidden, typeOf, onSwap, onBoxes };
 
   useEffect(() => {
     const grid = gridRef.current;
@@ -271,7 +273,7 @@ export function usePanelDrag(
     const down = (e: PointerEvent) => {
       if (drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
       const el = (e.target as Element).closest(".card");
-      if (!(el instanceof HTMLElement) || el.parentElement !== grid || !movable(mode, panelOf(el))) return;
+      if (!(el instanceof HTMLElement) || el.parentElement !== grid || !movable(mode, kindOf(el))) return;
       const handle = latest.current.boxes && (e.target as Element).closest<HTMLElement>("[data-resize]");
       const resize = handle ? (handle.dataset.resize as "corner" | "x" | "y") : null;
       drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, lifted: false, target: null, resize, spot: null };
@@ -291,7 +293,7 @@ export function usePanelDrag(
         navigator.vibrate?.(10);
       }
       const { el } = drag;
-      const { boxes, hidden } = latest.current;
+      const { boxes, hidden, typeOf } = latest.current;
       const p = panelOf(el);
       if (drag.resize && boxes) {
         // The cards take their new sizes as it goes; a step that doesn't fit is skipped.
@@ -301,7 +303,7 @@ export function usePanelDrag(
           drag.resize === "corner"
             ? { ...boxes, [p]: { ...r, w: clamp(c.x - r.x + 1, 1, GRID - r.x), h: clamp(c.y - r.y + 1, 1, GRID - r.y) } }
             : moveLine(boxes, p, drag.resize, Math.round((drag.resize === "x" ? e.clientX - grid.getBoundingClientRect().left : e.clientY - grid.getBoundingClientRect().top) / (drag.resize === "x" ? c.stepX : c.stepY)), hidden);
-        if (allFit(grid, next, hidden)) {
+        if (allFit(grid, next, hidden, typeOf)) {
           drag.spot = next;
           show(next);
         }
@@ -310,7 +312,7 @@ export function usePanelDrag(
       drag.el.style.transform = `translate(${dx}px, ${dy}px)`;
       const target =
         cardsIn(grid).find((c) => {
-          if (c === el || !movable(mode, panelOf(c))) return false;
+          if (c === el || !movable(mode, kindOf(c))) return false;
           const b = c.getBoundingClientRect();
           return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
         }) ?? null;

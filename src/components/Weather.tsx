@@ -4,7 +4,7 @@ import type React from "react";
 import { REFRESH_SEC, STALE_AFTER_SEC, STATION_MAX_AGE_MIN, links } from "../config";
 import { type WeatherPlace, placeKey, useSettings } from "../settings";
 import { clock } from "../format";
-import { type Loaded, getJSON, moveTo, usePolling, useReorder } from "../hooks";
+import { type Loaded, getBatched, getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Observation, ObservationResponse } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
@@ -245,7 +245,7 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   const towns = [...new Set(places.map(placeKey))].join(",");
   const forecasts = usePolling(() => loadForecasts(places), REFRESH_SEC.weather, [key]);
   // Station data is optional: without a CWA key (or if it fails) the cards fall back to the model.
-  const obs = usePolling(() => getJSON<ObservationResponse>(`/api/observations?towns=${encodeURIComponent(towns)}`), REFRESH_SEC.weather, [
+  const obs = usePolling(() => getBatched<ObservationResponse>("/api/observations", "towns", towns.split(",")), REFRESH_SEC.weather, [
     towns,
   ]);
   const stations = obs.data?.observations ?? [];

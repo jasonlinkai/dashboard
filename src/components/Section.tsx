@@ -1,6 +1,6 @@
 import { type ReactNode, useRef } from "react";
 import { editLayout, movable as canMove, useLayoutEdit } from "../layoutEdit";
-import { PANEL_NAMES, isPanel } from "../settings";
+import { PANEL_NAMES, isPanel, useCard } from "../settings";
 import { mmss } from "../format";
 import { type Polled, useNow } from "../hooks";
 import { type ContentSection, openSettings } from "../openSettings";
@@ -80,6 +80,12 @@ export function Section({
   const layout = useLayoutEdit();
   const panel = isPanel(className) ? className : null;
   const movable = layout.editing && panel && canMove(layout.mode, panel) && panel;
+  // Which card this is: an extra one (天氣 2) has its own id and a number after its title.
+  const card = useCard();
+  const id = card?.id || className;
+  const extra = !!card && card.n > 1;
+  const heading = extra ? `${title} ${card.n}` : title;
+  const name = panel ? (extra ? `${PANEL_NAMES[panel]} ${card.n}` : PANEL_NAMES[panel]) : title;
   // Holding the title for half a second starts rearranging the cards.
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const release = () => {
@@ -88,22 +94,26 @@ export function Section({
   };
 
   return (
-    <section className={`card ${className} ${fresh?.warn ? "card-warn" : ""} ${movable ? "card-movable" : ""}`}>
+    <section
+      className={`card ${className} ${fresh?.warn ? "card-warn" : ""} ${movable ? "card-movable" : ""}`}
+      data-card={id}
+      style={layout.style(id)}
+    >
       <header className="card-head">
         {movable && (
           <button
             className="card-move"
             aria-label={
               layout.mode === "phone"
-                ? `移動${PANEL_NAMES[panel]}，目前${layout.where(panel)}。按方向鍵和另一張交換位置`
-                : `移動${PANEL_NAMES[panel]}，目前${layout.where(panel)}。方向鍵移動一格（擋住時和那一邊的板塊交換），Shift 加方向鍵調整大小，Alt 加方向鍵移動右邊或下邊並帶動相鄰板塊`
+                ? `移動${name}，目前${layout.where(id)}。按方向鍵和另一張交換位置`
+                : `移動${name}，目前${layout.where(id)}。方向鍵移動一格（擋住時和那一邊的板塊交換），Shift 加方向鍵調整大小，Alt 加方向鍵移動右邊或下邊並帶動相鄰板塊`
             }
             aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
             title="拖動或用方向鍵移動"
             onKeyDown={(e) => {
               if (!e.key.startsWith("Arrow")) return;
               e.preventDefault();
-              layout.move(panel, e.key, e.altKey ? "line" : e.shiftKey ? "resize" : "move");
+              layout.move(id, e.key, e.altKey ? "line" : e.shiftKey ? "resize" : "move");
             }}
           >
             <svg viewBox="0 0 12 16" aria-hidden>
@@ -126,17 +136,27 @@ export function Section({
           onPointerLeave={release}
           onContextMenu={(e) => layout.editing || e.preventDefault()}
         >
-          {title}
+          {heading}
         </h2>
         {edit && (
-          <button className="card-gear" onClick={() => openSettings(edit)} aria-label={`${title}設定`} title={`${title}設定`}>
+          <button
+            className="card-gear"
+            onClick={() => openSettings(edit, extra ? id : undefined)}
+            aria-label={`${heading}設定`}
+            title={`${heading}設定`}
+          >
             <GearIcon />
           </button>
         )}
         {actions}
         {layout.editing && panel && (
-          <button className="card-hide" onClick={() => layout.hide(panel)} aria-label={`隱藏${PANEL_NAMES[panel]}`} title="隱藏這個板塊">
-            隱藏
+          <button
+            className="card-hide"
+            onClick={() => layout.hide(id)}
+            aria-label={`${extra ? "移除" : "隱藏"}${name}`}
+            title={extra ? "移除這個板塊（連同它的設定）" : "隱藏這個板塊"}
+          >
+            {extra ? "移除" : "隱藏"}
           </button>
         )}
         <span className="muted status">

@@ -14,7 +14,30 @@ import { ScreenSaver } from "./components/ScreenSaver";
 import { useFx, useSaver, useTheme } from "./theme";
 import { type ContentSection, onOpenSettings } from "./openSettings";
 import { toast } from "./toast";
-import { type Boxes, DEFAULT_LAYOUT, GRID, PANEL_NAMES, PANELS, PHONE_TABS, type Panel, type PhoneTab, type Rect, TRANSIT, useSettings } from "./settings";
+import {
+  type Boxes,
+  type CardId,
+  CardSettings,
+  DEFAULT_LAYOUT,
+  GRID,
+  type LayoutMode,
+  SCREENS,
+  MAX_PER_TYPE,
+  PANEL_NAMES,
+  PANELS,
+  PHONE_TABS,
+  type Panel,
+  type PhoneTab,
+  type Rect,
+  type Settings as SettingsData,
+  TRANSIT,
+  cardIds,
+  findSpot,
+  isPanel,
+  typeOf,
+  useSettings,
+  validate,
+} from "./settings";
 import {
   BOARD_MIN,
   LayoutEditContext,
@@ -22,7 +45,6 @@ import {
   allFit,
   area,
   cardOf,
-  findSpot,
   minCells,
   moveLine,
   neighbor,
@@ -49,6 +71,8 @@ const TABS: Record<Tab, [label: string, icon: string]> = {
   news: ["新聞", "📰"],
 };
 type Tab = PhoneTab;
+/** Each card type's page in the content settings. */
+const SECTION_OF: Record<Panel, ContentSection> = { markets: "markets", weather: "weather", bus: "bus", train: "trains", news: "news" };
 
 function loadTab(): Tab {
   try {
@@ -67,7 +91,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(() => location.hash === "#settings");
   // Opened from a card's gear: straight to that card's page of the settings.
   const [settingsSection, setSettingsSection] = useState<ContentSection | undefined>();
-  useEffect(() => onOpenSettings((s) => (setSettingsSection(s), setShowSettings(true))), []);
+  // An extra card's gear edits that card's content (the settings show it in place of the first card's).
+  const [settingsCard, setSettingsCard] = useState<CardId | undefined>();
+  useEffect(() => onOpenSettings((s, card) => (setSettingsSection(s), setSettingsCard(card), setShowSettings(true))), []);
   const [showParking, setShowParking] = useState(() => location.hash === "#parking");
   const [theme, setTheme] = useTheme();
   const [fx, setFx] = useFx();
@@ -80,18 +106,28 @@ export default function App() {
   const preview: Scene | null = params.get("fx") ? { kind: params.get("fx") as SceneKind, day: !params.has("night") } : null;
   const { settings, setSettings } = useSettings();
   const { layout } = settings;
-  const { hidden } = layout;
-  const shown = preview ?? (hidden.includes("weather") ? null : scene);
   const mode = useLayoutMode();
+  // Each layout (desktop, portrait tablet, phone) shows its own choice of cards.
+  const hidden = layout.hidden[mode];
+  const kind = (id: CardId) => typeOf(settings, id);
+  /** 天氣, 天氣 2 … */
+  const name = (id: CardId) => {
+    const n = isPanel(id) ? 1 : settings.extras.filter((e) => e.type === kind(id)).findIndex((e) => e.id === id) + 2;
+    return n > 1 ? `${PANEL_NAMES[kind(id)]} ${n}` : PANEL_NAMES[kind(id)];
+  };
+  const ids = cardIds(settings);
+  const shownIds = ids.filter((id) => !hidden.includes(id));
+  const shown = preview ?? (hidden.includes("weather") ? null : scene);
   const [editing, setEditing] = useState(false);
   const [announce, setAnnounce] = useState("");
   const gridRef = useRef<HTMLElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const layoutBtnRef = useRef<HTMLButtonElement>(null);
-  // Phone tabs left once hidden cards are gone (transit stays while bus or train is shown).
-  const shownTabs = layout.tabs.filter((t) => (t === "transit" ? !TRANSIT.every((q) => hidden.includes(q)) : !hidden.includes(t)));
+  // Phone tabs with something left to show (transit while any bus or train card is shown).
+  const shownTypes = new Set(shownIds.map(kind));
+  const shownTabs = layout.tabs.filter((t) => (t === "transit" ? TRANSIT.some((q) => shownTypes.has(q)) : shownTypes.has(t)));
   const shownTab = shownTabs.includes(tab) ? tab : shownTabs[0];
-  const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, layout.transit]));
+  const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, layout.transit, shownIds]));
   const tabFlip = useFlip(navRef, layout.tabs.join(), true);
   useEffect(() => onEditLayout(() => setEditing(true)), []);
   const boxes = mode === "phone" ? null : layout[mode];
@@ -100,28 +136,34 @@ export default function App() {
     setSettings({ ...settings, layout: { ...layout, ...next } });
   };
   const describe = (r: Rect) => `從第 ${r.y + 1} 列第 ${r.x + 1} 欄起，寬 ${r.w} 格、高 ${r.h} 格（整面 ${GRID}×${GRID} 格）`;
-  const where = (p: Panel) => (boxes ? describe(boxes[p]) : `第 ${layout.transit.indexOf(p) + 1} 個（共 2 個）`);
+  const where = (p: CardId) => (boxes ? describe(boxes[p]) : `在第 ${layout.transit.indexOf(kind(p)) + 1} 組（共 2 組）`);
+  const changes = (next: Boxes) =>
+    Object.keys(next)
+      .filter((p) => next[p] !== boxes?.[p])
+      .map((p) => `${name(p)}現在${describe(next[p])}`)
+      .join("；");
   /** Apply a new board if every card still fits at its minimum size on this screen. */
   const setBoxes = (next: Boxes, first?: Rects) => {
-    if (!boxes || !gridRef.current || !allFit(gridRef.current, next, hidden)) return false;
+    if (!boxes || !gridRef.current || !allFit(gridRef.current, next, hidden, kind)) return false;
     setLayout({ [mode]: next }, first);
     return true;
   };
-  /** Two cards trade places (and sizes); on a phone, bus and train trade order. */
-  const swap = (a: Panel, b: Panel, first?: Rects) => {
+  /** Two cards trade places (and sizes); on a phone, the bus and train groups trade order. */
+  const swap = (a: CardId, b: CardId, first?: Rects) => {
     if (a === b) return;
     if (boxes) {
       if (!setBoxes({ ...boxes, [a]: boxes[b], [b]: boxes[a] }, first)) {
         flip.play(first ?? new Map());
-        return toast(`${PANEL_NAMES[a]}和${PANEL_NAMES[b]}的大小差太多，交換後會有一個太小，請先調整大小`, "error");
+        return toast(`${name(a)}和${name(b)}的大小差太多，交換後會有一個太小，請先調整大小`, "error");
       }
-    } else if (layout.transit.includes(a) && layout.transit.includes(b)) setLayout({ transit: [...layout.transit].reverse() }, first);
+    } else if (kind(a) !== kind(b) && [kind(a), kind(b)].every((t) => (TRANSIT as readonly Panel[]).includes(t)))
+      setLayout({ transit: [...layout.transit].reverse() }, first);
     else return;
-    setAnnounce(`${PANEL_NAMES[a]}和${PANEL_NAMES[b]}交換了位置`);
+    setAnnounce(`${name(a)}和${name(b)}交換了位置`);
   };
-  usePanelDrag(gridRef, editing, mode, boxes, hidden, swap, (next, first) => {
-    const changed = PANELS.filter((p) => next[p] !== boxes?.[p]);
-    if (setBoxes(next, first)) setAnnounce(changed.map((p) => `${PANEL_NAMES[p]}現在${describe(next[p])}`).join("；"));
+  usePanelDrag(gridRef, editing, mode, boxes, hidden, kind, swap, (next, first) => {
+    const said = changes(next);
+    if (setBoxes(next, first)) setAnnounce(said);
   });
   /** From / to are places among the tabs shown. */
   const moveTab = (from: number, to: number) => {
@@ -131,25 +173,59 @@ export default function App() {
     setSettings({ ...settings, layout: { ...layout, tabs: moveTo(layout.tabs, at(from), at(to)) } });
     setAnnounce(`${TABS[shownTabs[from]][0]}分頁移到第 ${to + 1} 個`);
   };
-  const hide = (p: Panel) => {
-    if (PANELS.length - hidden.length <= 1) return toast("至少要留一個板塊", "error");
-    setLayout({ hidden: [...hidden, p] });
-    setAnnounce(`已隱藏${PANEL_NAMES[p]}，可以從上方的「＋${PANEL_NAMES[p]}」顯示回來`);
+  /** On this layout only: a type's first card is hidden (it keeps its content); an extra one is removed everywhere. */
+  const hide = (p: CardId) => {
+    if (shownIds.length <= 1) return toast("至少要留一個板塊", "error");
+    if (isPanel(p)) {
+      setLayout({ hidden: { ...layout.hidden, [mode]: [...hidden, p] } });
+      setAnnounce(`已隱藏${name(p)}，可以從上方的「＋${name(p)}」顯示回來`);
+    } else {
+      const { [p]: _w, ...wide } = layout.wide;
+      const { [p]: _t, ...tall } = layout.tall;
+      const rest = Object.fromEntries(SCREENS.map((sc) => [sc, layout.hidden[sc].filter((q) => q !== p)])) as typeof layout.hidden;
+      flip.capture();
+      setSettings({ ...settings, extras: settings.extras.filter((e) => e.id !== p), layout: { ...layout, wide, tall, hidden: rest } });
+      toast(`已移除${name(p)}`);
+    }
     setTimeout(() => document.querySelector<HTMLElement>(".layout-bar .layout-toggle")?.focus()); // its button is gone
   };
-  /** Back on the dashboard, in its old place if free, else in free cells (in each layout). */
-  const unhide = (p: Panel) => {
+  /** Room for a card on a board: its old box if free, else free cells (at least `min`); null if none. */
+  const roomOn = (m: LayoutMode, p: CardId, min: { w: number; h: number }, rest = layout.hidden[m]) => {
+    const own = layout[m][p];
+    return findSpot(layout[m], p, rest, own ? [{ w: own.w, h: own.h }, min] : [min]);
+  };
+  const here = (type: Panel) => (gridRef.current ? minCells(gridRef.current, type) : BOARD_MIN);
+  const unhide = (p: CardId) => {
     const rest = hidden.filter((q) => q !== p);
-    const next = { ...layout, hidden: rest };
+    const r = mode === "phone" ? null : roomOn(mode, p, here(kind(p)), rest);
+    if (mode !== "phone" && !r) return toast(`沒有空位放${name(p)}，請先縮小其他板塊`, "error");
+    setLayout({ ...(r && mode !== "phone" ? { [mode]: { ...layout[mode], [p]: r } } : {}), hidden: { ...layout.hidden, [mode]: rest } });
+    setAnnounce(`已顯示${name(p)}`);
+  };
+  /** Another card of a type, starting with a little of the first card's content, then its settings open. */
+  const addCard = (type: Panel) => {
+    if (ids.filter((id) => kind(id) === type).length >= MAX_PER_TYPE) return toast(`每種板塊最多 ${MAX_PER_TYPE} 個`, "error");
+    const id = `${type}-${Date.now().toString(36).slice(-6)}`;
+    const start: Partial<SettingsData> = {
+      markets: { markets: settings.markets.slice(0, 1) },
+      weather: { weather: settings.weather.slice(0, 1) },
+      bus: { bus: [] },
+      train: { trains: [] },
+      news: { news: settings.news, newsOrder: settings.newsOrder },
+    }[type];
+    // A free spot on each board (this screen's minimum here); none: hidden on that layout.
+    const next = { ...layout, hidden: { ...layout.hidden } };
     for (const m of ["wide", "tall"] as const) {
-      const min = m === mode && gridRef.current ? minCells(gridRef.current, p) : BOARD_MIN;
-      const r = findSpot(layout[m], p, rest, [{ w: layout[m][p].w, h: layout[m][p].h }, min]);
-      if (!r)
-        return toast(`${m === "wide" ? "桌機與平板橫向" : "平板直向"}的版面沒有空位放${PANEL_NAMES[p]}，請先縮小其他板塊再顯示`, "error");
-      next[m] = { ...layout[m], [p]: r };
+      const r = roomOn(m, id, m === mode ? here(type) : BOARD_MIN);
+      next[m] = { ...layout[m], [id]: r ?? { x: 0, y: 0, ...BOARD_MIN } };
+      if (!r) next.hidden[m] = [...layout.hidden[m], id];
     }
-    setLayout(next);
-    setAnnounce(`已顯示${PANEL_NAMES[p]}`);
+    flip.capture();
+    setSettings({ ...settings, extras: [...settings.extras, { id, type, ...start }], layout: next });
+    if (mode !== "phone" && next.hidden[mode].includes(id)) toast("沒有空位，新的板塊先放在上方的「＋」裡；縮小其他板塊後再點它顯示", "error");
+    setSettingsCard(id);
+    setSettingsSection(SECTION_OF[type]);
+    setShowSettings(true);
   };
   useTabDrag(navRef, editing && mode === "phone", moveTab);
   const edit = {
@@ -157,7 +233,8 @@ export default function App() {
     mode,
     where,
     hide,
-    move: (p: Panel, key: string, how: "move" | "resize" | "line") => {
+    style: (p: CardId) => (layout.wide[p] ? ({ "--wide": area(layout.wide[p]), "--tall": area(layout.tall[p]) } as CSSProperties) : {}),
+    move: (p: CardId, key: string, how: "move" | "resize" | "line") => {
       const [dx, dy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key] ?? [0, 0];
       if (boxes) {
         const r = boxes[p];
@@ -167,23 +244,19 @@ export default function App() {
               ? moveLine(boxes, p, "x", r.x + r.w + dx, hidden)
               : moveLine(boxes, p, "y", r.y + r.h + dy, hidden)
             : { ...boxes, [p]: how === "resize" ? { ...r, w: r.w + dx, h: r.h + dy } : { ...r, x: r.x + dx, y: r.y + dy } };
-        const changed = PANELS.filter((q) => next[q] !== boxes[q]);
-        if (setBoxes(next)) return setAnnounce(changed.map((q) => `${PANEL_NAMES[q]}現在${describe(next[q])}`).join("；"));
+        const said = changes(next);
+        if (setBoxes(next)) return setAnnounce(said);
         if (how !== "move") return setAnnounce("已經是最小或沒有空間了");
       }
       // Blocked (or a phone): swap with the card that way.
       const grid = gridRef.current;
       const el = grid && cardOf(grid, p);
       const other = el && neighbor(grid, el, key);
-      if (other) swap(p, PANELS.find((q) => other.classList.contains(q))!);
+      if (other?.dataset.card) swap(p, other.dataset.card);
     },
   };
-  // Where each card goes: --wide-markets: "1 / 1 / span 6 / span 24" and so on (styles.css picks
-  // the layout); on a phone, --transit-bus / --transit-train order the transit tab.
-  const areas = Object.fromEntries([
-    ...(["wide", "tall"] as const).flatMap((m) => PANELS.map((p) => [`--${m}-${p}`, area(layout[m][p])])),
-    ...layout.transit.map((p, i) => [`--transit-${p}`, i]),
-  ]) as CSSProperties;
+  // Phone: --transit-bus / --transit-train order the transit tab. (Each card sets its own --wide / --tall.)
+  const areas = Object.fromEntries(layout.transit.map((p, i) => [`--transit-${p}`, i])) as CSSProperties;
   // Entering edit mode puts focus on the first thing to move, for keyboard users.
   // Leaving edit mode hands focus back to the header's layout button (the bar's one is gone).
   const wasEditing = useRef(false);
@@ -195,8 +268,10 @@ export default function App() {
     if (!editing) return;
     if (mode === "phone") navRef.current?.querySelector<HTMLElement>("[data-tab-id]")?.focus();
     else {
-      const first = PANELS.filter((p) => !hidden.includes(p)).sort((a, b) => layout[mode][a].y - layout[mode][b].y || layout[mode][a].x - layout[mode][b].x)[0];
-      gridRef.current?.querySelector<HTMLElement>(`.card.${first} .card-move`)?.focus();
+      const b = layout[mode];
+      const first = [...shownIds].sort((a, c) => b[a].y - b[c].y || b[a].x - b[c].x)[0];
+      const grid = gridRef.current;
+      (grid && cardOf(grid, first))?.querySelector<HTMLElement>(".card-move")?.focus();
     }
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEditing(false);
     window.addEventListener("keydown", onKey);
@@ -204,10 +279,11 @@ export default function App() {
     // Only when edit mode starts or the layout switches, not on every swap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, mode]);
-  // Everything: hiding is shared by all layouts, so resetting one alone could leave overlaps in another.
+  // Everything: hiding is shared by all layouts, so resetting one alone could leave overlaps in
+  // another. Extra cards are kept, placed in free cells (or hidden) as when loading a file.
   const resetLayout = () => {
     tabFlip.capture();
-    setLayout(DEFAULT_LAYOUT);
+    setLayout(validate({ ...settings, layout: undefined }).settings?.layout ?? DEFAULT_LAYOUT);
     setAnnounce("已恢復預設版面，隱藏的板塊也都顯示回來");
     toast("已恢復預設版面（所有版面，隱藏的板塊也會顯示）");
   };
@@ -234,10 +310,25 @@ export default function App() {
                     : "拖動底部分頁調整順序"}
               </span>
               {hidden.map((p) => (
-                <button key={p} className="layout-chip" onClick={() => unhide(p)} aria-label={`顯示${PANEL_NAMES[p]}`} title={`顯示${PANEL_NAMES[p]}`}>
-                  ＋{PANEL_NAMES[p]}
+                <button key={p} className="layout-chip" onClick={() => unhide(p)} aria-label={`顯示${name(p)}`} title={`顯示${name(p)}`}>
+                  ＋{name(p)}
                 </button>
               ))}
+              {mode !== "phone" && (
+                <select
+                  className="layout-add"
+                  aria-label="新增板塊"
+                  value=""
+                  onChange={(e) => e.target.value && addCard(e.target.value as Panel)}
+                >
+                  <option value="">新增板塊…</option>
+                  {PANELS.map((t) => (
+                    <option key={t} value={t} disabled={ids.filter((id) => kind(id) === t).length >= MAX_PER_TYPE}>
+                      {PANEL_NAMES[t]}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button onClick={resetLayout}>恢復預設</button>
               {/* Same place as the header's layout button: tap it again to finish. */}
               <button
@@ -282,14 +373,21 @@ export default function App() {
             ref={gridRef}
             className={`grid ${editing ? "editing" : ""}`}
             data-tab={shownTab}
-            data-single={TRANSIT.some((q) => hidden.includes(q)) || undefined}
+            data-single={shownIds.filter((id) => (TRANSIT as readonly Panel[]).includes(kind(id))).length === 1 || undefined}
             style={areas}
           >
-            {!hidden.includes("markets") && <Markets />}
-            {!hidden.includes("weather") && <Weather onScene={setScene} />}
-            {!hidden.includes("bus") && <Bus />}
-            {!hidden.includes("train") && <Train />}
-            {!hidden.includes("news") && <News />}
+            {shownIds.map((id) => (
+              <CardSettings key={id} id={id}>
+                {{
+                  markets: <Markets />,
+                  // The page's weather animation follows the first weather card.
+                  weather: <Weather onScene={id === "weather" ? setScene : undefined} />,
+                  bus: <Bus />,
+                  train: <Train />,
+                  news: <News />,
+                }[kind(id)]}
+              </CardSettings>
+            ))}
           </main>
         </LayoutEditContext.Provider>
         <nav ref={navRef} className={`tabbar ${editing ? "editing" : ""}`}>
@@ -325,20 +423,23 @@ export default function App() {
         )}
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
         {showSettings && (
-          <Settings
-            theme={theme}
-            onTheme={setTheme}
-            fx={fx}
-            onFx={setFx}
-            wake={wake}
-            saver={saver}
-            onSaver={setSaver}
-            onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
-            onEditLayout={() => (setShowSettings(false), setSettingsSection(undefined), setEditing(true))}
-            section={settingsSection}
-            onShowSources={() => (setShowSettings(false), setSettingsSection(undefined), setShowInfo(true))}
-            onClose={() => (setShowSettings(false), setSettingsSection(undefined))}
-          />
+          <CardSettings id={settingsCard ?? ""}>
+            <Settings
+              card={settingsCard && settingsCard in layout.wide ? name(settingsCard) : undefined}
+              theme={theme}
+              onTheme={setTheme}
+              fx={fx}
+              onFx={setFx}
+              wake={wake}
+              saver={saver}
+              onSaver={setSaver}
+              onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
+              onEditLayout={() => (setShowSettings(false), setSettingsSection(undefined), setEditing(true))}
+              section={settingsSection}
+              onShowSources={() => (setShowSettings(false), setSettingsSection(undefined), setShowInfo(true))}
+              onClose={() => (setShowSettings(false), setSettingsSection(undefined), setSettingsCard(undefined))}
+            />
+          </CardSettings>
         )}
       </div>
       <ScreenSaver minutes={saver} preview={saverPreview} onPreviewEnd={() => setSaverPreview(false)} />

@@ -111,6 +111,29 @@ export async function getJSON<T>(url: string): Promise<Loaded<T>> {
   };
 }
 
+/**
+ * Cards of one type (天氣, 天氣 2 …) poll on the same beat. List requests to the same endpoint made
+ * within a moment go out as one, asking for everything any of them wants; every caller gets that
+ * combined answer and keeps its own part. So more cards don't mean more requests to the server.
+ */
+// shortcut: cards whose polls drift apart (one's content just changed) fetch separately until the
+// page reloads; bounded by MAX_PER_TYPE. Align them to a shared clock if that ever matters.
+const batches = new Map<string, { items: Set<string>; done: Promise<Loaded<unknown>> }>();
+export function getBatched<T>(path: string, param: string, items: string[]): Promise<Loaded<T>> {
+  let b = batches.get(path);
+  if (!b) {
+    const all = new Set<string>();
+    const done = new Promise((r) => setTimeout(r, 50)).then(() => {
+      batches.delete(path);
+      return getJSON<T>(`${path}?${param}=${encodeURIComponent([...all].join(","))}`);
+    });
+    b = { items: all, done };
+    batches.set(path, b);
+  }
+  for (const i of items) b.items.add(i);
+  return b.done as Promise<Loaded<T>>;
+}
+
 /** Re-renders every `ms` — used for the clock and "x 分鐘前" labels. */
 export function useNow(ms = 1000): number {
   const [now, setNow] = useState(Date.now());

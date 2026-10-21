@@ -3,7 +3,7 @@ import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TR
 import { type BusStop, LIMITS, trainTypeKeyword, useSettings } from "../settings";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
+import { getBatched, getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, BusRouteDetail, TrainDeparture, TrainResponse } from "../shared";
 import { Flip } from "./Flip";
 import { Section, hms } from "./Section";
@@ -95,7 +95,7 @@ export function Bus() {
   const state = usePolling(
     () =>
       routes
-        ? getJSON<BusResponse>(`/api/bus?routes=${encodeURIComponent(routes)}`)
+        ? getBatched<BusResponse>("/api/bus", "routes", routes.split(","))
         : Promise.resolve({ data: { configured: true, arrivals: [], notFound: [] }, dataTime: Date.now(), stale: false }),
     REFRESH_SEC.bus,
     [routes],
