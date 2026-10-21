@@ -120,10 +120,10 @@ function ParkingSettings({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-head">
-          <h2>停車場設定</h2>
-          <button className="modal-close" onClick={onClose} aria-label="關閉">
-            ✕
+          <button className="sub-back" onClick={onClose}>
+            ‹ 返回
           </button>
+          <h2>停車場設定</h2>
         </header>
         <div className="settings-body">
           <div className="setting">
