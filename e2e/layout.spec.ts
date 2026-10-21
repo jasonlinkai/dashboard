@@ -292,6 +292,7 @@ test.describe("reset", () => {
       await startEditing(page);
       await bar(page).getByRole("button", { name: "恢復預設" }).click();
       await page.getByRole("dialog").getByRole("button", { name: "恢復預設" }).click();
+      await expect(bar(page)).toBeHidden(); // resetting ends layout mode
       await expect(card(page, "news")).toBeVisible();
       const s = (await stored(page))!;
       expect(s.layout[mode]).toEqual(DEF[mode]);

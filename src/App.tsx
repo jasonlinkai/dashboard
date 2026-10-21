@@ -535,7 +535,7 @@ export default function App() {
           <Confirm
             title="恢復預設版面？"
             ok="恢復預設"
-            onOk={() => (setConfirmReset(false), resetLayout())}
+            onOk={() => (setConfirmReset(false), resetLayout(), setEditing(false))}
             onCancel={() => setConfirmReset(false)}
           >
             {phone
