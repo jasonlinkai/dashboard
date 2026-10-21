@@ -38,16 +38,17 @@ export interface LayoutEdit {
   mode: Mode;
   /** Where the card is, in words (for its move button's label). */
   where: (p: Panel) => string;
-  /** Arrow key: move a cell (or swap with the card that way); with Shift: resize. */
-  move: (p: Panel, key: string, resize: boolean) => void;
+  /** Take the card off the dashboard (it comes back from the edit bar). */
+  hide: (p: Panel) => void;
+  /** Arrow key: move a cell (or swap with the card that way); Shift: resize it; Alt: move its right / bottom edge with the neighbours. */
+  move: (p: Panel, key: string, how: "move" | "resize" | "line") => void;
 }
-export const LayoutEditContext = createContext<LayoutEdit>({ editing: false, mode: "phone", where: () => "", move: () => {} });
+export const LayoutEditContext = createContext<LayoutEdit>({ editing: false, mode: "phone", where: () => "", hide: () => {}, move: () => {} });
 
 /** CSS grid-area for a box. */
 export const area = (r: Rect) => `${r.y + 1} / ${r.x + 1} / span ${r.h} / span ${r.w}`;
 export const useLayoutEdit = () => useContext(LayoutEditContext);
 
-export const isPanel = (s: string): s is Panel => (PANELS as readonly string[]).includes(s);
 const panelOf = (el: Element) => PANELS.find((p) => el.classList.contains(p))!;
 const cardsIn = (grid: HTMLElement) =>
   [...grid.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.classList.contains("card"));
@@ -140,6 +141,75 @@ function cellAt(grid: HTMLElement, x: number, y: number) {
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 /**
+ * The smallest each card can be and still show its content (px, with its title and the source
+ * line the data licences require): markets one row of tiles, weather one place, bus two stops,
+ * train its route chips and two trains, news its topic tabs and two headlines.
+ */
+const MIN_PX: Record<Panel, [w: number, h: number]> = {
+  markets: [300, 170],
+  weather: [300, 190],
+  bus: [260, 170],
+  train: [280, 210],
+  news: [260, 230],
+};
+/** That minimum in cells on this screen. */
+export function minCells(grid: HTMLElement, p: Panel) {
+  const { stepX, stepY } = cellAt(grid, 0, 0);
+  const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+  const [w, h] = MIN_PX[p];
+  return { w: Math.ceil((w + gap) / stepX), h: Math.ceil((h + gap) / stepY) };
+}
+/** Every shown card on the board, clear of the others and at least its minimum size on this screen. */
+export function allFit(grid: HTMLElement, boxes: Boxes, hidden: readonly Panel[]) {
+  return PANELS.every((p) => {
+    const m = minCells(grid, p);
+    return hidden.includes(p) || (fits(boxes, p, boxes[p], hidden) && boxes[p].w >= m.w && boxes[p].h >= m.h);
+  });
+}
+
+/**
+ * Where a card coming back can go: its old box if that is free, else the first free spot (from
+ * the top left) of each size tried in turn. Null: no room.
+ */
+export function findSpot(boxes: Boxes, p: Panel, hidden: readonly Panel[], sizes: { w: number; h: number }[]): Rect | null {
+  if (fits(boxes, p, boxes[p], hidden)) return boxes[p];
+  for (const { w, h } of sizes)
+    for (let y = 0; y + h <= GRID; y++)
+      for (let x = 0; x + w <= GRID; x++) if (fits(boxes, p, { x, y, w, h }, hidden)) return { x, y, w, h };
+  return null;
+}
+// shortcut: the layout not on screen can't be measured, so a card coming back there only gets the
+// board-wide minimum (it may be too small to read until that layout is adjusted); measure per size if it matters.
+export const BOARD_MIN = { w: MIN_W, h: MIN_H };
+
+/**
+ * Drag the line along a card's right (x) or bottom (y) edge to `to`: the cards ending at that line
+ * and the cards starting at it, as far as they touch along it, all follow, so neighbours resize
+ * together. The caller checks the result with allFit.
+ */
+export function moveLine(boxes: Boxes, p: Panel, axis: "x" | "y", to: number, hidden: readonly Panel[]): Boxes {
+  const [pos, size, cross, crossSize] = axis === "x" ? (["x", "w", "y", "h"] as const) : (["y", "h", "x", "w"] as const);
+  const line = boxes[p][pos] + boxes[p][size];
+  const before = new Set<Panel>([p]);
+  const after = new Set<Panel>();
+  const touches = (a: Rect, b: Rect) => a[cross] < b[cross] + b[crossSize] && b[cross] < a[cross] + a[crossSize];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const q of PANELS) {
+      if (before.has(q) || after.has(q) || hidden.includes(q)) continue;
+      const b = boxes[q];
+      const side = b[pos] + b[size] === line ? before : b[pos] === line ? after : null;
+      if (side && [...before, ...after].some((o) => touches(b, boxes[o]))) side.add(q), (grew = true);
+    }
+  }
+  const d = to - line;
+  const next = { ...boxes };
+  for (const q of before) next[q] = { ...boxes[q], [size]: boxes[q][size] + d };
+  for (const q of after) next[q] = { ...boxes[q], [pos]: boxes[q][pos] + d, [size]: boxes[q][size] - d };
+  return next;
+}
+
+/**
  * While editing, a card follows the pointer (half see-through). Over another card, that card
  * lights up and letting go swaps the two; over free cells, an outline shows where it would land
  * (red if it would cover another card). On a tablet or desktop the corner handle resizes it.
@@ -152,11 +222,12 @@ export function usePanelDrag(
   mode: Mode,
   /** The boxes of the layout showing (null on a phone: swapping only). */
   boxes: Boxes | null,
+  hidden: readonly Panel[],
   onSwap: (from: Panel, to: Panel, first: Rects) => void,
-  onPlace: (p: Panel, r: Rect, first: Rects) => void,
+  onBoxes: (next: Boxes, first: Rects) => void,
 ) {
-  const latest = useRef({ boxes, onSwap, onPlace });
-  latest.current = { boxes, onSwap, onPlace };
+  const latest = useRef({ boxes, hidden, onSwap, onBoxes });
+  latest.current = { boxes, hidden, onSwap, onBoxes };
 
   useEffect(() => {
     const grid = gridRef.current;
@@ -168,11 +239,15 @@ export function usePanelDrag(
       y: number;
       lifted: boolean;
       target: HTMLElement | null;
-      /** Resizing by the corner instead of moving. */
-      resize: boolean;
-      /** Where it would land (moving into free cells) or its new size (resizing). */
-      spot: Rect | null;
+      /** Resizing by the corner, or moving the line along its right / bottom edge, instead of moving it. */
+      resize: "corner" | "x" | "y" | null;
+      /** The board after letting go (null: nothing changes). */
+      spot: Boxes | null;
     } | null = null;
+    /** Show `next` while dragging: every card that moved takes its new place right away. */
+    const show = (next: Boxes) => {
+      for (const c of cardsIn(grid)) c.style.gridArea = next[panelOf(c)] === latest.current.boxes?.[panelOf(c)] ? "" : area(next[panelOf(c)]);
+    };
     const preview = document.createElement("div");
     preview.className = "panel-preview";
 
@@ -180,7 +255,7 @@ export function usePanelDrag(
       if (!drag) return;
       drag.el.classList.remove("panel-lifted", "panel-resizing");
       drag.el.style.transform = "";
-      drag.el.style.gridArea = "";
+      for (const c of cardsIn(grid)) c.style.gridArea = "";
       drag.target?.classList.remove("panel-target");
       grid.classList.remove("panel-dragging");
       preview.remove();
@@ -197,7 +272,8 @@ export function usePanelDrag(
       if (drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
       const el = (e.target as Element).closest(".card");
       if (!(el instanceof HTMLElement) || el.parentElement !== grid || !movable(mode, panelOf(el))) return;
-      const resize = !!latest.current.boxes && !!(e.target as Element).closest(".card-resize");
+      const handle = latest.current.boxes && (e.target as Element).closest<HTMLElement>("[data-resize]");
+      const resize = handle ? (handle.dataset.resize as "corner" | "x" | "y") : null;
       drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, lifted: false, target: null, resize, spot: null };
       try {
         el.setPointerCapture(e.pointerId); // keep getting moves when the pointer leaves the card
@@ -215,16 +291,19 @@ export function usePanelDrag(
         navigator.vibrate?.(10);
       }
       const { el } = drag;
-      const boxes = latest.current.boxes;
+      const { boxes, hidden } = latest.current;
       const p = panelOf(el);
       if (drag.resize && boxes) {
-        // The card itself takes the new size as it goes, if that size fits.
+        // The cards take their new sizes as it goes; a step that doesn't fit is skipped.
         const r = boxes[p];
         const c = cellAt(grid, e.clientX, e.clientY);
-        const next = { ...r, w: clamp(c.x - r.x + 1, MIN_W, GRID - r.x), h: clamp(c.y - r.y + 1, MIN_H, GRID - r.y) };
-        if (fits(boxes, p, next)) {
+        const next =
+          drag.resize === "corner"
+            ? { ...boxes, [p]: { ...r, w: clamp(c.x - r.x + 1, 1, GRID - r.x), h: clamp(c.y - r.y + 1, 1, GRID - r.y) } }
+            : moveLine(boxes, p, drag.resize, Math.round((drag.resize === "x" ? e.clientX - grid.getBoundingClientRect().left : e.clientY - grid.getBoundingClientRect().top) / (drag.resize === "x" ? c.stepX : c.stepY)), hidden);
+        if (allFit(grid, next, hidden)) {
           drag.spot = next;
-          el.style.gridArea = area(next);
+          show(next);
         }
         return;
       }
@@ -254,11 +333,11 @@ export function usePanelDrag(
         y: clamp(Math.round((start.top - grid.getBoundingClientRect().top) / c.stepY), 0, GRID - r.h),
       };
       if (spot.x === r.x && spot.y === r.y) return;
-      const ok = fits(boxes, p, spot);
+      const ok = fits(boxes, p, spot, hidden);
       preview.classList.toggle("invalid", !ok);
       preview.style.gridArea = area(spot);
       grid.append(preview);
-      if (ok) drag.spot = spot;
+      if (ok) drag.spot = { ...boxes, [p]: spot };
     };
     const up = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -269,7 +348,7 @@ export function usePanelDrag(
       const { spot } = drag;
       clear();
       if (to) latest.current.onSwap(from, to, first);
-      else if (spot) latest.current.onPlace(from, spot, first);
+      else if (spot) latest.current.onBoxes(spot, first);
       else play(first);
     };
     const pointerCancel = (e: PointerEvent) => drag && e.pointerId === drag.id && cancel();

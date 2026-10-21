@@ -17,7 +17,7 @@ interface Pending {
   from: string;
 }
 
-const LAYOUT_PARTS = { wide: "橫向", tall: "直向", tabs: "手機分頁", transit: "手機交通" } as const;
+const LAYOUT_PARTS = { wide: "橫向", tall: "直向", tabs: "手機分頁", transit: "手機交通", hidden: "隱藏" } as const;
 const TAB_NAMES: Record<PhoneTab, string> = { markets: "行情", weather: "天氣", transit: "交通", news: "新聞" };
 const layoutSummary = ({ layout }: Settings) =>
   (Object.keys(LAYOUT_PARTS) as (keyof typeof LAYOUT_PARTS)[])

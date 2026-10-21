@@ -1,6 +1,6 @@
 import { type ReactNode, useRef } from "react";
-import { editLayout, isPanel, movable as canMove, useLayoutEdit } from "../layoutEdit";
-import { PANEL_NAMES } from "../settings";
+import { editLayout, movable as canMove, useLayoutEdit } from "../layoutEdit";
+import { PANEL_NAMES, isPanel } from "../settings";
 import { mmss } from "../format";
 import { type Polled, useNow } from "../hooks";
 import { type ContentSection, openSettings } from "../openSettings";
@@ -96,14 +96,14 @@ export function Section({
             aria-label={
               layout.mode === "phone"
                 ? `移動${PANEL_NAMES[panel]}，目前${layout.where(panel)}。按方向鍵和另一張交換位置`
-                : `移動${PANEL_NAMES[panel]}，目前${layout.where(panel)}。方向鍵移動一格（擋住時和那一邊的板塊交換），Shift 加方向鍵調整大小`
+                : `移動${PANEL_NAMES[panel]}，目前${layout.where(panel)}。方向鍵移動一格（擋住時和那一邊的板塊交換），Shift 加方向鍵調整大小，Alt 加方向鍵移動右邊或下邊並帶動相鄰板塊`
             }
-            aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
+            aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
             title="拖動或用方向鍵移動"
             onKeyDown={(e) => {
               if (!e.key.startsWith("Arrow")) return;
               e.preventDefault();
-              layout.move(panel, e.key, e.shiftKey);
+              layout.move(panel, e.key, e.altKey ? "line" : e.shiftKey ? "resize" : "move");
             }}
           >
             <svg viewBox="0 0 12 16" aria-hidden>
@@ -134,6 +134,11 @@ export function Section({
           </button>
         )}
         {actions}
+        {layout.editing && panel && (
+          <button className="card-hide" onClick={() => layout.hide(panel)} aria-label={`隱藏${PANEL_NAMES[panel]}`} title="隱藏這個板塊">
+            隱藏
+          </button>
+        )}
         <span className="muted status">
           {left == null ? (
             state.loading ? (
@@ -157,7 +162,13 @@ export function Section({
       {children}
       {source && <div className="card-source">資料來源：{source}</div>}
       {/* Drag to resize (tablet / desktop); the move button's Shift+arrows do the same from the keyboard. */}
-      {movable && layout.mode !== "phone" && <span className="card-resize" aria-hidden />}
+      {movable && layout.mode !== "phone" && (
+        <>
+          <span className="card-edge card-edge-x" data-resize="x" aria-hidden title="拖動調整寬度（相鄰板塊一起調整）" />
+          <span className="card-edge card-edge-y" data-resize="y" aria-hidden title="拖動調整高度（相鄰板塊一起調整）" />
+          <span className="card-resize" data-resize="corner" aria-hidden title="拖動單獨調整大小" />
+        </>
+      )}
     </section>
   );
 }

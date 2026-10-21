@@ -58,6 +58,7 @@ export interface Settings {
 /** The dashboard's cards. */
 export const PANELS = ["markets", "weather", "bus", "train", "news"] as const;
 export type Panel = (typeof PANELS)[number];
+export const isPanel = (s: unknown): s is Panel => (PANELS as readonly unknown[]).includes(s);
 export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", weather: "天氣", bus: "公車", train: "火車", news: "新聞" };
 
 /** The phone's bottom tabs (the parking button always comes last). */
@@ -77,11 +78,11 @@ export interface Rect {
 }
 export type Boxes = Record<Panel, Rect>;
 export const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-/** On the board, big enough, and clear of the other cards. */
-export const fits = (boxes: Boxes, p: Panel, r: Rect) =>
+/** On the board, big enough, and clear of the other (shown) cards. */
+export const fits = (boxes: Boxes, p: Panel, r: Rect, hidden: readonly Panel[] = []) =>
   [r.x, r.y, r.w, r.h].every(Number.isInteger) &&
   r.x >= 0 && r.y >= 0 && r.w >= MIN_W && r.h >= MIN_H && r.x + r.w <= GRID && r.y + r.h <= GRID &&
-  PANELS.every((q) => q === p || !overlaps(boxes[q], r));
+  PANELS.every((q) => q === p || hidden.includes(q) || !overlaps(boxes[q], r));
 
 /**
  * The fixed slots of the first version (a card per slot), still read from older files:
@@ -113,6 +114,8 @@ export interface Layout {
   tabs: PhoneTab[];
   /** Phone: bus and train in the transit tab, top (or left) first. */
   transit: Panel[];
+  /** Cards taken off the dashboard (everywhere). Their boxes are kept for when they come back. */
+  hidden: Panel[];
 }
 export type LayoutMode = "wide" | "tall";
 export const DEFAULT_LAYOUT: Layout = {
@@ -120,6 +123,7 @@ export const DEFAULT_LAYOUT: Layout = {
   tall: fromSlots("tall", PANELS),
   tabs: [...PHONE_TABS],
   transit: [...TRANSIT],
+  hidden: [],
 };
 
 // ---------- Catalogs and limits ----------
@@ -367,9 +371,13 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
   }
 
   // Older files have no layout: the default slots.
-  const layout: Layout = { ...DEFAULT_LAYOUT };
+  const layout: Layout = { ...DEFAULT_LAYOUT, hidden: [] };
   if (raw.layout !== undefined && !isObj(raw.layout)) err("layout 必須是物件");
   else if (isObj(raw.layout)) {
+    const hidden = raw.layout.hidden ?? [];
+    if (!Array.isArray(hidden) || !hidden.every((p) => isPanel(p)) || new Set(hidden).size !== hidden.length || hidden.length >= PANELS.length)
+      err(`layout.hidden 要是 ${PANELS.join("、")} 裡不重複的幾個（至少留一個不隱藏）`);
+    else layout.hidden = [...(hidden as Panel[])];
     for (const m of ["wide", "tall"] as const) {
       const v = raw.layout[m];
       if (v === undefined) continue;
@@ -378,11 +386,17 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
         layout[m] = fromSlots(m, v as Panel[]);
         continue;
       }
-      const boxes = isObj(v) && PANELS.every((p) => isObj(v[p])) ? (Object.fromEntries(PANELS.map((p) => [p, v[p]])) as Boxes) : null;
-      const ok = boxes && PANELS.every((p) => fits(boxes, p, boxes[p]));
-      if (!ok)
-        err(`layout.${m} 要替 ${PANELS.join("、")} 各給一個 {x, y, w, h}（0～${GRID} 的整數格，寬至少 ${MIN_W}、高至少 ${MIN_H}，不能重疊）`);
-      else layout[m] = Object.fromEntries(PANELS.map((p) => [p, { x: boxes[p].x, y: boxes[p].y, w: boxes[p].w, h: boxes[p].h }])) as Boxes;
+      // A card added after the file was saved has no box: its default one if that is free, else it starts hidden.
+      const given = isObj(v) ? PANELS.filter((p) => v[p] !== undefined) : [];
+      const boxes = { ...DEFAULT_LAYOUT[m], ...(isObj(v) ? Object.fromEntries(given.map((p) => [p, v[p]])) : {}) } as Boxes;
+      const others = PANELS.filter((p) => !given.includes(p));
+      const ok = isObj(v) && given.every((p) => isObj(boxes[p]) && fits(boxes, p, boxes[p], [...layout.hidden, ...others]));
+      if (!ok) {
+        err(`layout.${m} 要替每個板塊（${PANELS.join("、")}）給一個 {x, y, w, h}（0～${GRID} 的整數格，寬至少 ${MIN_W}、高至少 ${MIN_H}，不能重疊）`);
+        continue;
+      }
+      for (const p of others) if (!fits(boxes, p, boxes[p], layout.hidden) && !layout.hidden.includes(p)) layout.hidden.push(p);
+      layout[m] = Object.fromEntries(PANELS.map((p) => [p, { x: boxes[p].x, y: boxes[p].y, w: boxes[p].w, h: boxes[p].h }])) as Boxes;
     }
     const lists = [
       ["tabs", PHONE_TABS, "手機底部分頁的順序"],

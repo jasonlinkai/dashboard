@@ -463,6 +463,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grid[data-tab="transit"] > .train { display: flex; }
 /* Bus takes what it needs, but at most half: a long bus list scrolls instead of squeezing the trains. */
 .grid[data-tab="transit"] { grid-template-rows: fit-content(50%) minmax(0, 1fr); }
+/* Bus or train hidden: the other one has the tab to itself. */
+.grid[data-tab="transit"][data-single] { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
 /* Bus and train in the order chosen in edit mode (App sets the vars; the first takes the top row). */
 .grid > .bus { order: var(--transit-bus, 0); }
 .grid > .train { order: var(--transit-train, 1); }
@@ -612,14 +614,33 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   position: relative; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none;
   outline: 2px dashed color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: -2px;
 }
-.grid.editing > .card-movable > :not(.card-head, .card-resize), .grid.editing > .card-movable > .card-head > :not(.card-move) { pointer-events: none; }
+.grid.editing > .card-movable > :not(.card-head, .card-resize, .card-edge), .grid.editing > .card-movable > .card-head > :not(.card-move, .card-hide) { pointer-events: none; }
+.card-hide {
+  flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px;
+  padding: 2px 10px; font-size: 12px; position: relative; z-index: 2;
+}
+/* Hidden cards waiting in the edit bar: tap to bring one back. */
+.layout-bar .layout-chip { border-style: dashed; padding: 5px 10px; }
+/* Many hidden cards: the bar scrolls sideways instead of pushing buttons off screen. */
+.layout-bar { overflow-x: auto; scrollbar-width: none; }
+.layout-bar::-webkit-scrollbar { display: none; }
 /* Corner handle: drag to resize. Only in edit mode (Section renders it then). */
 .card-resize {
-  position: absolute; right: 0; bottom: 0; width: 28px; height: 28px; cursor: nwse-resize; touch-action: none;
+  position: absolute; z-index: 1; right: 0; bottom: 0; width: 28px; height: 28px; cursor: nwse-resize; touch-action: none;
   background: linear-gradient(135deg, transparent 50%, color-mix(in srgb, var(--blue) 70%, transparent) 50% 58%, transparent 58% 68%,
     color-mix(in srgb, var(--blue) 70%, transparent) 68% 76%, transparent 76%);
 }
 .grid > .card.panel-resizing { outline: 2px solid var(--blue); outline-offset: -2px; }
+/* Right and bottom edges: drag to move that line, neighbours resizing along with the card. */
+.card-edge { position: absolute; z-index: 1; touch-action: none; }
+.card-edge::after {
+  content: ""; position: absolute; inset: 0; margin: auto; border-radius: 3px;
+  background: color-mix(in srgb, var(--blue) 70%, transparent);
+}
+.card-edge-x { top: 0; bottom: 28px; right: 0; width: 14px; cursor: ew-resize; }
+.card-edge-x::after { width: 4px; height: 36px; }
+.card-edge-y { left: 0; right: 28px; bottom: 0; height: 14px; cursor: ns-resize; }
+.card-edge-y::after { width: 36px; height: 4px; }
 /* Where a card carried over free cells would land; red when it would cover another card. */
 .panel-preview {
   border: 2px dashed var(--blue); border-radius: 14px; pointer-events: none; z-index: 10;
