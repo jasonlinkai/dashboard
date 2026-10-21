@@ -439,6 +439,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
           dest={dest}
           radius={radius}
           lots={lots}
+          sources={sources}
           selected={selected}
           onSelect={(id) => select(id, "map")}
           onPick={pickOnMap}
@@ -699,6 +700,7 @@ function ParkingMap({
   dest,
   radius,
   lots,
+  sources,
   selected,
   onSelect,
   onPick,
@@ -707,6 +709,8 @@ function ParkingMap({
   dest: Dest | null;
   radius: number;
   lots: ParkingLot[];
+  /** The sources switched on in the settings. */
+  sources: ParkingSource[];
   selected: string | null;
   onSelect: (id: string) => void;
   onPick: (lat: number, lon: number) => void;
@@ -717,6 +721,7 @@ function ParkingMap({
   const layer = useRef<L.LayerGroup | null>(null);
   const markers = useRef(new Map<string, L.Marker>());
   const fitted = useRef("");
+  const legendEl = useRef<HTMLDivElement | null>(null);
   /** The circle to keep in view until the user moves the map themselves. */
   const fitTo = useRef<L.LatLngBounds | null>(null);
   const cb = useRef({ onSelect, onPick, onView });
@@ -733,14 +738,11 @@ function ParkingMap({
       cb.current.onView({ lat: c.lat, lon: c.lng, zoom: m.getZoom() });
     });
     layer.current = L.layerGroup().addTo(m);
-    // Legend: which source each pin's corner letter means.
+    // Legend: what each pin colour means (filled in by the effect below, from what's on the map).
     const legend = new L.Control({ position: "topright" });
     legend.onAdd = () => {
       const div = L.DomUtil.create("div", "pk-legend");
-      div.innerHTML =
-        (Object.keys(SOURCE) as ParkingSource[])
-          .map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`)
-          .join("") + '<span class="pk-legend-note">數字＝剩餘車位<br>黃框快滿・紅框已滿</span>';
+      legendEl.current = div;
       L.DomEvent.disableClickPropagation(div);
       return div;
     };
@@ -759,6 +761,24 @@ function ParkingMap({
       map.current = null;
     };
   }, []);
+
+  // Explain only what can be seen: the colours of the pins on the map (before a search, the
+  // sources switched on), and the free-space numbers only when some pin shows one.
+  const legendKey = useMemo(() => {
+    const shown = lots.length ? ALL_SOURCES.filter((x) => lots.some((p) => p.source === x)) : sources;
+    const numbers = lots.some((p) => p.live === "ok" && mainCount(p));
+    return `${shown.join(",")}|${numbers}`;
+  }, [lots, sources]);
+  useEffect(() => {
+    const div = legendEl.current;
+    if (!div) return;
+    const [list, numbers] = legendKey.split("|");
+    const shown = (list ? list.split(",") : []) as ParkingSource[];
+    div.innerHTML =
+      shown.map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`).join("") +
+      (numbers === "true" ? '<span class="pk-legend-note">數字＝剩餘車位<br>黃框快滿・紅框已滿</span>' : "");
+    div.style.display = div.innerHTML ? "" : "none";
+  }, [legendKey]);
 
   // Destination, radius and car parks.
   useEffect(() => {
