@@ -625,6 +625,24 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-loading { align-items: center; justify-content: center; color: var(--muted); }
 .pk-head { display: flex; align-items: center; flex: none; }
 .pk-head h2 { margin: 0; font-size: 19px; flex: 1; }
+.pk-gear { margin-right: 8px; }
+/* The current settings, one line under the search box; tap to change them. */
+.pk-current {
+  flex: none; display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--card); color: var(--muted); font-size: 13px; text-align: left;
+}
+.pk-current > :first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-current-edit { flex: none; color: var(--blue); font-weight: 600; }
+.pk-settings-backdrop { z-index: 30; }
+/* Leaflet's panes use z-index 400+; keep them inside the map so the settings panel covers it. */
+.pk-body { position: relative; z-index: 0; isolation: isolate; }
+.modal-settings.pk-settings { height: auto; max-height: min(860px, 100%); }
+.pk-src-list { display: grid; gap: 6px; }
+.pk-src-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: 8px; background: var(--card-2); cursor: pointer; }
+.pk-src-row input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+.pk-src-row .pk-src { flex: none; margin-top: 1px; }
+.pk-src-row > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.pk-reset { justify-self: start; }
 .pk-search { display: flex; gap: 6px; flex: none; }
 /* 16px keeps iOS from zooming the page when the field is focused. */
 .pk-search input {

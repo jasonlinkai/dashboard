@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON } from "../hooks";
 import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse, ParkingSource, SpaceCount } from "../shared";
 import { toast } from "../toast";
+import { GearIcon } from "./GearIcon";
 import { SkeletonLots } from "./Skeleton";
 
 const RADII = [300, 500, 1000, 2000] as const;
@@ -77,6 +78,104 @@ function SourceTags({ lot }: { lot: ParkingLot }) {
   );
 }
 
+/** What each source is, for the settings. */
+const SOURCE_NOTES: Record<ParkingSource, string> = {
+  TDX: "各縣市政府提供的公有與部分民營停車場，多數有即時空位。",
+  NTPC: "新北市自己的停車場清單與公有停車場即時空位（TDX 沒有新北市的停車場清單）。",
+  OSM: "志工在地圖上標的停車場，只有位置、沒有空位；常是私人或已不存在，所以預設關閉。",
+};
+
+/** Search radius, which sources to show, live-only: kept out of the search page so it stays simple. */
+function ParkingSettings({
+  radius,
+  onRadius,
+  sources,
+  onToggleSource,
+  liveOnly,
+  onLiveOnly,
+  onReset,
+  onClose,
+}: {
+  radius: Radius;
+  onRadius: (r: Radius) => void;
+  sources: ParkingSource[];
+  onToggleSource: (x: ParkingSource) => void;
+  liveOnly: boolean;
+  onLiveOnly: (on: boolean) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    // Capture: the parking page's own Esc handler would close the whole page.
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), onClose());
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop pk-settings-backdrop" onClick={onClose}>
+      <div
+        className="modal modal-settings pk-settings"
+        role="dialog"
+        aria-modal="true"
+        aria-label="停車場設定"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="modal-head">
+          <h2>停車場設定</h2>
+          <button className="modal-close" onClick={onClose} aria-label="關閉">
+            ✕
+          </button>
+        </header>
+        <div className="settings-body">
+          <div className="setting">
+            <div className="setting-label">搜尋範圍</div>
+            <div className="segmented" role="radiogroup" aria-label="搜尋範圍">
+              {RADII.map((r) => (
+                <button key={r} role="radio" aria-checked={radius === r} onClick={() => onRadius(r)}>
+                  {r < 1000 ? `${r} 公尺` : `${r / 1000} 公里`}
+                </button>
+              ))}
+            </div>
+            <div className="muted small">從目的地（地圖上的紅色圖釘）算起的直線距離。</div>
+          </div>
+          <div className="setting">
+            <div className="setting-label">顯示哪些來源的停車場</div>
+            <ul className="pk-src-list">
+              {ALL_SOURCES.map((x) => (
+                <li key={x}>
+                  <label className="pk-src-row">
+                    <input type="checkbox" checked={sources.includes(x)} onChange={() => onToggleSource(x)} />
+                    <span className={`pk-src src-${x.toLowerCase()}`}>{SOURCE[x].badge}</span>
+                    <span>
+                      <b>{SOURCE[x].long.replace("（只有位置）", "")}</b>
+                      <span className="muted small">{SOURCE_NOTES[x]}</span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="muted small">同一個停車場有多個來源時，任一來源打開就會顯示。地圖上圖釘的顏色代表來源。</div>
+          </div>
+          <div className="setting">
+            <div className="setting-label">只看有即時空位的停車場</div>
+            <div className="segmented" role="radiogroup" aria-label="只看有即時空位">
+              {([false, true] as const).map((on) => (
+                <button key={String(on)} role="radio" aria-checked={liveOnly === on} onClick={() => onLiveOnly(on)}>
+                  {on ? "開" : "關"}
+                </button>
+              ))}
+            </div>
+            <div className="muted small">打開後，沒有即時空位資料的停車場不會列出。</div>
+          </div>
+          <button className="pk-reset link-btn" onClick={onReset}>
+            恢復預設（500 公尺、TDX＋新北、全部列出）
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** The count to show and compare: cars when broken down, else the undivided total. */
 const mainCount = (p: ParkingLot): SpaceCount => p.car ?? p.spaces;
 
@@ -115,6 +214,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   /** Sources to show (a car park found by several sources shows if any of them is on). */
   const [sources, setSources] = useState<ParkingSource[]>(saved.sources);
   const [liveOnly, setLiveOnly] = useState(saved.liveOnly);
+  const [showSettings, setShowSettings] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<GeoResponse | null>(null);
   /** Where the map is looking, so a search like "麥當勞" finds the branches around there. */
@@ -195,9 +295,8 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   );
   const hiddenCount = (data?.lots.length ?? 0) - lots.length;
   const toggleSource = (x: ParkingSource) => {
-    const next = sources.includes(x) ? sources.filter((y) => y !== x) : ALL_SOURCES.filter((y) => y === x || sources.includes(y));
-    setSources(next);
-    toast(`${sources.includes(x) ? "隱藏" : "顯示"}${SOURCE[x].long.replace("（只有位置）", "")}的停車場`, "info");
+    if (sources.length === 1 && sources[0] === x) return toast("至少要顯示一個來源", "error");
+    setSources(sources.includes(x) ? sources.filter((y) => y !== x) : ALL_SOURCES.filter((y) => y === x || sources.includes(y)));
   };
 
   const search = async (e?: React.FormEvent) => {
@@ -273,6 +372,9 @@ export default function Parking({ onClose }: { onClose: () => void }) {
     <div className="parking" role="dialog" aria-modal="true" aria-labelledby="parking-title">
       <header className="pk-head">
         <h2 id="parking-title">停車場搜尋</h2>
+        <button className="icon-btn pk-gear" onClick={() => setShowSettings(true)} aria-label="停車場設定" title="停車場設定">
+          <GearIcon />
+        </button>
         <button className="modal-close" onClick={onClose} aria-label="關閉">
           ✕
         </button>
@@ -328,35 +430,13 @@ export default function Parking({ onClose }: { onClose: () => void }) {
         </ul>
       )}
 
-      <div className="pk-controls">
-        <div className="pk-control">
-          <span className="muted small">範圍</span>
-          <div className="segmented" role="radiogroup" aria-label="搜尋半徑">
-            {RADII.map((r) => (
-              <button key={r} role="radio" aria-checked={radius === r} onClick={() => setRadius(r)}>
-                {r < 1000 ? `${r}m` : `${r / 1000}km`}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="pk-filters" role="group" aria-label="篩選">
-        <span className="muted small">顯示</span>
-        {ALL_SOURCES.map((x) => (
-          <button key={x} className="pk-filter" aria-pressed={sources.includes(x)} onClick={() => toggleSource(x)}>
-            <span className={`pk-src src-${x.toLowerCase()}`}>{SOURCE[x].badge}</span>
-            {SOURCE[x].short}
-          </button>
-        ))}
-        <button
-          className="pk-filter"
-          aria-pressed={liveOnly}
-          onClick={() => (setLiveOnly(!liveOnly), toast(liveOnly ? "顯示所有停車場" : "只顯示有即時空位的停車場", "info"))}
-        >
-          只看有即時空位
-        </button>
-      </div>
+      <button className="pk-current" onClick={() => setShowSettings(true)}>
+        <span>
+          範圍 {radius < 1000 ? `${radius} 公尺` : `${radius / 1000} 公里`}・{sources.map((x) => SOURCE[x].short).join("、") || "未選來源"}
+          {liveOnly && "・只看有即時空位"}
+        </span>
+        <span className="pk-current-edit">調整 ›</span>
+      </button>
 
       <div className="pk-body">
         <ParkingMap
@@ -405,7 +485,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
               {c.coveredBy
                 ? `TDX 沒有${c.name}的停車場資料，${c.name}改用${c.coveredBy}`
                 : c.lots === "empty"
-                  ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（可在上方「顯示」打開 OSM 來源看 OpenStreetMap 上的停車場）`
+                  ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（可在右上角 ⚙ 設定打開 OSM 來源看 OpenStreetMap 上的停車場）`
                   : c.lots === "error"
                     ? `⚠ ${c.name}停車場資料暫時無法取得（${c.error ?? ""}）`
                     : c.live === "error"
@@ -423,7 +503,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
             ))}
           {data && !loading && data.lots.length > 0 && lots.length === 0 && (
             <p className="pk-note">
-              附近的 {data.lots.length} 個停車場都被篩選隱藏了，可以在上方「顯示」打開其他來源
+              附近的 {data.lots.length} 個停車場都被篩選隱藏了，可以在右上角 ⚙ 設定打開其他來源
               {!sources.includes("OSM") && "（OSM 預設關閉：OpenStreetMap 的停車場常是私人或已不存在，只有位置）"}。
             </p>
           )}
@@ -456,6 +536,18 @@ export default function Parking({ onClose }: { onClose: () => void }) {
           </p>
         </div>
       </div>
+      {showSettings && (
+        <ParkingSettings
+          radius={radius}
+          onRadius={setRadius}
+          sources={sources}
+          onToggleSource={toggleSource}
+          liveOnly={liveOnly}
+          onLiveOnly={setLiveOnly}
+          onReset={() => (setRadius(500), setSources(DEFAULT_SOURCES), setLiveOnly(false), toast("已恢復預設", "info"))}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }
