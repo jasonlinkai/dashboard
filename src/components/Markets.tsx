@@ -86,15 +86,25 @@ export function Markets() {
   return (
     <Section
       title="市場行情"
+      edit="markets"
       className="markets"
       state={state}
       maxAgeSec={STALE_AFTER_SEC.quotes}
-      source={<><a href="https://finance.yahoo.com/" target="_blank" rel="noopener noreferrer">Yahoo Finance</a>（非官方介面，僅供參考）</>}
+      source={
+        <>
+          <a href="https://finance.yahoo.com/" target="_blank" rel="noopener noreferrer">
+            Yahoo Finance
+          </a>
+          （非官方介面，僅供參考）
+        </>
+      }
     >
       <div
         className="tiles"
         ref={tilesRef}
-        style={{ "--tile-cols": Math.min(n, 6), "--tile-rows-2": Math.ceil(n / 2), "--tile-rows-3": Math.ceil(n / 3) } as React.CSSProperties}
+        style={
+          { "--tile-cols": Math.min(n, 6), "--tile-rows-2": Math.ceil(n / 2), "--tile-rows-3": Math.ceil(n / 3) } as React.CSSProperties
+        }
       >
         {items.map((inst) => (
           <Tile key={inst.symbol} inst={inst} quote={bySymbol.get(inst.symbol)} loading={state.loading && !state.error} />

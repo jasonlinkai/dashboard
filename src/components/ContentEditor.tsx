@@ -1,3 +1,4 @@
+import type { ContentSection } from "../openSettings";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BUS_CITY_NAME, type BusRouteInfo, type BusTrip, MAX_BUS_CITIES } from "../bus-cities";
@@ -20,6 +21,7 @@ import {
   orderedTopics,
   useSettings,
 } from "../settings";
+import { SkeletonPicks } from "./Skeleton";
 
 // Same order as the board's tabs on a phone: 行情・天氣・交通（公車、火車）・新聞.
 const SECTIONS = [
@@ -29,7 +31,7 @@ const SECTIONS = [
   ["trains", "火車"],
   ["news", "新聞"],
 ] as const;
-type Section = (typeof SECTIONS)[number][0];
+type Section = ContentSection;
 
 /** Move item i by `by` places (drag can move several at once). */
 const move = <T,>(list: T[], i: number, by: number): T[] => {
@@ -545,7 +547,9 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
           {cityFull ? (
             <p className="hint error">最多 {MAX_BUS_CITIES} 個縣市（每個縣市每分鐘要多查一次 TDX）。</p>
           ) : list === undefined ? (
-            <p className="muted small">載入路線清單中…</p>
+            <ul className="pick-list" aria-busy="true" aria-label="載入路線清單中">
+              <SkeletonPicks />
+            </ul>
           ) : typeof list === "string" ? (
             <p className="hint error">
               無法載入路線：{list}{" "}
@@ -587,7 +591,9 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
             <span className="muted small">{BUS_CITY_NAME.get(city)}</span>
           </div>
           {trips === null ? (
-            <p className="muted small">載入站牌中…</p>
+            <ul className="pick-list" aria-busy="true" aria-label="載入站牌中">
+              <SkeletonPicks rows={10} />
+            </ul>
           ) : typeof trips === "string" ? (
             <p className="hint error">
               無法載入站牌：{trips}{" "}
@@ -876,10 +882,17 @@ function SubPage({ title, onClose, children }: { title: string; onClose: () => v
 
 const TITLES: Record<Section, string> = { weather: "天氣地點", markets: "市場行情", bus: "公車", trains: "火車", news: "新聞" };
 
-export function ContentEditor() {
+/**
+ * `initial`: a page opened from a card's gear. Leaving that page goes straight back to the
+ * dashboard (`onExit`), since that's where the user came from.
+ */
+export function ContentEditor({ initial, onExit }: { initial?: Section; onExit?: () => void }) {
   const { settings, setSettings } = useSettings();
-  const [open, setOpen] = useState<Section | null>(null);
-  const close = useCallback(() => setOpen(null), []);
+  const [open, setOpen] = useState<Section | null>(initial ?? null);
+  const fromCard = useRef(Boolean(initial));
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
+  const close = useCallback(() => (fromCard.current && onExitRef.current ? onExitRef.current() : setOpen(null)), []);
   const props = { s: settings, set: setSettings };
   return (
     <div className="setting">
@@ -888,7 +901,7 @@ export function ContentEditor() {
       <ul className="ed-sections">
         {SECTIONS.map(([id, label]) => (
           <li key={id}>
-            <button className="ed-section" onClick={() => setOpen(id)}>
+            <button className="ed-section" onClick={() => ((fromCard.current = false), setOpen(id))}>
               <span className="ed-section-name">{label}</span>
               <span className="ed-section-sum muted small">{summary(id, settings)}</span>
               <span className="ed-section-chev" aria-hidden>

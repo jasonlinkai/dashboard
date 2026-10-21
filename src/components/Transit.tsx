@@ -7,7 +7,7 @@ import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "
 import type { BusArrival, BusResponse, BusRouteDetail, TrainDeparture, TrainResponse } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
-import { SkeletonBar, SkeletonRows } from "./Skeleton";
+import { SkeletonBar, SkeletonRows, SkeletonStops } from "./Skeleton";
 import { toast } from "../toast";
 
 const NOT_CONFIGURED = <p className="hint">網站尚未設定 TDX 金鑰，可在右上角「設定」填入你自己的金鑰。</p>;
@@ -78,10 +78,19 @@ export function Bus() {
   return (
     <Section
       title="公車"
+      edit="bus"
       className="bus"
       state={state}
       maxAgeSec={STALE_AFTER_SEC.bus}
-      source={<>交通部 <a href="https://tdx.transportdata.tw/" target="_blank" rel="noopener noreferrer">TDX</a> 運輸資料流通服務</>}
+      source={
+        <>
+          交通部{" "}
+          <a href="https://tdx.transportdata.tw/" target="_blank" rel="noopener noreferrer">
+            TDX
+          </a>{" "}
+          運輸資料流通服務
+        </>
+      }
     >
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
@@ -117,13 +126,16 @@ export function Bus() {
                     onClick={(ev) => {
                       if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
                       ev.preventDefault();
-                      setOpen({ city: cfg.city, route: cfg.route, direction: typeof cfg.direction === "number" ? cfg.direction : 0, routeId: "" });
+                      setOpen({
+                        city: cfg.city,
+                        route: cfg.route,
+                        direction: typeof cfg.direction === "number" ? cfg.direction : 0,
+                        routeId: "",
+                      });
                     }}
                   >
                     <span className="chip blue-chip">{cfg.route}</span>
-                    <span className="grow">
-                      {cfg.stop ? <div>{cfg.stop}</div> : <div className="muted">未勾選上車站・點開看全線</div>}
-                    </span>
+                    <span className="grow">{cfg.stop ? <div>{cfg.stop}</div> : <div className="muted">未勾選上車站・點開看全線</div>}</span>
                     {!cfg.stop ? (
                       <span className="eta muted">›</span>
                     ) : state.data ? (
@@ -248,10 +260,11 @@ function BusRouteSheet({
   const trip = trips[tab];
   /** Stop index on the shown trip → the saved boarding stop there. */
   const mine = new Map<number, BusStop>();
-  if (trip) for (const c of picks) {
-    const i = indexOn(c, trip);
-    if (i >= 0 && !mine.has(i)) mine.set(i, c);
-  }
+  if (trip)
+    for (const c of picks) {
+      const i = indexOn(c, trip);
+      if (i >= 0 && !mine.has(i)) mine.set(i, c);
+    }
   const firstMine = mine.size ? Math.min(...mine.keys()) : -1;
   const mineRef = useRef<HTMLLIElement>(null);
   const onCloseRef = useRef(onClose);
@@ -310,14 +323,18 @@ function BusRouteSheet({
   const twoCities = city === "Taipei" || city === "NewTaipei";
   return createPortal(
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal bus-sheet" role="dialog" aria-modal="true" aria-label={`${route} 全線動態`} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal bus-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${route} 全線動態`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="modal-head">
           <h2>
             <span className="chip blue-chip">{route}</span> 全線動態
           </h2>
-          <span className="muted small bus-sheet-status">
-            {state.loading && !state.data ? "載入中…" : state.error ? <span className="error">⚠ {state.error}</span> : null}
-          </span>
+          <span className="muted small bus-sheet-status">{state.error ? <span className="error">⚠ {state.error}</span> : null}</span>
           <button className="modal-close" onClick={onClose} aria-label="關閉">
             ✕
           </button>
@@ -335,7 +352,9 @@ function BusRouteSheet({
           勾選上車站，看板就會顯示那一站的到站時間；可以勾多站，例如去程、回程各一站（切換上方方向）。
           {picks.length > 0 && `目前 ${picks.length} 站：${picks.map((c) => c.stop).join("、")}`}
         </p>
-        <ol className="bus-stops">
+        <ol className="bus-stops" aria-busy={!state.data && !state.error}>
+          {!state.data && (state.error ? <li className="hint error">無法載入路線：{state.error}</li> : <SkeletonStops />)}
+          {state.data && !trip && <li className="hint">TDX 目前沒有這條路線的站牌資料。</li>}
           {trip?.stops.map((s, i) => {
             const e = stopEta(s);
             const isMine = mine.has(i);
@@ -400,9 +419,7 @@ function TrainList({ trains, from, to, type, now }: { trains: TrainDeparture[]; 
   const nowSec = local.getUTCHours() * 3600 + local.getUTCMinutes() * 60 + local.getUTCSeconds();
   const today = local.toISOString().slice(0, 10);
   // Seconds until the train actually leaves (scheduled time + reported delay).
-  const rows = trains
-    .map((t) => ({ ...t, left: (toMin(t.departure) + (t.delayMin ?? 0)) * 60 - nowSec }))
-    .filter((t) => t.left > -30); // drop ones that left since the last refresh
+  const rows = trains.map((t) => ({ ...t, left: (toMin(t.departure) + (t.delayMin ?? 0)) * 60 - nowSec })).filter((t) => t.left > -30); // drop ones that left since the last refresh
   return (
     <ul className="list scroll" ref={listRef}>
       {rows.map((t) => (
@@ -465,7 +482,9 @@ export function Train() {
   };
   // Keep the selected route's chip in view (the row scrolls sideways).
   useEffect(() => {
-    accRef.current?.querySelector(".route-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    accRef.current
+      ?.querySelector(".route-tab[aria-selected=true]")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
   }, [open]);
   // Long-press a route to drag it sideways.
   const accRef = useReorder<HTMLDivElement>((from, to) => setSettings({ ...settings, trains: moveTo(routes, from, to) }));
@@ -490,10 +509,19 @@ export function Train() {
   return (
     <Section
       title="火車"
+      edit="trains"
       className="train"
       state={state}
       maxAgeSec={STALE_AFTER_SEC.train}
-      source={<>交通部 <a href="https://tdx.transportdata.tw/" target="_blank" rel="noopener noreferrer">TDX</a>（臺鐵時刻、即時與營運公告）</>}
+      source={
+        <>
+          交通部{" "}
+          <a href="https://tdx.transportdata.tw/" target="_blank" rel="noopener noreferrer">
+            TDX
+          </a>
+          （臺鐵時刻、即時與營運公告）
+        </>
+      }
     >
       {state.data && !state.data.configured ? (
         NOT_CONFIGURED
@@ -519,9 +547,18 @@ export function Train() {
           </div>
           {route &&
             (current ? (
-              <TrainList key={open} trains={current.trains} from={route.from} to={route.to} type={trainTypeKeyword(settings.trainType)} now={now} />
+              <TrainList
+                key={open}
+                trains={current.trains}
+                from={route.from}
+                to={route.to}
+                type={trainTypeKeyword(settings.trainType)}
+                now={now}
+              />
+            ) : state.error ? (
+              <p className="hint error">{state.error}</p>
             ) : (
-              state.error ? <p className="hint error">{state.error}</p> : <SkeletonRows rows={5} />
+              <SkeletonRows rows={5} />
             ))}
           {routes.length > 0 && open < 0 && <p className="hint">點上方的路線查看班次。</p>}
         </>

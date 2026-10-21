@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON } from "../hooks";
 import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse, ParkingSource, SpaceCount } from "../shared";
 import { toast } from "../toast";
+import { SkeletonLots } from "./Skeleton";
 
 const RADII = [300, 500, 1000, 2000] as const;
 type Radius = (typeof RADII)[number];
@@ -107,8 +108,6 @@ function fareText(p: ParkingLot): string {
   return "費率見說明";
 }
 
-
-
 export default function Parking({ onClose }: { onClose: () => void }) {
   const saved = useMemo(load, []);
   const [dest, setDest] = useState<Dest | null>(saved.dest);
@@ -180,6 +179,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
       }
     };
     setSelected(null);
+    setData(null); // the old list's distances are from the old destination
     run(true);
     return () => {
       active = false;
@@ -263,9 +263,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   };
 
   // "No live feed" only matters for a city that has car parks in range.
-  const problems = (data?.cities ?? []).filter(
-    (c) => c.lots !== "ok" || (c.live !== "ok" && data!.lots.some((p) => p.city === c.city)),
-  );
+  const problems = (data?.cities ?? []).filter((c) => c.lots !== "ok" || (c.live !== "ok" && data!.lots.some((p) => p.city === c.city)));
   const osmAsOf = data?.extra.find((x) => x.source === "OSM")?.asOf;
   const osmDate = osmAsOf ? osmAsOf.slice(0, 10) : null;
   // Only when the sources have no live data here, not when it just failed to load (that has its own note).
@@ -299,14 +297,14 @@ export default function Parking({ onClose }: { onClose: () => void }) {
 
       {hits && (
         <ul className="pk-hits" aria-label="搜尋結果">
-          <li className="muted small">
-            {hits.nearby ? "地圖目前位置附近的結果（近到遠），請選擇：" : "全台的搜尋結果，請選擇："}
-          </li>
+          <li className="muted small">{hits.nearby ? "地圖目前位置附近的結果（近到遠），請選擇：" : "全台的搜尋結果，請選擇："}</li>
           {!hits.nearby && (
             <li className="muted tiny pk-hits-tip">想找附近的分店？先把地圖移到大概的位置（或按「目前位置」），再搜尋一次。</li>
           )}
           {hits.errors.map((e) => (
-            <li key={e} className="tiny pk-hits-tip warn">⚠ {e}，以下只有另一個來源的結果</li>
+            <li key={e} className="tiny pk-hits-tip warn">
+              ⚠ {e}，以下只有另一個來源的結果
+            </li>
           ))}
           {hits.hits.map((h, i) => (
             <li key={i}>
@@ -361,7 +359,15 @@ export default function Parking({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="pk-body">
-        <ParkingMap dest={dest} radius={radius} lots={lots} selected={selected} onSelect={(id) => select(id, "map")} onPick={pickOnMap} onView={(v) => (view.current = v)} />
+        <ParkingMap
+          dest={dest}
+          radius={radius}
+          lots={lots}
+          selected={selected}
+          onSelect={(id) => select(id, "map")}
+          onPick={pickOnMap}
+          onView={(v) => (view.current = v)}
+        />
 
         <div className="pk-list">
           {!dest && <p className="pk-note">輸入目的地、按「目前位置」，或直接在地圖上點一下，就會列出附近的停車場。</p>}
@@ -399,12 +405,12 @@ export default function Parking({ onClose }: { onClose: () => void }) {
               {c.coveredBy
                 ? `TDX 沒有${c.name}的停車場資料，${c.name}改用${c.coveredBy}`
                 : c.lots === "empty"
-                ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（可在上方「顯示」打開 OSM 來源看 OpenStreetMap 上的停車場）`
-                : c.lots === "error"
-                ? `⚠ ${c.name}停車場資料暫時無法取得（${c.error ?? ""}）`
-                : c.live === "error"
-                  ? `⚠ ${c.name}即時空位暫時無法取得，以下不顯示空位（${c.error ?? ""}）`
-                  : `${c.name}目前沒有提供即時空位資料`}
+                  ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（可在上方「顯示」打開 OSM 來源看 OpenStreetMap 上的停車場）`
+                  : c.lots === "error"
+                    ? `⚠ ${c.name}停車場資料暫時無法取得（${c.error ?? ""}）`
+                    : c.live === "error"
+                      ? `⚠ ${c.name}即時空位暫時無法取得，以下不顯示空位（${c.error ?? ""}）`
+                      : `${c.name}目前沒有提供即時空位資料`}
             </p>
           ))}
           {(data?.extra ?? [])
@@ -429,14 +435,24 @@ export default function Parking({ onClose }: { onClose: () => void }) {
           )}
           {noLiveAtAll && <p className="pk-note">這附近的停車場都沒有即時空位資料，空位請以現場為準。</p>}
 
-          <ol className="pk-lots">
+          <ol className="pk-lots" aria-busy={loading && !data}>
+            {loading && !data && <SkeletonLots />}
             {lots.map((p) => (
-              <LotItem key={p.id} lot={p} now={now} destLabel={dest?.label ?? ""} open={selected === p.id} onToggle={() => setSelected(selected === p.id ? null : p.id)} />
+              <LotItem
+                key={p.id}
+                lot={p}
+                now={now}
+                destLabel={dest?.label ?? ""}
+                open={selected === p.id}
+                onToggle={() => setSelected(selected === p.id ? null : p.id)}
+              />
             ))}
           </ol>
 
           <p className="pk-source">
-            停車場與即時空位：交通部 TDX 運輸資料流通服務、新北市政府資料開放平臺（政府資料開放授權條款－第1版）、© OpenStreetMap 貢獻者（ODbL，只有位置{osmDate ? `，${osmDate} 的資料` : ""}）・地圖：內政部國土測繪中心・地點搜尋：TDX、© OpenStreetMap 貢獻者（ODbL）・距離為直線距離・費率由業者公告文字推估，實際以現場為準
+            停車場與即時空位：交通部 TDX 運輸資料流通服務、新北市政府資料開放平臺（政府資料開放授權條款－第1版）、© OpenStreetMap
+            貢獻者（ODbL，只有位置{osmDate ? `，${osmDate} 的資料` : ""}）・地圖：內政部國土測繪中心・地點搜尋：TDX、© OpenStreetMap
+            貢獻者（ODbL）・距離為直線距離・費率由業者公告文字推估，實際以現場為準
           </p>
         </div>
       </div>
@@ -457,7 +473,14 @@ function SpaceLine({ lot, now }: { lot: ParkingLot; now: number }) {
     <span className={`pk-live ${level(lot, now)}`}>
       {c ? (
         <>
-          {lot.car ? "汽車" : "空位"} {c.available === 0 ? "已滿" : <>剩 <b>{c.available}</b></>}
+          {lot.car ? "汽車" : "空位"}{" "}
+          {c.available === 0 ? (
+            "已滿"
+          ) : (
+            <>
+              剩 <b>{c.available}</b>
+            </>
+          )}
           {c.total != null && <span className="muted"> / {c.total}</span>}
         </>
       ) : (
@@ -626,10 +649,10 @@ function ParkingMap({
     const legend = new L.Control({ position: "topright" });
     legend.onAdd = () => {
       const div = L.DomUtil.create("div", "pk-legend");
-      div.innerHTML = (Object.keys(SOURCE) as ParkingSource[])
-        .map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`)
-        .join("") +
-        '<span class="pk-legend-note">數字＝剩餘車位<br>黃框快滿・紅框已滿</span>';
+      div.innerHTML =
+        (Object.keys(SOURCE) as ParkingSource[])
+          .map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`)
+          .join("") + '<span class="pk-legend-note">數字＝剩餘車位<br>黃框快滿・紅框已滿</span>';
       L.DomEvent.disableClickPropagation(div);
       return div;
     };
@@ -657,7 +680,9 @@ function ParkingMap({
     g.clearLayers();
     markers.current.clear();
     if (!dest) return;
-    const circle = L.circle([dest.lat, dest.lon], { radius, color: "#5aa9ff", weight: 1.5, fillOpacity: 0.06, interactive: false }).addTo(g);
+    const circle = L.circle([dest.lat, dest.lon], { radius, color: "#5aa9ff", weight: 1.5, fillOpacity: 0.06, interactive: false }).addTo(
+      g,
+    );
     L.marker([dest.lat, dest.lon], {
       // A red map pin whose tip is on the point (the icon's anchor is its bottom middle).
       icon: L.divIcon({

@@ -28,3 +28,47 @@ export function SkeletonRows({ rows = 5 }: { rows?: number }) {
 export function SkeletonBar({ className = "" }: { className?: string }) {
   return <span className={`sk ${className}`} aria-hidden />;
 }
+
+/** Stops of a bus route (inside `.bus-stops`): tick box, arrival time, stop name. */
+export function SkeletonStops({ rows = 12 }: { rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, i) => (
+        <li key={`sk${i}`} aria-hidden>
+          <span className="sk sk-box" />
+          <span className="sk sk-eta-wide" />
+          <span className="sk" style={{ width: `${30 + ((i * 13) % 35)}%` }} />
+        </li>
+      ))}
+    </>
+  );
+}
+
+/** Car parks (inside `.pk-lots`): a name line over a details line. */
+export function SkeletonLots({ rows = 5 }: { rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, i) => (
+        <li key={`sk${i}`} className="pk-lot sk-lot" aria-hidden>
+          <span className="sk" style={{ width: `${55 + ((i * 17) % 30)}%` }} />
+          <span className="sk sk-sub" style={{ width: `${35 + ((i * 11) % 25)}%` }} />
+          <span className="sk sk-sub" style={{ width: `${45 + ((i * 7) % 20)}%` }} />
+        </li>
+      ))}
+    </>
+  );
+}
+
+/** Choices in a settings list (inside `.pick-list`), e.g. bus routes or stops. */
+export function SkeletonPicks({ rows = 8 }: { rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, i) => (
+        <li key={`sk${i}`} className="sk-pick" aria-hidden>
+          <span className="sk sk-chip" />
+          <span className="sk" style={{ width: `${30 + ((i * 13) % 40)}%` }} />
+        </li>
+      ))}
+    </>
+  );
+}

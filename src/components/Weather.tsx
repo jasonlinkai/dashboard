@@ -11,7 +11,14 @@ import { Section } from "./Section";
 import { SkeletonBar } from "./Skeleton";
 
 interface Forecast {
-  current: { temperature_2m: number; apparent_temperature: number; relative_humidity_2m: number; weather_code: number; is_day: number; wind_speed_10m: number };
+  current: {
+    temperature_2m: number;
+    apparent_temperature: number;
+    relative_humidity_2m: number;
+    weather_code: number;
+    is_day: number;
+    wind_speed_10m: number;
+  };
   hourly: { time: string[]; temperature_2m: number[]; precipitation_probability: number[]; weather_code: number[]; is_day: number[] };
   daily: { temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_probability_max: number[] };
 }
@@ -238,11 +245,9 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   const towns = [...new Set(places.map(placeKey))].join(",");
   const forecasts = usePolling(() => loadForecasts(places), REFRESH_SEC.weather, [key]);
   // Station data is optional: without a CWA key (or if it fails) the cards fall back to the model.
-  const obs = usePolling(
-    () => getJSON<ObservationResponse>(`/api/observations?towns=${encodeURIComponent(towns)}`),
-    REFRESH_SEC.weather,
-    [towns],
-  );
+  const obs = usePolling(() => getJSON<ObservationResponse>(`/api/observations?towns=${encodeURIComponent(towns)}`), REFRESH_SEC.weather, [
+    towns,
+  ]);
   const stations = obs.data?.observations ?? [];
   const [group] = useState(() => new StripGroup());
   useEffect(() => () => group.dispose(), [group]);
@@ -266,16 +271,28 @@ export function Weather({ onScene }: { onScene?: (s: Scene) => void }) {
   return (
     <Section
       title="天氣"
+      edit="weather"
       className="weather"
       state={forecasts}
       maxAgeSec={STALE_AFTER_SEC.weather}
       source={
         <>
-          <a href="https://www.cwa.gov.tw/" target="_blank" rel="noopener noreferrer">中央氣象署</a>（實測）、Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a>（預報，CC BY 4.0）
+          <a href="https://www.cwa.gov.tw/" target="_blank" rel="noopener noreferrer">
+            中央氣象署
+          </a>
+          （實測）、Weather data by{" "}
+          <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">
+            Open-Meteo.com
+          </a>
+          （預報，CC BY 4.0）
         </>
       }
     >
-      <div className="wx-grid" ref={gridRef} style={{ "--wx": places.length, "--wx-rows-2": Math.ceil(places.length / 2) } as React.CSSProperties}>
+      <div
+        className="wx-grid"
+        ref={gridRef}
+        style={{ "--wx": places.length, "--wx-rows-2": Math.ceil(places.length / 2) } as React.CSSProperties}
+      >
         {places.map((loc, i) => (
           <WeatherCard key={loc.name} loc={loc} f={fresh?.[i]} obs={pickStation(loc, stations)} group={group} />
         ))}

@@ -50,8 +50,9 @@
 * { box-sizing: border-box; }
 
 /* A fixed, full-screen board: nothing scrolls, including iOS rubber-banding. */
+/* --app-h: set by viewportFix.ts only where iOS reports a viewport shorter than the screen. */
 html, body, #root {
-  height: 100%;
+  height: var(--app-h, 100%);
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
@@ -78,7 +79,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   position: relative;
   z-index: 1;
   height: 100vh;
-  height: 100dvh;
+  height: var(--app-h, 100dvh);
   max-width: 1800px;
   margin: 0 auto;
   display: flex;
@@ -109,7 +110,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* ---------- Reliability popup ---------- */
 
 .modal-backdrop {
-  position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / 0.55);
+  position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / 0.55); height: var(--app-h, auto);
   display: flex; align-items: center; justify-content: center;
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
 }
@@ -289,6 +290,13 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .card-warn { border-color: color-mix(in srgb, var(--red) 60%, transparent); }
 .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex: none; min-width: 0; }
 .card-head h2 { margin: 0; font-size: 16px; font-weight: 650; white-space: nowrap; }
+.card-gear {
+  flex: none; width: 26px; height: 26px; margin-left: -4px; padding: 4px; border: 0; border-radius: 6px;
+  background: none; color: var(--muted); cursor: pointer; opacity: 0.7;
+}
+.card-gear svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.card-gear:active { background: var(--press); }
+@media (hover: hover) { .card-gear:hover { color: var(--text); opacity: 1; } }
 .countdown { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
 .ring { width: 12px; height: 12px; flex: none; }
 .ring circle { fill: none; stroke-width: 2.2; }
@@ -587,7 +595,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 
 .pk-open { padding: 0; font: 700 15px/1 -apple-system, BlinkMacSystemFont, sans-serif; }
 .parking {
-  position: fixed; inset: 0; z-index: 20; background: var(--bg); color: var(--text);
+  position: fixed; inset: 0; z-index: 20; background: var(--bg); color: var(--text); height: var(--app-h, auto);
   /* No pinch-zooming the page (the map zooms itself; Leaflet sets touch-action: none on it). */
   touch-action: pan-x pan-y;
   display: flex; flex-direction: column; gap: 8px;
@@ -741,6 +749,12 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .sk-eta { width: 2.6em; height: 1.1em; }
 .sk-price { width: 70%; height: 1.4em; margin: 6px 0; }
 .sk-wx { width: 60%; height: 1.6em; margin-top: 10px; }
+.sk-box { flex: none; width: 16px; height: 16px; border-radius: 4px; }
+.sk-eta-wide { flex: none; width: 4.4em; height: 1.1em; margin: 0 0.4em; }
+.sk-lot { display: flex; flex-direction: column; gap: 0; padding: 11px 12px; }
+.sk-lot .sk-sub { margin-top: 8px; }
+.sk-pick { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; background: var(--card-2); }
+.sk-chip { flex: none; width: 3.9em; height: 1.3em; border-radius: 6px; }
 @keyframes sk-shine { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 .key-slot { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card-2); }

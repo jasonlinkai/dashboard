@@ -3,6 +3,7 @@ import { useSettings } from "../settings";
 import { toast } from "../toast";
 import { SAVER_OPTIONS, type SaverMinutes, type ThemePref } from "../theme";
 import { Backup } from "./Backup";
+import type { ContentSection } from "../openSettings";
 import { ContentEditor } from "./ContentEditor";
 import { TdxKeySetting } from "./TdxKeySetting";
 
@@ -38,6 +39,7 @@ export function Settings({
   saver,
   onSaver,
   onSaverPreview,
+  section,
   onClose,
 }: {
   theme: ThemePref;
@@ -48,10 +50,12 @@ export function Settings({
   saver: SaverMinutes;
   onSaver: (m: SaverMinutes) => void;
   onSaverPreview: () => void;
+  /** Open straight to this card's page (from the gear next to the card's title). */
+  section?: ContentSection;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [page, setPage] = useState<Page>(loadPage);
+  const [page, setPage] = useState<Page>(() => (section ? "content" : loadPage()));
   const choose = (p: Page) => {
     setPage(p);
     try {
@@ -168,7 +172,7 @@ export function Settings({
               </div>
             </>
           )}
-          {page === "content" && <ContentEditor />}
+          {page === "content" && <ContentEditor initial={section} onExit={onClose} />}
           {page === "tdx" && <TdxKeySetting />}
           {page === "backup" && <Backup theme={theme} fx={fx} onTheme={onTheme} onFx={onFx} />}
         </div>

@@ -5,7 +5,10 @@ import { SettingsProvider } from "./settings";
 import { startAutoUpdate } from "./autoUpdate";
 import { startScrollCues } from "./scrollCues";
 import { Toaster } from "./toast";
+import { startViewportFix } from "./viewportFix";
 import "./styles.css";
+
+startViewportFix();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

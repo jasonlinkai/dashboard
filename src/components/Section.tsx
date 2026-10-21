@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { mmss } from "../format";
 import { type Polled, useNow } from "../hooks";
+import { type ContentSection, openSettings } from "../openSettings";
+import { GearIcon } from "./GearIcon";
 
 const hms = new Intl.DateTimeFormat("zh-TW", {
   hour: "2-digit",
@@ -51,6 +53,7 @@ export function Section({
   maxAgeSec,
   actions,
   source,
+  edit,
   children,
 }: {
   title: string;
@@ -59,6 +62,8 @@ export function Section({
   /** Data older than this is flagged as delayed. */
   maxAgeSec: number;
   actions?: ReactNode;
+  /** The settings page for this card, opened by the gear next to the title. */
+  edit?: ContentSection;
   /** Attribution line at the bottom of the card (the data licences require crediting the source). */
   source?: ReactNode;
   children: ReactNode;
@@ -74,10 +79,19 @@ export function Section({
     <section className={`card ${className} ${fresh?.warn ? "card-warn" : ""}`}>
       <header className="card-head">
         <h2>{title}</h2>
+        {edit && (
+          <button className="card-gear" onClick={() => openSettings(edit)} aria-label={`${title}設定`} title={`${title}設定`}>
+            <GearIcon />
+          </button>
+        )}
         {actions}
         <span className="muted status">
           {left == null ? (
-            state.loading ? "載入中…" : "已暫停"
+            state.loading ? (
+              "載入中…"
+            ) : (
+              "已暫停"
+            )
           ) : (
             <span className="countdown">
               <Ring fraction={Math.min(1, Math.max(0, left / state.intervalSec))} />

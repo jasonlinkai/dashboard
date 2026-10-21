@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { GearIcon } from "./components/GearIcon";
 import { Flip } from "./components/Flip";
 import { Markets } from "./components/Markets";
 import { News } from "./components/News";
@@ -10,6 +11,7 @@ import { type Scene, type SceneKind, WeatherFx } from "./components/WeatherFx";
 import { useNow, useWakeLock } from "./hooks";
 import { ScreenSaver } from "./components/ScreenSaver";
 import { useFx, useSaver, useTheme } from "./theme";
+import { type ContentSection, onOpenSettings } from "./openSettings";
 import { toast } from "./toast";
 
 // Leaflet only loads when the parking search is opened.
@@ -42,6 +44,9 @@ export default function App() {
   // "#info" in the URL opens the reliability notes directly (handy for sharing the explanation).
   const [showInfo, setShowInfo] = useState(() => location.hash === "#info");
   const [showSettings, setShowSettings] = useState(() => location.hash === "#settings");
+  // Opened from a card's gear: straight to that card's page of the settings.
+  const [settingsSection, setSettingsSection] = useState<ContentSection | undefined>();
+  useEffect(() => onOpenSettings((s) => (setSettingsSection(s), setShowSettings(true))), []);
   const [showParking, setShowParking] = useState(() => location.hash === "#parking");
   const [theme, setTheme] = useTheme();
   const [fx, setFx] = useFx();
@@ -74,10 +79,7 @@ export default function App() {
             i
           </button>
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="設定" title="設定">
-            <svg viewBox="0 0 24 24" aria-hidden>
-              <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z" />
-            </svg>
+            <GearIcon />
           </button>
         </header>
         <main className="grid" data-tab={tab}>
@@ -115,7 +117,8 @@ export default function App() {
             saver={saver}
             onSaver={setSaver}
             onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
-            onClose={() => setShowSettings(false)}
+            section={settingsSection}
+            onClose={() => (setShowSettings(false), setSettingsSection(undefined))}
           />
         )}
       </div>

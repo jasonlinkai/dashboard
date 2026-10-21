@@ -63,6 +63,7 @@ export function News() {
   return (
     <Section
       title="新聞"
+      edit="news"
       className="news"
       state={state}
       maxAgeSec={STALE_AFTER_SEC.news}
