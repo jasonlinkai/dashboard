@@ -93,13 +93,17 @@ export function Section({
         {movable && (
           <button
             className="card-move"
-            aria-label={`移動${PANEL_NAMES[panel]}，目前在第 ${layout.slot(panel) + 1} 格（共 ${layout.mode === "phone" ? 2 : 5} 格）。按方向鍵和那一邊的板塊交換位置`}
-            aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
+            aria-label={
+              layout.mode === "phone"
+                ? `移動${PANEL_NAMES[panel]}，目前${layout.where(panel)}。按方向鍵和另一張交換位置`
+                : `移動${PANEL_NAMES[panel]}，目前${layout.where(panel)}。方向鍵移動一格（擋住時和那一邊的板塊交換），Shift 加方向鍵調整大小`
+            }
+            aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
             title="拖動或用方向鍵移動"
             onKeyDown={(e) => {
               if (!e.key.startsWith("Arrow")) return;
               e.preventDefault();
-              layout.move(panel, e.key);
+              layout.move(panel, e.key, e.shiftKey);
             }}
           >
             <svg viewBox="0 0 12 16" aria-hidden>
@@ -152,6 +156,8 @@ export function Section({
       </header>
       {children}
       {source && <div className="card-source">資料來源：{source}</div>}
+      {/* Drag to resize (tablet / desktop); the move button's Shift+arrows do the same from the keyboard. */}
+      {movable && layout.mode !== "phone" && <span className="card-resize" aria-hidden />}
     </section>
   );
 }

@@ -21,8 +21,9 @@ const LAYOUT_PARTS = { wide: "橫向", tall: "直向", tabs: "手機分頁", tra
 const TAB_NAMES: Record<PhoneTab, string> = { markets: "行情", weather: "天氣", transit: "交通", news: "新聞" };
 const layoutSummary = ({ layout }: Settings) =>
   (Object.keys(LAYOUT_PARTS) as (keyof typeof LAYOUT_PARTS)[])
-    .filter((k) => layout[k].join() !== DEFAULT_LAYOUT[k].join())
+    .filter((k) => JSON.stringify(layout[k]) !== JSON.stringify(DEFAULT_LAYOUT[k]))
     .map((k) => {
+      if (k === "wide" || k === "tall") return `${LAYOUT_PARTS[k]}：已調整`;
       const names = k === "tabs" ? layout.tabs.map((t) => TAB_NAMES[t]) : layout[k].map((p) => PANEL_NAMES[p]);
       return `${LAYOUT_PARTS[k]}：${names.join("、")}`;
     })

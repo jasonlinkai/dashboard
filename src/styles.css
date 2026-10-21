@@ -476,19 +476,15 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   --tile-h: clamp(96px, 9vh, 128px);
   --wx-h: clamp(104px, 9.6vh, 132px);
 }
-/* Wide, short slot: the tiles in one row that scrolls sideways; weather 2×2, so each place is wide
-   enough for 12 hourly columns. */
+/* Wide slot: the tiles in one row that scrolls sideways (as tall as the card); weather 2 across, so
+   each place is wide enough for 12 hourly columns. */
 @container card (min-width: 630px) {
   .tiles {
-    grid-auto-flow: column; grid-template-columns: none; grid-template-rows: clamp(100px, 15vh, 150px);
+    grid-auto-flow: column; grid-template-columns: none; grid-template-rows: minmax(0, 1fr);
     grid-auto-columns: calc((100% - (var(--tile-cols, 6) - 1) * 8px) / var(--tile-cols, 6));
     overflow-x: auto; overflow-y: hidden; touch-action: pan-x;
   }
-  .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: var(--wx-h); max-height: calc(2 * var(--wx-h) + 8px); }
-}
-/* A list moved into a wide slot (whose row is sized by its content) gets a fixed height and scrolls. */
-@container card (min-width: 630px) {
-  .list, .news-list { max-height: var(--wide-list-h, clamp(100px, 15vh, 150px)); }
+  .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(var(--wx-h), 1fr); }
 }
 /* Narrow, tall slot: tiles two across going down (as on a phone); weather places stacked. */
 @container card (max-width: 629.98px) {
@@ -548,22 +544,20 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .tabbar { display: none; }
   .grid > .card { display: flex; }
   .grid[data-tab] {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1fr);
-    /* Slots; which card sits in each comes from the settings (App sets --tall-<card>). */
-    grid-template-areas: "t0 t0" "t1 t1" "t2 t4" "t3 t4";
-    --wide-list-h: calc(2 * var(--tile-h) + 8px);
+    /* A GRID × GRID board (settings.tsx); where each card sits comes from the settings. */
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+    grid-template-rows: repeat(24, minmax(0, 1fr));
   }
   .grid > .markets { grid-area: var(--tall-markets); }
   .grid > .weather { grid-area: var(--tall-weather); }
   .grid > .bus { grid-area: var(--tall-bus); }
   .grid > .train { grid-area: var(--tall-train); }
   .grid > .news { grid-area: var(--tall-news); }
-  /* A full-width row here is narrower than on a desktop: tiles three across, two rows that scroll. */
+  /* A full-width row here is narrower than on a desktop: tiles three across, rows that scroll. */
   @container card (min-width: 630px) {
     .tiles {
       grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none;
-      grid-auto-rows: var(--tile-h); max-height: calc(2 * var(--tile-h) + 8px);
+      grid-auto-rows: minmax(var(--tile-h), 1fr);
       overflow-x: hidden; overflow-y: auto; touch-action: pan-y;
     }
   }
@@ -577,11 +571,9 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .tabbar { display: none; }
   .grid > .card { display: flex; }
   .grid[data-tab] {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.1fr);
-    /* Bus and train split the column evenly; each list scrolls inside its card. */
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
-    /* Slots; which card sits in each comes from the settings (App sets --wide-<card>). */
-    grid-template-areas: "w0 w0 w0" "w1 w2 w4" "w1 w3 w4";
+    /* A GRID × GRID board (settings.tsx); where each card sits comes from the settings. */
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+    grid-template-rows: repeat(24, minmax(0, 1fr));
   }
   .grid > .markets { grid-area: var(--wide-markets); }
   .grid > .weather { grid-area: var(--wide-weather); }
@@ -617,10 +609,23 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .card-move:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 /* Edit mode: a card is one thing to pick up; what's inside doesn't scroll or open links. */
 .grid.editing > .card-movable {
-  cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none;
+  position: relative; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none;
   outline: 2px dashed color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: -2px;
 }
-.grid.editing > .card-movable > :not(.card-head), .grid.editing > .card-movable > .card-head > :not(.card-move) { pointer-events: none; }
+.grid.editing > .card-movable > :not(.card-head, .card-resize), .grid.editing > .card-movable > .card-head > :not(.card-move) { pointer-events: none; }
+/* Corner handle: drag to resize. Only in edit mode (Section renders it then). */
+.card-resize {
+  position: absolute; right: 0; bottom: 0; width: 28px; height: 28px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, color-mix(in srgb, var(--blue) 70%, transparent) 50% 58%, transparent 58% 68%,
+    color-mix(in srgb, var(--blue) 70%, transparent) 68% 76%, transparent 76%);
+}
+.grid > .card.panel-resizing { outline: 2px solid var(--blue); outline-offset: -2px; }
+/* Where a card carried over free cells would land; red when it would cover another card. */
+.panel-preview {
+  border: 2px dashed var(--blue); border-radius: 14px; pointer-events: none; z-index: 10;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+}
+.panel-preview.invalid { border-color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
 .grid.panel-dragging, .grid.panel-dragging > .card { cursor: grabbing; }
 /* The carried card: half see-through, above the rest, following the pointer (transform set in JS). */
 .grid > .card.panel-lifted {

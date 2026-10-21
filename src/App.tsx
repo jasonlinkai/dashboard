@@ -14,8 +14,8 @@ import { ScreenSaver } from "./components/ScreenSaver";
 import { useFx, useSaver, useTheme } from "./theme";
 import { type ContentSection, onOpenSettings } from "./openSettings";
 import { toast } from "./toast";
-import { DEFAULT_LAYOUT, type LayoutMode, PANEL_NAMES, PANELS, PHONE_TABS, type Panel, type PhoneTab, useSettings } from "./settings";
-import { LayoutEditContext, type Rects, cardOf, neighbor, onEditLayout, useFlip, useLayoutMode, usePanelDrag, useTabDrag } from "./layoutEdit";
+import { type Boxes, DEFAULT_LAYOUT, GRID, PANEL_NAMES, PANELS, PHONE_TABS, type Panel, type PhoneTab, type Rect, fits, useSettings } from "./settings";
+import { LayoutEditContext, type Rects, area, cardOf, neighbor, onEditLayout, useFlip, useLayoutMode, usePanelDrag, useTabDrag } from "./layoutEdit";
 import { moveTo } from "./hooks";
 
 // Leaflet only loads when the parking search is opened.
@@ -74,22 +74,27 @@ export default function App() {
   const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, layout.transit]));
   const tabFlip = useFlip(navRef, layout.tabs.join(), true);
   useEffect(() => onEditLayout(() => setEditing(true)), []);
-  // Phone: the slots are bus and train in the transit tab.
-  const slotKey = mode === "phone" ? "transit" : mode;
-  const setSlots = (m: LayoutMode | "transit", slots: Panel[], first?: Rects) => {
+  const boxes = mode === "phone" ? null : layout[mode];
+  const setLayout = (next: Partial<typeof layout>, first?: Rects) => {
     flip.capture(first);
-    setSettings({ ...settings, layout: { ...layout, [m]: slots } });
+    setSettings({ ...settings, layout: { ...layout, ...next } });
   };
+  const describe = (r: Rect) => `從第 ${r.y + 1} 列第 ${r.x + 1} 欄起，寬 ${r.w} 格、高 ${r.h} 格（整面 ${GRID}×${GRID} 格）`;
+  const where = (p: Panel) => (boxes ? describe(boxes[p]) : `第 ${layout.transit.indexOf(p) + 1} 個（共 2 個）`);
+  /** Two cards trade places (and sizes); on a phone, bus and train trade order. */
   const swap = (a: Panel, b: Panel, first?: Rects) => {
-    const slots = [...layout[slotKey]];
-    const i = slots.indexOf(a);
-    const j = slots.indexOf(b);
-    if (a === b || i < 0 || j < 0) return;
-    [slots[i], slots[j]] = [slots[j], slots[i]];
-    setSlots(slotKey, slots, first);
-    setAnnounce(`${PANEL_NAMES[a]}和${PANEL_NAMES[b]}交換了位置，${PANEL_NAMES[a]}現在在第 ${j + 1} 格`);
+    if (a === b) return;
+    if (boxes) setLayout({ [mode]: { ...boxes, [a]: boxes[b], [b]: boxes[a] } }, first);
+    else if (layout.transit.includes(a) && layout.transit.includes(b)) setLayout({ transit: [...layout.transit].reverse() }, first);
+    else return;
+    setAnnounce(`${PANEL_NAMES[a]}和${PANEL_NAMES[b]}交換了位置`);
   };
-  usePanelDrag(gridRef, editing, mode, swap);
+  const place = (p: Panel, r: Rect, first?: Rects) => {
+    if (!boxes || !fits(boxes, p, r)) return;
+    setLayout({ [mode]: { ...boxes, [p]: r } as Boxes }, first);
+    setAnnounce(`${PANEL_NAMES[p]}現在${describe(r)}`);
+  };
+  usePanelDrag(gridRef, editing, mode, boxes, swap, place);
   const moveTab = (from: number, to: number) => {
     if (to < 0 || to >= layout.tabs.length || from === to) return;
     tabFlip.capture();
@@ -100,20 +105,26 @@ export default function App() {
   const edit = {
     editing,
     mode,
-    slot: (p: Panel) => layout[slotKey].indexOf(p),
-    move: (p: Panel, key: string) => {
+    where,
+    move: (p: Panel, key: string, resize: boolean) => {
+      const [dx, dy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key] ?? [0, 0];
+      if (boxes) {
+        const r = boxes[p];
+        const next = resize ? { ...r, w: r.w + dx, h: r.h + dy } : { ...r, x: r.x + dx, y: r.y + dy };
+        if (fits(boxes, p, next)) return place(p, next);
+        if (resize) return;
+      }
+      // Blocked (or a phone): swap with the card that way.
       const grid = gridRef.current;
       const el = grid && cardOf(grid, p);
       const other = el && neighbor(grid, el, key);
-      if (!other) return false;
-      swap(p, PANELS.find((q) => other.classList.contains(q))!);
-      return true;
+      if (other) swap(p, PANELS.find((q) => other.classList.contains(q))!);
     },
   };
-  // Grid areas from the slot lists: --wide-markets: w0 and so on (styles.css picks the layout);
-  // on a phone, --transit-bus / --transit-train order the transit tab.
+  // Where each card goes: --wide-markets: "1 / 1 / span 6 / span 24" and so on (styles.css picks
+  // the layout); on a phone, --transit-bus / --transit-train order the transit tab.
   const areas = Object.fromEntries([
-    ...(["wide", "tall"] as const).flatMap((m) => layout[m].map((p, i) => [`--${m}-${p}`, `${m[0]}${i}`])),
+    ...(["wide", "tall"] as const).flatMap((m) => PANELS.map((p) => [`--${m}-${p}`, area(layout[m][p])])),
     ...layout.transit.map((p, i) => [`--transit-${p}`, i]),
   ]) as CSSProperties;
   // Entering edit mode puts focus on the first thing to move, for keyboard users.
@@ -126,7 +137,10 @@ export default function App() {
   useEffect(() => {
     if (!editing) return;
     if (mode === "phone") navRef.current?.querySelector<HTMLElement>("[data-tab-id]")?.focus();
-    else gridRef.current?.querySelector<HTMLElement>(`.card.${layout[mode][0]} .card-move`)?.focus();
+    else {
+      const first = [...PANELS].sort((a, b) => layout[mode][a].y - layout[mode][b].y || layout[mode][a].x - layout[mode][b].x)[0];
+      gridRef.current?.querySelector<HTMLElement>(`.card.${first} .card-move`)?.focus();
+    }
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEditing(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -134,11 +148,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, mode]);
   const resetLayout = () => {
-    if (mode !== "phone") setSlots(mode, DEFAULT_LAYOUT[mode]);
+    if (mode !== "phone") setLayout({ [mode]: DEFAULT_LAYOUT[mode] });
     else {
-      flip.capture();
       tabFlip.capture();
-      setSettings({ ...settings, layout: { ...layout, tabs: DEFAULT_LAYOUT.tabs, transit: DEFAULT_LAYOUT.transit } });
+      setLayout({ tabs: DEFAULT_LAYOUT.tabs, transit: DEFAULT_LAYOUT.transit });
     }
     setAnnounce("已恢復預設版面");
     toast("已恢復預設版面");
@@ -160,7 +173,7 @@ export default function App() {
             <div className="layout-bar" role="toolbar" aria-label="調整版面">
               <span className="layout-bar-hint">
                 {mode !== "phone"
-                  ? "拖動板塊，放到另一格就會交換位置"
+                  ? "拖到另一板塊上交換、拖到空位移動，拖右下角調整大小"
                   : tab === "transit"
                     ? "拖動卡片或分頁調整位置"
                     : "拖動底部分頁調整順序"}

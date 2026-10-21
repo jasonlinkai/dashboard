@@ -65,14 +65,50 @@ export const PHONE_TABS = ["markets", "weather", "transit", "news"] as const;
 export type PhoneTab = (typeof PHONE_TABS)[number];
 export const TRANSIT = ["bus", "train"] as const;
 
+/** Tablet and desktop: each card is a box on a GRID × GRID board, in cells (x, y from the top left). */
+export const GRID = 24;
+export const MIN_W = 4;
+export const MIN_H = 3;
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+export type Boxes = Record<Panel, Rect>;
+export const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+/** On the board, big enough, and clear of the other cards. */
+export const fits = (boxes: Boxes, p: Panel, r: Rect) =>
+  [r.x, r.y, r.w, r.h].every(Number.isInteger) &&
+  r.x >= 0 && r.y >= 0 && r.w >= MIN_W && r.h >= MIN_H && r.x + r.w <= GRID && r.y + r.h <= GRID &&
+  PANELS.every((q) => q === p || !overlaps(boxes[q], r));
+
 /**
- * Slot → card, one list per layout. Slot i is the grid area named w{i} / t{i} in styles.css:
- * wide (desktop, landscape tablet): "w0 w0 w0" "w1 w2 w4" "w1 w3 w4";
- * tall (portrait tablet): "t0 t0" "t1 t1" "t2 t4" "t3 t4".
+ * The fixed slots of the first version (a card per slot), still read from older files:
+ * wide "w0 w0 w0" "w1 w2 w4" "w1 w3 w4", tall "t0 t0" "t1 t1" "t2 t4" "t3 t4". Also the default
+ * boxes, sized like the original layouts (desktop columns 1.2 : 1 : 1.1, the market row a quarter).
  */
+const SLOTS: Record<LayoutMode, Rect[]> = {
+  wide: [
+    { x: 0, y: 0, w: 24, h: 6 },
+    { x: 0, y: 6, w: 9, h: 18 },
+    { x: 9, y: 6, w: 7, h: 9 },
+    { x: 9, y: 15, w: 7, h: 9 },
+    { x: 16, y: 6, w: 8, h: 18 },
+  ],
+  tall: [
+    { x: 0, y: 0, w: 24, h: 7 },
+    { x: 0, y: 7, w: 24, h: 7 },
+    { x: 0, y: 14, w: 12, h: 5 },
+    { x: 0, y: 19, w: 12, h: 5 },
+    { x: 12, y: 14, w: 12, h: 10 },
+  ],
+};
+const fromSlots = (m: LayoutMode, slots: readonly Panel[]) => Object.fromEntries(slots.map((p, i) => [p, SLOTS[m][i]])) as Boxes;
+
 export interface Layout {
-  wide: Panel[];
-  tall: Panel[];
+  wide: Boxes;
+  tall: Boxes;
   /** Phone: order of the bottom tabs. */
   tabs: PhoneTab[];
   /** Phone: bus and train in the transit tab, top (or left) first. */
@@ -80,8 +116,8 @@ export interface Layout {
 }
 export type LayoutMode = "wide" | "tall";
 export const DEFAULT_LAYOUT: Layout = {
-  wide: ["markets", "weather", "bus", "train", "news"],
-  tall: ["markets", "weather", "bus", "train", "news"],
+  wide: fromSlots("wide", PANELS),
+  tall: fromSlots("tall", PANELS),
   tabs: [...PHONE_TABS],
   transit: [...TRANSIT],
 };
@@ -334,9 +370,21 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
   const layout: Layout = { ...DEFAULT_LAYOUT };
   if (raw.layout !== undefined && !isObj(raw.layout)) err("layout 必須是物件");
   else if (isObj(raw.layout)) {
+    for (const m of ["wide", "tall"] as const) {
+      const v = raw.layout[m];
+      if (v === undefined) continue;
+      // The first version stored a card per fixed slot.
+      if (Array.isArray(v) && v.length === PANELS.length && PANELS.every((p) => v.includes(p))) {
+        layout[m] = fromSlots(m, v as Panel[]);
+        continue;
+      }
+      const boxes = isObj(v) && PANELS.every((p) => isObj(v[p])) ? (Object.fromEntries(PANELS.map((p) => [p, v[p]])) as Boxes) : null;
+      const ok = boxes && PANELS.every((p) => fits(boxes, p, boxes[p]));
+      if (!ok)
+        err(`layout.${m} 要替 ${PANELS.join("、")} 各給一個 {x, y, w, h}（0～${GRID} 的整數格，寬至少 ${MIN_W}、高至少 ${MIN_H}，不能重疊）`);
+      else layout[m] = Object.fromEntries(PANELS.map((p) => [p, { x: boxes[p].x, y: boxes[p].y, w: boxes[p].w, h: boxes[p].h }])) as Boxes;
+    }
     const lists = [
-      ["wide", PANELS, "依格位順序"],
-      ["tall", PANELS, "依格位順序"],
       ["tabs", PHONE_TABS, "手機底部分頁的順序"],
       ["transit", TRANSIT, "手機交通分頁由上而下"],
     ] as const;

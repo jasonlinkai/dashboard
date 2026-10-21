@@ -1,8 +1,9 @@
 // Rearranging the cards: which layout is showing, the edit mode's shared state, dragging a card
-// onto another slot (Pointer Events), and the FLIP animation that plays when cards change places.
+// (Pointer Events) onto another card, into free cells or by its corner to resize it, and the FLIP
+// animation that plays when cards change places.
 
 import { type RefObject, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type LayoutMode, PANELS, type Panel, TRANSIT } from "./settings";
+import { type Boxes, GRID, type LayoutMode, MIN_H, MIN_W, PANELS, type Panel, type Rect, TRANSIT, fits } from "./settings";
 
 export type Mode = LayoutMode | "phone";
 
@@ -35,12 +36,15 @@ export function onEditLayout(handler: () => void): () => void {
 export interface LayoutEdit {
   editing: boolean;
   mode: Mode;
-  /** The card's slot in the current layout (0-based). */
-  slot: (p: Panel) => number;
-  /** Swap with the card next to it in an arrow key's direction; false when there is none. */
-  move: (p: Panel, key: string) => boolean;
+  /** Where the card is, in words (for its move button's label). */
+  where: (p: Panel) => string;
+  /** Arrow key: move a cell (or swap with the card that way); with Shift: resize. */
+  move: (p: Panel, key: string, resize: boolean) => void;
 }
-export const LayoutEditContext = createContext<LayoutEdit>({ editing: false, mode: "phone", slot: () => 0, move: () => false });
+export const LayoutEditContext = createContext<LayoutEdit>({ editing: false, mode: "phone", where: () => "", move: () => {} });
+
+/** CSS grid-area for a box. */
+export const area = (r: Rect) => `${r.y + 1} / ${r.x + 1} / span ${r.h} / span ${r.w}`;
 export const useLayoutEdit = () => useContext(LayoutEditContext);
 
 export const isPanel = (s: string): s is Panel => (PANELS as readonly string[]).includes(s);
@@ -123,31 +127,63 @@ export function neighbor(grid: HTMLElement, el: HTMLElement, key: string): HTMLE
   return best;
 }
 
+/** The grid cell a point is in (or nearest to). */
+function cellAt(grid: HTMLElement, x: number, y: number) {
+  const g = grid.getBoundingClientRect();
+  const st = getComputedStyle(grid);
+  const gapX = parseFloat(st.columnGap) || 0;
+  const gapY = parseFloat(st.rowGap) || 0;
+  const stepX = (g.width + gapX) / GRID;
+  const stepY = (g.height + gapY) / GRID;
+  return { x: Math.floor((x - g.left) / stepX), y: Math.floor((y - g.top) / stepY), stepX, stepY };
+}
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
 /**
- * While editing, a card follows the pointer (half see-through) and the card under it lights up;
- * letting go there swaps the two. Turning the screen or the layout changing cancels the drag
- * (`mode` changes, so this effect is torn down), as do Esc and a cancelled pointer.
+ * While editing, a card follows the pointer (half see-through). Over another card, that card
+ * lights up and letting go swaps the two; over free cells, an outline shows where it would land
+ * (red if it would cover another card). On a tablet or desktop the corner handle resizes it.
+ * Turning the screen or the layout changing cancels the drag (`mode` changes, so this effect is
+ * torn down), as do Esc and a cancelled pointer.
  */
 export function usePanelDrag(
   gridRef: RefObject<HTMLElement | null>,
   enabled: boolean,
   mode: Mode,
-  onDrop: (from: Panel, to: Panel, first: Rects) => void,
+  /** The boxes of the layout showing (null on a phone: swapping only). */
+  boxes: Boxes | null,
+  onSwap: (from: Panel, to: Panel, first: Rects) => void,
+  onPlace: (p: Panel, r: Rect, first: Rects) => void,
 ) {
-  const latest = useRef(onDrop);
-  latest.current = onDrop;
+  const latest = useRef({ boxes, onSwap, onPlace });
+  latest.current = { boxes, onSwap, onPlace };
 
   useEffect(() => {
     const grid = gridRef.current;
     if (!grid || !enabled) return;
-    let drag: { el: HTMLElement; id: number; x: number; y: number; lifted: boolean; target: HTMLElement | null } | null = null;
+    let drag: {
+      el: HTMLElement;
+      id: number;
+      x: number;
+      y: number;
+      lifted: boolean;
+      target: HTMLElement | null;
+      /** Resizing by the corner instead of moving. */
+      resize: boolean;
+      /** Where it would land (moving into free cells) or its new size (resizing). */
+      spot: Rect | null;
+    } | null = null;
+    const preview = document.createElement("div");
+    preview.className = "panel-preview";
 
     const clear = () => {
       if (!drag) return;
-      drag.el.classList.remove("panel-lifted");
+      drag.el.classList.remove("panel-lifted", "panel-resizing");
       drag.el.style.transform = "";
+      drag.el.style.gridArea = "";
       drag.target?.classList.remove("panel-target");
       grid.classList.remove("panel-dragging");
+      preview.remove();
       drag = null;
     };
     /** Put the carried card back, sliding from where it was let go. */
@@ -161,7 +197,8 @@ export function usePanelDrag(
       if (drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
       const el = (e.target as Element).closest(".card");
       if (!(el instanceof HTMLElement) || el.parentElement !== grid || !movable(mode, panelOf(el))) return;
-      drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, lifted: false, target: null };
+      const resize = !!latest.current.boxes && !!(e.target as Element).closest(".card-resize");
+      drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, lifted: false, target: null, resize, spot: null };
       try {
         el.setPointerCapture(e.pointerId); // keep getting moves when the pointer leaves the card
       } catch {}
@@ -173,12 +210,25 @@ export function usePanelDrag(
       if (!drag.lifted) {
         if (Math.hypot(dx, dy) < 5) return; // a tap (e.g. on the move button) isn't a drag
         drag.lifted = true;
-        drag.el.classList.add("panel-lifted");
+        drag.el.classList.add(drag.resize ? "panel-resizing" : "panel-lifted");
         grid.classList.add("panel-dragging");
         navigator.vibrate?.(10);
       }
-      drag.el.style.transform = `translate(${dx}px, ${dy}px)`;
       const { el } = drag;
+      const boxes = latest.current.boxes;
+      const p = panelOf(el);
+      if (drag.resize && boxes) {
+        // The card itself takes the new size as it goes, if that size fits.
+        const r = boxes[p];
+        const c = cellAt(grid, e.clientX, e.clientY);
+        const next = { ...r, w: clamp(c.x - r.x + 1, MIN_W, GRID - r.x), h: clamp(c.y - r.y + 1, MIN_H, GRID - r.y) };
+        if (fits(boxes, p, next)) {
+          drag.spot = next;
+          el.style.gridArea = area(next);
+        }
+        return;
+      }
+      drag.el.style.transform = `translate(${dx}px, ${dy}px)`;
       const target =
         cardsIn(grid).find((c) => {
           if (c === el || !movable(mode, panelOf(c))) return false;
@@ -190,6 +240,25 @@ export function usePanelDrag(
         target?.classList.add("panel-target");
         drag.target = target;
       }
+      // Not over a card: the free cells under the card's top left corner, same size.
+      if (!boxes) return;
+      drag.spot = null;
+      preview.remove();
+      if (target) return;
+      const r = boxes[p];
+      const start = el.getBoundingClientRect(); // includes the transform: where it is now
+      const c = cellAt(grid, start.left, start.top);
+      const spot = {
+        ...r,
+        x: clamp(Math.round((start.left - grid.getBoundingClientRect().left) / c.stepX), 0, GRID - r.w),
+        y: clamp(Math.round((start.top - grid.getBoundingClientRect().top) / c.stepY), 0, GRID - r.h),
+      };
+      if (spot.x === r.x && spot.y === r.y) return;
+      const ok = fits(boxes, p, spot);
+      preview.classList.toggle("invalid", !ok);
+      preview.style.gridArea = area(spot);
+      grid.append(preview);
+      if (ok) drag.spot = spot;
     };
     const up = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -197,8 +266,10 @@ export function usePanelDrag(
       const first = measure(grid); // the carried card where it was let go
       const from = panelOf(drag.el);
       const to = drag.target && panelOf(drag.target);
+      const { spot } = drag;
       clear();
-      if (to) latest.current(from, to, first);
+      if (to) latest.current.onSwap(from, to, first);
+      else if (spot) latest.current.onPlace(from, spot, first);
       else play(first);
     };
     const pointerCancel = (e: PointerEvent) => drag && e.pointerId === drag.id && cancel();

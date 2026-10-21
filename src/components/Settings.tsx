@@ -124,7 +124,7 @@ export function Settings({
                   <button onClick={onEditLayout}>調整版面</button>
                 </div>
                 <div className="muted small">
-                  拖動板塊決定哪個放在哪一格；手機上可以拖動底部分頁調整順序，交通分頁的公車和火車也能上下對調。也可以長按板塊的標題進入。平板直向、桌機與平板橫向、手機各自記住一份。
+                  拖動板塊自由擺放、拖右下角調整大小，拖到另一個板塊上就交換位置；手機上可以拖動底部分頁調整順序，交通分頁的公車和火車也能上下對調。也可以長按板塊的標題進入。平板直向、桌機與平板橫向、手機各自記住一份。
                 </div>
               </div>
               <div className="setting">
