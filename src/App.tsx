@@ -1,5 +1,6 @@
 import { type CSSProperties, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { GearIcon } from "./components/GearIcon";
+import { LayoutIcon } from "./components/LayoutIcon";
 import { Flip } from "./components/Flip";
 import { Markets } from "./components/Markets";
 import { News } from "./components/News";
@@ -68,6 +69,7 @@ export default function App() {
   const [announce, setAnnounce] = useState("");
   const gridRef = useRef<HTMLElement>(null);
   const navRef = useRef<HTMLElement>(null);
+  const layoutBtnRef = useRef<HTMLButtonElement>(null);
   const { layout } = settings;
   const flip = useFlip(gridRef, JSON.stringify([layout.wide, layout.tall, layout.transit]));
   const tabFlip = useFlip(navRef, layout.tabs.join(), true);
@@ -115,6 +117,12 @@ export default function App() {
     ...layout.transit.map((p, i) => [`--transit-${p}`, i]),
   ]) as CSSProperties;
   // Entering edit mode puts focus on the first thing to move, for keyboard users.
+  // Leaving edit mode hands focus back to the header's layout button (the bar's one is gone).
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (wasEditing.current && !editing) layoutBtnRef.current?.focus();
+    wasEditing.current = editing;
+  }, [editing]);
   useEffect(() => {
     if (!editing) return;
     if (mode === "phone") navRef.current?.querySelector<HTMLElement>("[data-tab-id]")?.focus();
@@ -158,8 +166,15 @@ export default function App() {
                     : "拖動底部分頁調整順序"}
               </span>
               <button onClick={resetLayout}>恢復預設</button>
-              <button className="layout-done" onClick={() => setEditing(false)}>
-                完成
+              {/* Same place as the header's layout button: tap it again to finish. */}
+              <button
+                className="icon-btn layout-toggle"
+                aria-pressed="true"
+                onClick={() => setEditing(false)}
+                aria-label="結束排版模式"
+                title="結束排版模式"
+              >
+                <LayoutIcon />
               </button>
               <span className="sr-only" aria-live="polite">
                 {announce}
@@ -176,6 +191,16 @@ export default function App() {
           </button>
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="設定" title="設定">
             <GearIcon />
+          </button>
+          <button
+            ref={layoutBtnRef}
+            className="icon-btn layout-toggle"
+            aria-pressed="false"
+            onClick={() => setEditing(true)}
+            aria-label="排版模式"
+            title="排版模式：拖動板塊調整位置"
+          >
+            <LayoutIcon />
           </button>
         </header>
         <LayoutEditContext.Provider value={edit}>

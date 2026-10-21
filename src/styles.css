@@ -604,10 +604,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 0 4px; min-width: 0;
 }
 .layout-bar-hint { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.layout-bar button {
+.layout-bar button:not(.icon-btn) {
   flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 14px;
 }
-.layout-bar .layout-done { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+/* On while in edit mode (the bar's copy of the header button). */
+.layout-toggle[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
 .card-move {
   flex: none; width: 26px; height: 26px; margin: 0 -4px 0 -6px; padding: 4px 6px; border: 0; border-radius: 6px;
   background: none; color: var(--muted); cursor: grab; touch-action: none;
