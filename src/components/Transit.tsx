@@ -7,6 +7,7 @@ import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "
 import type { BusArrival, BusResponse, BusRouteDetail, TrainDeparture, TrainResponse } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
+import { SkeletonBar, SkeletonRows } from "./Skeleton";
 import { toast } from "../toast";
 
 const NOT_CONFIGURED = <p className="hint">網站尚未設定 TDX 金鑰，可在右上角「設定」填入你自己的金鑰。</p>;
@@ -123,7 +124,15 @@ export function Bus() {
                     <span className="grow">
                       {cfg.stop ? <div>{cfg.stop}</div> : <div className="muted">未勾選上車站・點開看全線</div>}
                     </span>
-                    <span className="eta muted">{!cfg.stop ? "›" : state.data ? "暫無資料" : "—"}</span>
+                    {!cfg.stop ? (
+                      <span className="eta muted">›</span>
+                    ) : state.data ? (
+                      <span className="eta muted">暫無資料</span>
+                    ) : state.error ? (
+                      <span className="eta muted">—</span>
+                    ) : (
+                      <SkeletonBar className="sk-eta" />
+                    )}
                   </a>
                 ) : (
                   rows.map((a) => {
@@ -512,7 +521,7 @@ export function Train() {
             (current ? (
               <TrainList key={open} trains={current.trains} from={route.from} to={route.to} type={trainTypeKeyword(settings.trainType)} now={now} />
             ) : (
-              <p className="hint">{state.error ?? "載入中…"}</p>
+              state.error ? <p className="hint error">{state.error}</p> : <SkeletonRows rows={5} />
             ))}
           {routes.length > 0 && open < 0 && <p className="hint">點上方的路線查看班次。</p>}
         </>

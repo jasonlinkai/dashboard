@@ -722,3 +722,19 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-dist small { font-size: 10.5px; opacity: 0.8; }
 .pk-dist-note { display: block; margin-top: 2px; }
 .pk-legend-note { display: block !important; color: #666; font-size: 10px; line-height: 1.35; margin-top: 2px; }
+
+/* ---------- Loading skeletons ---------- */
+.sk {
+  display: block; height: 0.95em; border-radius: 6px;
+  background: linear-gradient(90deg, var(--card-2) 25%, color-mix(in srgb, var(--muted) 22%, var(--card-2)) 50%, var(--card-2) 75%);
+  background-size: 200% 100%; animation: sk-shine 1.3s ease-in-out infinite;
+}
+.sk-sub { height: 0.7em; margin-top: 7px; }
+.sk-rows { display: grid; gap: 4px; }
+.sk-rows { flex: 1; min-height: 0; overflow: hidden; }
+.sk-item { padding: 9px 2px; border-bottom: 1px solid var(--line); list-style: none; }
+.sk-eta { width: 2.6em; height: 1.1em; }
+.sk-price { width: 70%; height: 1.4em; margin: 6px 0; }
+.sk-wx { width: 60%; height: 1.6em; margin-top: 10px; }
+@keyframes sk-shine { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }

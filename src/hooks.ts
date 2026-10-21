@@ -21,6 +21,10 @@ export interface Polled<T> {
   /** When the next refresh is due (unix ms); null while paused in the background. */
   nextAt: number | null;
   intervalSec: number;
+  /** The deps the shown data was loaded for; differs from `key` right after they change. */
+  dataKey: string | null;
+  /** The current deps. */
+  key: string;
 }
 
 /**
@@ -38,7 +42,10 @@ export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: numbe
     loading: true,
     nextAt: null,
     intervalSec,
+    dataKey: null,
+    key: "",
   });
+  const key = JSON.stringify(deps);
   const loadRef = useRef(load);
   loadRef.current = load;
 
@@ -61,7 +68,7 @@ export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: numbe
         const { data, dataTime, stale } = await loadRef.current();
         if (!active) return;
         const now = Date.now();
-        setState({ data, dataTime, stale, error: null, updated: now, loading: false, nextAt: now + intervalSec * 1000, intervalSec });
+        setState({ data, dataTime, stale, error: null, updated: now, loading: false, nextAt: now + intervalSec * 1000, intervalSec, dataKey: key, key });
       } catch (e) {
         if (!active) return;
         const error = e instanceof Error ? e.message : String(e);
@@ -77,6 +84,8 @@ export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: numbe
       }
     };
 
+    // New deps (e.g. another news topic): what's on screen is for the old ones until this loads.
+    setState((s) => ({ ...s, loading: true }));
     tick();
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -87,7 +96,7 @@ export function usePolling<T>(load: () => Promise<Loaded<T>>, intervalSec: numbe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intervalSec, ...deps]);
 
-  return state;
+  return { ...state, key };
 }
 
 /** Fetches JSON; freshness comes from our Worker's X-Data-Time / X-Data-Stale headers. */

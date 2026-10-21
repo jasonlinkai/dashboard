@@ -6,6 +6,7 @@ import { getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Quote } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
+import { SkeletonBar } from "./Skeleton";
 
 function Sparkline({ points, baseline, className }: { points: number[]; baseline: number | null; className: string }) {
   if (points.length < 2) return <svg className="spark" />;
@@ -42,7 +43,7 @@ function TradeTime({ q, feedDelayMin = 0 }: { q?: Quote; feedDelayMin?: number }
   return <span className="muted tiny">{feedDelayMin ? `延遲報價 ${t}` : t}</span>;
 }
 
-function Tile({ inst, quote }: { inst: Instrument; quote?: Quote }) {
+function Tile({ inst, quote, loading }: { inst: Instrument; quote?: Quote; loading: boolean }) {
   const change = quote?.previousClose != null ? quote.price - quote.previousClose : null;
   const cls = moveClass(change);
   let price = "—";
@@ -64,7 +65,7 @@ function Tile({ inst, quote }: { inst: Instrument; quote?: Quote }) {
         <span className="tile-name">{inst.name}</span>
         <span className="muted tiny">{inst.subtitle}</span>
       </div>
-      <Flip className="tile-price" value={price} />
+      {!quote && loading ? <SkeletonBar className="sk-price" /> : <Flip className="tile-price" value={price} />}
       <div className="tile-foot">
         <Flip className={`tile-delta ${cls}`} value={delta || " "} />
         <TradeTime q={quote} feedDelayMin={inst.feedDelayMin} />
@@ -96,7 +97,7 @@ export function Markets() {
         style={{ "--tile-cols": Math.min(n, 6), "--tile-rows-2": Math.ceil(n / 2), "--tile-rows-3": Math.ceil(n / 3) } as React.CSSProperties}
       >
         {items.map((inst) => (
-          <Tile key={inst.symbol} inst={inst} quote={bySymbol.get(inst.symbol)} />
+          <Tile key={inst.symbol} inst={inst} quote={bySymbol.get(inst.symbol)} loading={state.loading && !state.error} />
         ))}
       </div>
     </Section>

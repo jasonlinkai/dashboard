@@ -8,6 +8,7 @@ import { type Loaded, getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Observation, ObservationResponse } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
+import { SkeletonBar } from "./Skeleton";
 
 interface Forecast {
   current: { temperature_2m: number; apparent_temperature: number; relative_humidity_2m: number; weather_code: number; is_day: number; wind_speed_10m: number };
@@ -174,7 +175,14 @@ function Hourly({ f, group }: { f: Forecast; group: StripGroup }) {
 }
 
 function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; obs?: Observation; group: StripGroup }) {
-  if (!f) return <div className="wx" data-reorder><div className="wx-name">{loc.name}</div></div>;
+  if (!f)
+    return (
+      <div className="wx" data-reorder>
+        <div className="wx-name">{loc.name}</div>
+        <SkeletonBar className="sk-wx" />
+        <SkeletonBar className="sk-sub" />
+      </div>
+    );
   const day = f.current.is_day === 1;
   const [mText, mIcon] = wmo(f.current.weather_code, day);
   const text = obs?.weather ?? mText;

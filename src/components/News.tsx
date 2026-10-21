@@ -6,6 +6,7 @@ import { ago } from "../format";
 import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
 import type { NewsItem } from "../shared";
 import { Section } from "./Section";
+import { SkeletonItems } from "./Skeleton";
 
 export function News() {
   const { settings } = useSettings();
@@ -29,6 +30,11 @@ export function News() {
     REFRESH_SEC.news,
     [topic, sources],
   );
+  // Each topic's last list, so switching back shows it at once (refreshed in the background).
+  const cache = useRef(new Map<string, NewsItem[]>());
+  const current = state.dataKey === state.key ? state.data : undefined;
+  if (current) cache.current.set(state.key, current);
+  const items = current ?? cache.current.get(state.key);
   const listRef = useScrollHint<HTMLOListElement>();
   const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -65,7 +71,8 @@ export function News() {
     >
       <ol className="news-list scroll" ref={listRef}>
         {!topic && <li className="hint">所有新聞分類都設為不顯示，可在右上角「設定 → 新聞」開啟。</li>}
-        {state.data?.map((n) => (
+        {topic && !items && (state.error ? <li className="hint error">{state.error}</li> : <SkeletonItems rows={8} />)}
+        {items?.map((n) => (
           <li key={n.link}>
             <a className="link" href={n.link} target="_blank" rel="noopener noreferrer">
               <div className="news-title">{n.title}</div>
