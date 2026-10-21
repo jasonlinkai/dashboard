@@ -152,30 +152,30 @@ function cellAt(grid: HTMLElement, x: number, y: number) {
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 /**
- * The smallest each card can be and still show its content (px, with its title and the source
- * line the data licences require): markets one row of tiles, weather one place, bus two stops,
- * train its route chips and two trains, news its topic tabs and two headlines.
+ * The smallest a card can be (px), the same for every type, so any two cards can always swap.
+ * Each type's small-card layout (styles.css, "Small cards") fits its title, its content (one row
+ * of tiles, one place, two stops, its route chips and a train or two, its topics and two headlines)
+ * and the source line the data licences require.
  */
-const MIN_PX: Record<Panel, [w: number, h: number]> = {
-  markets: [300, 170],
-  weather: [300, 190],
-  bus: [260, 170],
-  train: [280, 210],
-  news: [260, 230],
-};
-/** A card type's minimum in cells on this screen. */
-export function minCells(grid: HTMLElement, p: Panel) {
+const MIN_PX = { w: 280, h: 190 };
+/** That minimum in cells on this screen. */
+export function minCells(grid: HTMLElement) {
   const { stepX, stepY } = cellAt(grid, 0, 0);
   const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
-  const [w, h] = MIN_PX[p];
-  return { w: Math.ceil((w + gap) / stepX), h: Math.ceil((h + gap) / stepY) };
+  return { w: Math.ceil((MIN_PX.w + gap) / stepX), h: Math.ceil((MIN_PX.h + gap) / stepY) };
 }
-/** Every shown card on the board, clear of the others and at least its type's minimum size on this screen. */
-export function allFit(grid: HTMLElement, boxes: Boxes, hidden: readonly CardId[], typeOf: (id: CardId) => Panel) {
-  return Object.keys(boxes).every((p) => {
-    const m = minCells(grid, typeOf(p));
-    return hidden.includes(p) || (fits(boxes, p, boxes[p], hidden) && boxes[p].w >= m.w && boxes[p].h >= m.h);
-  });
+/**
+ * Every shown card on the board and clear of the others; the ones that moved or changed size
+ * (compared with `before`) also at least the minimum on this screen. Cards left alone may be
+ * smaller, laid out on a bigger screen, without blocking every change here.
+ */
+export function allFit(grid: HTMLElement, boxes: Boxes, hidden: readonly CardId[], before: Boxes) {
+  const m = minCells(grid);
+  return Object.keys(boxes).every(
+    (p) =>
+      hidden.includes(p) ||
+      (fits(boxes, p, boxes[p], hidden) && (boxes[p] === before[p] || (boxes[p].w >= m.w && boxes[p].h >= m.h))),
+  );
 }
 
 export { findSpot } from "./settings";
@@ -224,12 +224,11 @@ export function usePanelDrag(
   /** The boxes of the layout showing (null on a phone: swapping only). */
   boxes: Boxes | null,
   hidden: readonly CardId[],
-  typeOf: (id: CardId) => Panel,
   onSwap: (from: CardId, to: CardId, first: Rects) => void,
   onBoxes: (next: Boxes, first: Rects) => void,
 ) {
-  const latest = useRef({ boxes, hidden, typeOf, onSwap, onBoxes });
-  latest.current = { boxes, hidden, typeOf, onSwap, onBoxes };
+  const latest = useRef({ boxes, hidden, onSwap, onBoxes });
+  latest.current = { boxes, hidden, onSwap, onBoxes };
 
   useEffect(() => {
     const grid = gridRef.current;
@@ -293,7 +292,7 @@ export function usePanelDrag(
         navigator.vibrate?.(10);
       }
       const { el } = drag;
-      const { boxes, hidden, typeOf } = latest.current;
+      const { boxes, hidden } = latest.current;
       const p = panelOf(el);
       if (drag.resize && boxes) {
         // The cards take their new sizes as it goes; a step that doesn't fit is skipped.
@@ -303,7 +302,7 @@ export function usePanelDrag(
           drag.resize === "corner"
             ? { ...boxes, [p]: { ...r, w: clamp(c.x - r.x + 1, 1, GRID - r.x), h: clamp(c.y - r.y + 1, 1, GRID - r.y) } }
             : moveLine(boxes, p, drag.resize, Math.round((drag.resize === "x" ? e.clientX - grid.getBoundingClientRect().left : e.clientY - grid.getBoundingClientRect().top) / (drag.resize === "x" ? c.stepX : c.stepY)), hidden);
-        if (allFit(grid, next, hidden, typeOf)) {
+        if (allFit(grid, next, hidden, boxes)) {
           drag.spot = next;
           show(next);
         }

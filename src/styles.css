@@ -474,7 +474,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* Tablet and desktop: each card lays itself out by the shape of the slot it sits in, not by the
    screen, so it looks right whichever slot it's moved to. Content box widths: a full-width row is at
    least ~650 px (portrait tablet at 700 px); a column is at most ~615 px (desktop at its 1800 px cap). */
-.card { container: card / inline-size; }
+/* Size, not just width: on these layouts the grid sets each card's size, never its content. */
+.card { container: card / size; }
 .grid {
   --tile-h: clamp(96px, 9vh, 128px);
   --wx-h: clamp(104px, 9.6vh, 132px);
@@ -577,6 +578,28 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .grid > .card { grid-area: var(--wide); }
   .grid[data-tab] .tile-price { font-size: clamp(19px, 1.8vw, 26px); }
   .clock { font-size: 34px; }
+}
+
+/* ---------- Small cards ----------
+   Down to the minimum every type shares (layoutEdit.tsx, 280 × 190 px) each one still shows its
+   title, its content and its source line, so any two cards can swap places. */
+@container card (max-height: 250px) {
+  /* News: one line per headline, so two fit under the topic tabs. */
+  .news-title { -webkit-line-clamp: 1; }
+  .news-tabs { margin-bottom: 2px; }
+  .news-list .link { padding: 4px 6px; }
+  /* Train: slimmer route chips and rows. */
+  .route-tab { padding: 4px 11px; font-size: 13px; }
+  .route-tabs-wrap { margin-bottom: 0; }
+  .row { padding: 4px 6px; }
+}
+/* Markets two across (narrow): rows only as tall as a tile needs. */
+@container card (max-height: 250px) and (max-width: 629.98px) {
+  .tiles { grid-template-rows: repeat(var(--tile-rows-2, 3), minmax(96px, 1fr)); }
+}
+@container card (max-width: 340px) {
+  .grid[data-tab] .tile-price { font-size: 18px; }
+  .tile { padding: 6px 8px; }
 }
 
 /* ---------- Rearranging the cards ---------- */

@@ -145,7 +145,7 @@ export default function App() {
       .join("；");
   /** Apply a new board if every card still fits at its minimum size on this screen. */
   const setBoxes = (next: Boxes, first?: Rects) => {
-    if (!boxes || !gridRef.current || !allFit(gridRef.current, next, hidden, kind)) return false;
+    if (!boxes || !gridRef.current || !allFit(gridRef.current, next, hidden, boxes)) return false;
     setLayout({ [mode]: next }, first);
     return true;
   };
@@ -155,14 +155,15 @@ export default function App() {
     if (boxes) {
       if (!setBoxes({ ...boxes, [a]: boxes[b], [b]: boxes[a] }, first)) {
         flip.play(first ?? new Map());
-        return toast(`${name(a)}和${name(b)}的大小差太多，交換後會有一個太小，請先調整大小`, "error");
+        // Only a box laid out on a bigger screen can be under this screen's minimum.
+        return toast(`${name(a)}或${name(b)}的位置在這個螢幕上太小，請先把它放大再交換`, "error");
       }
     } else if (kind(a) !== kind(b) && [kind(a), kind(b)].every((t) => (TRANSIT as readonly Panel[]).includes(t)))
       setLayout({ transit: [...layout.transit].reverse() }, first);
     else return;
     setAnnounce(`${name(a)}和${name(b)}交換了位置`);
   };
-  usePanelDrag(gridRef, editing, mode, boxes, hidden, kind, swap, (next, first) => {
+  usePanelDrag(gridRef, editing, mode, boxes, hidden, swap, (next, first) => {
     const said = changes(next);
     if (setBoxes(next, first)) setAnnounce(said);
   });
@@ -195,10 +196,10 @@ export default function App() {
     const own = layout[m][p];
     return findSpot(layout[m], p, rest, own ? [{ w: own.w, h: own.h }, min] : [min]);
   };
-  const here = (type: Panel) => (gridRef.current ? minCells(gridRef.current, type) : BOARD_MIN);
+  const here = () => (gridRef.current ? minCells(gridRef.current) : BOARD_MIN);
   const unhide = (p: CardId) => {
     const rest = hidden.filter((q) => q !== p);
-    const r = mode === "phone" ? null : roomOn(mode, p, here(kind(p)), rest);
+    const r = mode === "phone" ? null : roomOn(mode, p, here(), rest);
     if (mode !== "phone" && !r) return toast(`沒有空位放${name(p)}，請先縮小其他板塊`, "error");
     setLayout({ ...(r && mode !== "phone" ? { [mode]: { ...layout[mode], [p]: r } } : {}), hidden: { ...layout.hidden, [mode]: rest } });
     setAnnounce(`已顯示${name(p)}`);
@@ -218,7 +219,7 @@ export default function App() {
     // added; none on the other layout: hidden there until it is made room for.
     const next = { ...layout, hidden: { ...layout.hidden } };
     for (const m of ["wide", "tall"] as const) {
-      const r = roomOn(m, id, m === mode ? here(type) : BOARD_MIN);
+      const r = roomOn(m, id, m === mode ? here() : BOARD_MIN);
       if (!r && m === mode) return toast(`畫面上沒有空位放新的${PANEL_NAMES[type]}，請先縮小其他板塊`, "error");
       next[m] = { ...layout[m], [id]: r ?? { x: 0, y: 0, ...BOARD_MIN } };
       if (!r) next.hidden[m] = [...layout.hidden[m], id];
