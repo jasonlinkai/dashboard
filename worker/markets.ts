@@ -16,12 +16,19 @@ async function loadQuote(symbol: string): Promise<Quote> {
   const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
   const session = meta.currentTradingPeriod?.regular;
   const nowSec = Date.now() / 1000;
+  const marketOpen = session ? session.start <= nowSec && nowSec < session.end : null;
+  // The last tick often lands a few minutes after the bell (the final index calculation, e.g.
+  // TAIEX 13:33 or NASDAQ 05:15 Taipei time), but the close people know (and Yahoo shows) is the
+  // session's end. tradingPeriods is the charted day's session, with the exchange's own DST.
+  let marketTime = (meta.regularMarketTime ?? 0) * 1000;
+  const lastEnd: number | undefined = [meta.tradingPeriods ?? []].flat(2).at(-1)?.end;
+  if (marketOpen === false && lastEnd && marketTime > lastEnd * 1000) marketTime = lastEnd * 1000;
   return {
     symbol,
     price: meta.regularMarketPrice,
     previousClose: meta.chartPreviousClose ?? meta.previousClose ?? null,
-    marketTime: (meta.regularMarketTime ?? 0) * 1000,
-    marketOpen: session ? session.start <= nowSec && nowSec < session.end : null,
+    marketTime,
+    marketOpen,
     points: closes.filter((c): c is number => typeof c === "number"),
   };
 }

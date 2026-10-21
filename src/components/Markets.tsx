@@ -1,7 +1,7 @@
 import { type Instrument, QUOTE_LAG_MIN, REFRESH_SEC, STALE_AFTER_SEC, links } from "../config";
 import { instrumentOf, useSettings } from "../settings";
 import type React from "react";
-import { clock, fmt, moveClass, signed } from "../format";
+import { clock, clockDay, fmt, moveClass, signed } from "../format";
 import { getJSON, moveTo, usePolling, useReorder } from "../hooks";
 import type { Quote } from "../shared";
 import { Flip } from "./Flip";
@@ -36,7 +36,7 @@ const LAG_MS = QUOTE_LAG_MIN * 60_000;
 function TradeTime({ q, feedDelayMin = 0 }: { q?: Quote; feedDelayMin?: number }) {
   if (!q) return null;
   const t = clock(q.marketTime);
-  if (q.marketOpen === false) return <span className="muted tiny">收盤 {t}</span>;
+  if (q.marketOpen === false) return <span className="muted tiny">收盤 {clockDay(q.marketTime)}</span>;
   if (q.marketOpen && Date.now() - q.marketTime > LAG_MS + feedDelayMin * 60_000) {
     return <span className="error tiny">⚠ 停在 {t}</span>;
   }

@@ -13,6 +13,9 @@ export function moveClass(change: number | null | undefined): string {
 
 const timeFmt = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
 export const clock = (ms: number) => timeFmt.format(ms);
+const dayFmt = new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", timeZone: "Asia/Taipei" });
+/** Time, with the date in front when it isn't today (Taipei): "04:00" or "10/17 04:00". */
+export const clockDay = (ms: number, now = Date.now()) => (dayFmt.format(ms) === dayFmt.format(now) ? "" : `${dayFmt.format(ms)} `) + clock(ms);
 
 export function ago(ms: number, now = Date.now()): string {
   const min = Math.floor((now - ms) / 60000);
