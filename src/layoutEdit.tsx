@@ -159,7 +159,8 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
  * of tiles, one place, two stops, its route chips and a train or two, its topics and two headlines)
  * and the source line the data licences require.
  */
-const MIN_PX = { w: 280, h: 190 };
+// 170 high: the default market row on a short laptop window (about 780 px tall) is 171.
+const MIN_PX = { w: 280, h: 170 };
 /** That minimum in cells on this screen. */
 export function minCells(grid: HTMLElement) {
   const { stepX, stepY } = cellAt(grid, 0, 0);
@@ -320,9 +321,17 @@ export function usePanelDrag(
         // The cards take their new sizes as it goes; a step that doesn't fit is skipped.
         const r = boxes[p];
         const c = cellAt(grid, e.clientX, e.clientY);
+        const min = minCells(grid);
+        // Corner: width and height each stop at the minimum, and if both together don't fit
+        // (another card in the way), whichever one alone does still applies.
+        const w = clamp(c.x - r.x + 1, Math.min(min.w, r.w), GRID - r.x);
+        const h = clamp(c.y - r.y + 1, Math.min(min.h, r.h), GRID - r.y);
+        const corner = [{ ...r, w, h }, { ...r, w }, { ...r, h }]
+          .map((b) => ({ ...boxes, [p]: b }))
+          .find((b) => allFit(grid, b, hidden, boxes));
         const next =
           drag.resize === "corner"
-            ? { ...boxes, [p]: { ...r, w: clamp(c.x - r.x + 1, 1, GRID - r.x), h: clamp(c.y - r.y + 1, 1, GRID - r.y) } }
+            ? (corner ?? boxes)
             : (() => {
                 const axis = drag.resize[0] as "x" | "y";
                 const g = grid.getBoundingClientRect();
