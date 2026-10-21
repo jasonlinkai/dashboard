@@ -101,6 +101,8 @@ export interface Observation {
   weather: string | null;
   high: number | null;
   low: number | null;
+  /** Station altitude in metres (null = unknown). */
+  altitude?: number | null;
 }
 
 export interface ObservationResponse {

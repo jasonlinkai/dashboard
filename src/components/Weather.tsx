@@ -45,15 +45,21 @@ function cwaEmoji(text: string, day: boolean): string {
 
 const HIGHWAY = /^國[一二三五]/;
 
+/** Above this a station is up a mountain (汐止區's 五指山 is ~650 m, often 6° colder than town). */
+const MOUNTAIN_M = 300;
+const mountain = (o: Observation) => o.altitude != null && o.altitude > MOUNTAIN_M;
+
 function pickStation(loc: WeatherPlace, obs: Observation[]): Observation | undefined {
-  // A station that hasn't reported for a while is broken or offline; better to show the model
-  // (and say so) than an old reading presented as current.
+  // A station that hasn't reported for a while (or reports no temperature, e.g. a broken
+  // sensor) can't be used; better to show the model (and say so) than an old reading.
   const usable = obs.filter((o) => o.temperature != null && Date.now() - o.time < STATION_MAX_AGE_MIN * 60_000);
   const inTown = usable.filter((o) => o.county === loc.county && o.town === loc.town);
   return (
     (loc.station && usable.find((o) => o.station === loc.station)) ||
-    // Freeway stations (國一N013K …) sit on viaducts and in valleys; use them only if nothing else exists.
-    inTown.find((o) => !HIGHWAY.test(o.station)) ||
+    // Then a regular station in town, then a freeway one (國一N013K …: on viaducts, but at town
+    // level), and a mountain station only if nothing else exists.
+    inTown.find((o) => !HIGHWAY.test(o.station) && !mountain(o)) ||
+    inTown.find((o) => HIGHWAY.test(o.station) && !mountain(o)) ||
     inTown[0]
   );
 }
@@ -210,7 +216,11 @@ function WeatherCard({ loc, f, obs, group }: { loc: WeatherPlace; f?: Forecast; 
           </span>
         </div>
         <div className="wx-meta small">體感 {Math.round(f.current.apparent_temperature)}°</div>
-        <div className="wx-src muted tiny">{obs ? `實測 ${obs.station}站 ${clock(obs.time)}` : "Open-Meteo 模型"}</div>
+        <div className="wx-src muted tiny">
+          {obs ? `實測 ${obs.station}站 ${clock(obs.time)}` : "Open-Meteo 模型"}
+          {obs && loc.station && obs.station !== loc.station && `（${loc.station}站暫無資料）`}
+          {obs && mountain(obs) && `・山區測站 ${Math.round(obs.altitude!)}m`}
+        </div>
       </div>
       <Hourly f={f} group={group} />
     </a>

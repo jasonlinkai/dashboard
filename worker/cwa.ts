@@ -25,13 +25,14 @@ function parse(s: any): Observation {
     weather,
     high: num(w.DailyExtreme?.DailyHigh?.TemperatureInfo?.AirTemperature),
     low: num(w.DailyExtreme?.DailyLow?.TemperatureInfo?.AirTemperature),
+    altitude: num(s.GeoInfo?.StationAltitude),
   };
 }
 
 /** `towns` as 縣市/鄉鎮區, e.g. 新北市/汐止區; only those towns' stations are returned. */
 export async function observations(env: Env, towns: string[]): Promise<ObservationResponse> {
   if (!env.CWA_API_KEY) return { configured: false, observations: [] };
-  const all = await cached("cwa:obs", 300, async () => {
+  const all = await cached("cwa:obs2", 300, async () => {
     const sets = await Promise.allSettled(
       DATASETS.map((id) =>
         fetchJSON(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/${id}?Authorization=${env.CWA_API_KEY}&format=JSON`),
