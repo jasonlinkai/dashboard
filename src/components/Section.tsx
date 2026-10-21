@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
+import { editLayout, isPanel, useLayoutEdit } from "../layoutEdit";
+import { PANEL_NAMES } from "../settings";
 import { mmss } from "../format";
 import { type Polled, useNow } from "../hooks";
 import { type ContentSection, openSettings } from "../openSettings";
@@ -74,11 +76,53 @@ export function Section({
   const now = Date.now();
   const fresh = freshness(state, maxAgeSec, now);
   const left = state.nextAt == null ? null : Math.min(state.intervalSec, (state.nextAt - now) / 1000);
+  const layout = useLayoutEdit();
+  const panel = isPanel(className) ? className : null;
+  const movable = layout.editing && layout.mode !== "phone" && panel;
+  // Holding the title for half a second starts rearranging the cards.
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const release = () => {
+    if (press.current) clearTimeout(press.current.timer);
+    press.current = null;
+  };
 
   return (
     <section className={`card ${className} ${fresh?.warn ? "card-warn" : ""}`}>
       <header className="card-head">
-        <h2>{title}</h2>
+        {movable && (
+          <button
+            className="card-move"
+            aria-label={`移動${PANEL_NAMES[panel]}，目前在第 ${layout.slot(panel) + 1} 格（共 5 格）。按方向鍵和那一邊的板塊交換位置`}
+            aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
+            title="拖動或用方向鍵移動"
+            onKeyDown={(e) => {
+              if (!e.key.startsWith("Arrow")) return;
+              e.preventDefault();
+              layout.move(panel, e.key);
+            }}
+          >
+            <svg viewBox="0 0 12 16" aria-hidden>
+              {[3, 9].flatMap((cx) => [3, 8, 13].map((cy) => <circle key={`${cx}${cy}`} cx={cx} cy={cy} r="1.4" />))}
+            </svg>
+          </button>
+        )}
+        <h2
+          onPointerDown={(e) => {
+            if (layout.editing || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+            release();
+            press.current = { timer: setTimeout(() => (release(), navigator.vibrate?.(15), editLayout()), 500), x: e.clientX, y: e.clientY };
+          }}
+          onPointerMove={(e) => {
+            const p = press.current;
+            if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) release();
+          }}
+          onPointerUp={release}
+          onPointerCancel={release}
+          onPointerLeave={release}
+          onContextMenu={(e) => layout.editing || e.preventDefault()}
+        >
+          {title}
+        </h2>
         {edit && (
           <button className="card-gear" onClick={() => openSettings(edit)} aria-label={`${title}設定`} title={`${title}設定`}>
             <GearIcon />

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { NEWS_BY_ID } from "../news-sources";
-import { DEFAULT_SETTINGS, type Settings, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
+import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, PANEL_NAMES, type Settings, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
 import type { ThemePref } from "../theme";
 import { toast } from "../toast";
 
@@ -17,6 +17,12 @@ interface Pending {
   from: string;
 }
 
+const layoutSummary = ({ layout }: Settings) =>
+  (["wide", "tall"] as const)
+    .filter((m) => layout[m].join() !== DEFAULT_LAYOUT[m].join())
+    .map((m) => `${m === "wide" ? "橫向" : "直向"}：${layout[m].map((p) => PANEL_NAMES[p]).join("、")}`)
+    .join("；") || "預設";
+
 /** Human-readable summary of a settings object, for the confirm step. */
 function summary(s: Settings): [string, string][] {
   return [
@@ -28,6 +34,7 @@ function summary(s: Settings): [string, string][] {
       `新聞・${label}`,
       s.news[id].map((x) => NEWS_BY_ID.get(x)?.name ?? x).join("、") || "（不顯示）",
     ]),
+    ["版面", layoutSummary(s)],
   ];
 }
 

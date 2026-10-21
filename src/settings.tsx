@@ -51,7 +51,29 @@ export interface Settings {
   news: Record<Topic, string[]>;
   /** Order of the news tabs on the dashboard. */
   newsOrder: Topic[];
+  /** Which card sits in which slot of the tablet / desktop layouts. */
+  layout: Layout;
 }
+
+/** The dashboard's cards. */
+export const PANELS = ["markets", "weather", "bus", "train", "news"] as const;
+export type Panel = (typeof PANELS)[number];
+export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", weather: "天氣", bus: "公車", train: "火車", news: "新聞" };
+
+/**
+ * Slot → card, one list per layout. Slot i is the grid area named w{i} / t{i} in styles.css:
+ * wide (desktop, landscape tablet): "w0 w0 w0" "w1 w2 w4" "w1 w3 w4";
+ * tall (portrait tablet): "t0 t0" "t1 t1" "t2 t4" "t3 t4".
+ */
+export interface Layout {
+  wide: Panel[];
+  tall: Panel[];
+}
+export type LayoutMode = keyof Layout;
+export const DEFAULT_LAYOUT: Layout = {
+  wide: ["markets", "weather", "bus", "train", "news"],
+  tall: ["markets", "weather", "bus", "train", "news"],
+};
 
 // ---------- Catalogs and limits ----------
 
@@ -124,6 +146,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   news: DEFAULT_NEWS,
   newsOrder: TOPICS.map(([id]) => id),
+  layout: DEFAULT_LAYOUT,
 };
 
 // ---------- Derived helpers ----------
@@ -296,8 +319,22 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     for (const [id] of TOPICS) if (!newsOrder.includes(id)) newsOrder.push(id);
   }
 
+  // Older files have no layout: the default slots.
+  const layout: Layout = { ...DEFAULT_LAYOUT };
+  if (raw.layout !== undefined && !isObj(raw.layout)) err("layout 必須是物件");
+  else if (isObj(raw.layout)) {
+    for (const mode of ["wide", "tall"] as const) {
+      const slots = raw.layout[mode];
+      if (slots === undefined) continue;
+      const ok =
+        Array.isArray(slots) && slots.length === PANELS.length && PANELS.every((p) => slots.includes(p));
+      if (!ok) err(`layout.${mode} 要列出 ${PANELS.join("、")} 各一次（依格位順序）`);
+      else layout[mode] = slots as Panel[];
+    }
+  }
+
   if (errors.length) return { errors };
-  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder }, errors };
+  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, layout }, errors };
 }
 
 // ---------- Storage and React context ----------

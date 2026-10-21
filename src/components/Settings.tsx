@@ -41,6 +41,7 @@ export function Settings({
   saver,
   onSaver,
   onSaverPreview,
+  onEditLayout,
   section,
   onShowSources,
   onClose,
@@ -53,6 +54,8 @@ export function Settings({
   saver: SaverMinutes;
   onSaver: (m: SaverMinutes) => void;
   onSaverPreview: () => void;
+  /** Close the settings and start rearranging the cards. */
+  onEditLayout: () => void;
   /** Open straight to this card's page (from the gear next to the card's title). */
   section?: ContentSection;
   /** Close the settings and open the reliability notes. */
@@ -114,6 +117,15 @@ export function Settings({
                   ))}
                 </div>
                 <div className="muted small">{THEMES.find(([id]) => id === theme)?.[2]}</div>
+              </div>
+              <div className="setting">
+                <div className="setting-label">版面</div>
+                <div className="ed-actions">
+                  <button onClick={onEditLayout}>調整版面</button>
+                </div>
+                <div className="muted small">
+                  拖動板塊決定哪個放在哪一格，也可以長按板塊的標題進入。平板直向，以及桌機與平板橫向，各自記住一份。
+                </div>
               </div>
               <div className="setting">
                 <div className="setting-label">天氣動畫</div>

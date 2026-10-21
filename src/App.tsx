@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { type CSSProperties, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { GearIcon } from "./components/GearIcon";
 import { Flip } from "./components/Flip";
 import { Markets } from "./components/Markets";
@@ -13,6 +13,8 @@ import { ScreenSaver } from "./components/ScreenSaver";
 import { useFx, useSaver, useTheme } from "./theme";
 import { type ContentSection, onOpenSettings } from "./openSettings";
 import { toast } from "./toast";
+import { DEFAULT_LAYOUT, type LayoutMode, PANEL_NAMES, PANELS, type Panel, useSettings } from "./settings";
+import { LayoutEditContext, type Rects, cardOf, neighbor, onEditLayout, useFlip, useLayoutMode, usePanelDrag } from "./layoutEdit";
 
 // Leaflet only loads when the parking search is opened.
 const Parking = lazy(() => import("./components/Parking"));
@@ -58,6 +60,61 @@ export default function App() {
   const params = new URLSearchParams(location.search);
   const preview: Scene | null = params.get("fx") ? { kind: params.get("fx") as SceneKind, day: !params.has("night") } : null;
   const shown = preview ?? scene;
+  const { settings, setSettings } = useSettings();
+  const mode = useLayoutMode();
+  const [editing, setEditing] = useState(false);
+  const [announce, setAnnounce] = useState("");
+  const gridRef = useRef<HTMLElement>(null);
+  const flip = useFlip(gridRef, JSON.stringify(settings.layout));
+  useEffect(() => onEditLayout(() => setEditing(true)), []);
+  const setSlots = (m: LayoutMode, slots: Panel[], first?: Rects) => {
+    flip.capture(first);
+    setSettings({ ...settings, layout: { ...settings.layout, [m]: slots } });
+  };
+  const swap = (a: Panel, b: Panel, first?: Rects) => {
+    if (mode === "phone" || a === b) return;
+    const slots = [...settings.layout[mode]];
+    const i = slots.indexOf(a);
+    const j = slots.indexOf(b);
+    [slots[i], slots[j]] = [slots[j], slots[i]];
+    setSlots(mode, slots, first);
+    setAnnounce(`${PANEL_NAMES[a]}和${PANEL_NAMES[b]}交換了位置，${PANEL_NAMES[a]}現在在第 ${j + 1} 格`);
+  };
+  usePanelDrag(gridRef, editing, mode, swap);
+  const edit = {
+    editing,
+    mode,
+    slot: (p: Panel) => (mode === "phone" ? 0 : settings.layout[mode].indexOf(p)),
+    move: (p: Panel, key: string) => {
+      const grid = gridRef.current;
+      const el = grid && cardOf(grid, p);
+      const other = el && neighbor(grid, el, key);
+      if (!other) return false;
+      swap(p, PANELS.find((q) => other.classList.contains(q))!);
+      return true;
+    },
+  };
+  // Grid areas from the slot lists: --wide-markets: w0 and so on (styles.css picks the layout).
+  const areas = Object.fromEntries(
+    (["wide", "tall"] as const).flatMap((m) => settings.layout[m].map((p, i) => [`--${m}-${p}`, `${m[0]}${i}`])),
+  ) as CSSProperties;
+  // Entering edit mode puts focus on the first card's move button, for keyboard users.
+  useEffect(() => {
+    if (!editing) return;
+    const first = mode === "phone" ? null : settings.layout[mode][0];
+    if (first) gridRef.current?.querySelector<HTMLElement>(`.card.${first} .card-move`)?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEditing(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // Only when edit mode starts or the layout switches, not on every swap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, mode]);
+  const resetLayout = () => {
+    if (mode !== "phone") setSlots(mode, DEFAULT_LAYOUT[mode]);
+    setAnnounce("已恢復預設版面");
+    toast("已恢復預設版面");
+  };
+
   const choose = (t: Tab) => {
     setTab(t);
     try {
@@ -69,7 +126,19 @@ export default function App() {
     <>
       {fx && shown && <WeatherFx scene={shown} />}
       <div className="app">
-        <header className="top">
+        <header className={`top ${editing ? "top-editing" : ""}`}>
+          {editing && (
+            <div className="layout-bar" role="toolbar" aria-label="調整版面">
+              <span className="layout-bar-hint">{mode === "phone" ? "調整版面" : "拖動板塊，放到另一格就會交換位置"}</span>
+              <button onClick={resetLayout}>恢復預設</button>
+              <button className="layout-done" onClick={() => setEditing(false)}>
+                完成
+              </button>
+              <span className="sr-only" aria-live="polite">
+                {announce}
+              </span>
+            </div>
+          )}
           <Flip className="clock" value={timeFmt.format(now)} />
           <div className="date">{dateFmt.format(now)}</div>
           <button className="icon-btn pk-open" onClick={() => setShowParking(true)} aria-label="停車場搜尋" title="停車場搜尋">
@@ -82,13 +151,15 @@ export default function App() {
             <GearIcon />
           </button>
         </header>
-        <main className="grid" data-tab={tab}>
-          <Markets />
-          <Weather onScene={setScene} />
-          <Bus />
-          <Train />
-          <News />
-        </main>
+        <LayoutEditContext.Provider value={edit}>
+          <main ref={gridRef} className={`grid ${editing ? "editing" : ""}`} data-tab={tab} style={areas}>
+            <Markets />
+            <Weather onScene={setScene} />
+            <Bus />
+            <Train />
+            <News />
+          </main>
+        </LayoutEditContext.Provider>
         <nav className="tabbar">
           {TABS.map(([id, label, icon]) => (
             <button key={id} aria-selected={tab === id} onClick={() => choose(id)}>
@@ -117,6 +188,7 @@ export default function App() {
             saver={saver}
             onSaver={setSaver}
             onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
+            onEditLayout={() => (setShowSettings(false), setSettingsSection(undefined), setEditing(true))}
             section={settingsSection}
             onShowSources={() => (setShowSettings(false), setSettingsSection(undefined), setShowInfo(true))}
             onClose={() => (setShowSettings(false), setSettingsSection(undefined))}
