@@ -46,17 +46,12 @@ function load(): { dest: Dest | null; radius: Radius; sources: ParkingSource[]; 
 
 const fmtDistance = (m: number) => (m < 1000 ? `${m} 公尺` : `${(m / 1000).toFixed(1)} 公里`);
 const hm = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" });
-const coordNavUrl = (p: { lat: number; lon: number }) =>
-  `https://www.google.com/maps/dir/?api=1&destination=${p.lat.toFixed(6)},${p.lon.toFixed(6)}&travelmode=driving`;
 /**
- * Navigate by name + address, so Google opens the actual place (entrance, hours) instead of a
- * bare pin. Names alone are often vague ("Times松勤街"), hence the address; without an address
- * fall back to the exact coordinates. The coordinate link stays available as a backup.
+ * Navigate to the car park's coordinates. Searching Google by name + address often landed on
+ * another place with a similar name, so the exact pin wins over Google's place card.
  */
-const navUrl = (p: { lat: number; lon: number; name: string; address: string }) =>
-  p.address
-    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${p.name} ${p.address}`)}&travelmode=driving`
-    : coordNavUrl(p);
+const navUrl = (p: { lat: number; lon: number }) =>
+  `https://www.google.com/maps/dir/?api=1&destination=${p.lat.toFixed(6)},${p.lon.toFixed(6)}&travelmode=driving`;
 
 /** Each source's mark: the letter in the pin's corner badge, the legend, and the list. */
 const SOURCE: Record<ParkingSource, { badge: string; short: string; long: string }> = {
@@ -664,11 +659,6 @@ function LotItem({
           <a className="pk-btn primary pk-nav" href={navUrl(lot)} target="_blank" rel="noopener noreferrer">
             用 Google 地圖導航
           </a>
-          {lot.address && (
-            <a className="pk-coord-nav" href={coordNavUrl(lot)} target="_blank" rel="noopener noreferrer">
-              Google 找錯地方？改用座標導航（顯示為圖釘，位置精確）
-            </a>
-          )}
         </div>
       )}
     </li>
