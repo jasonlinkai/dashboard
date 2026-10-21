@@ -370,10 +370,11 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   return (
     <div className="parking" role="dialog" aria-modal="true" aria-labelledby="parking-title">
       <header className="pk-head">
-        <h2 id="parking-title">停車場搜尋</h2>
-        <button className="modal-close" onClick={onClose} aria-label="關閉">
-          ✕
+        {/* Same as the pages over the settings: back at the top left. */}
+        <button className="sub-back" onClick={onClose}>
+          ‹ 返回
         </button>
+        <h2 id="parking-title">停車場搜尋</h2>
       </header>
 
       <form className="pk-search" onSubmit={search}>
