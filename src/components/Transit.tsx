@@ -331,13 +331,13 @@ function BusRouteSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-head">
+          <button className="sub-back" onClick={onClose}>
+            ‹ 返回
+          </button>
           <h2>
             <span className="chip blue-chip">{route}</span> 全線動態
           </h2>
           <span className="muted small bus-sheet-status">{state.error ? <span className="error">⚠ {state.error}</span> : null}</span>
-          <button className="modal-close" onClick={onClose} aria-label="關閉">
-            ✕
-          </button>
         </header>
         {trips.length > 1 && (
           <div className="route-tabs bus-sheet-tabs" role="tablist">

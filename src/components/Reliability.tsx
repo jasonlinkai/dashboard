@@ -193,10 +193,10 @@ export function Reliability({ onClose }: { onClose: () => void }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rel-title" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
-          <h2 id="rel-title">資料可靠度說明</h2>
-          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="關閉">
-            ✕
+          <button ref={closeRef} className="sub-back" onClick={onClose}>
+            ‹ 返回
           </button>
+          <h2 id="rel-title">資料可靠度說明</h2>
         </header>
         <div className="modal-body">
           <section className="rel-block rel-legend">
