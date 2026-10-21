@@ -397,18 +397,18 @@ function BusRouteSheet({
             <span className="chip blue-chip">{route}</span> 全線動態
           </h2>
           <span className="muted small bus-sheet-status">{state.error ? <span className="error">⚠ {state.error}</span> : null}</span>
+          {trips.length > 1 && (
+            <div className="route-tabs bus-sheet-tabs" role="tablist">
+              {trips.map((t, i) => (
+                <button key={i} className="route-tab" role="tab" aria-selected={i === tab} onClick={() => setPicked(i)}>
+                  {label(t)}
+                </button>
+              ))}
+            </div>
+          )}
         </header>
-        {trips.length > 1 && (
-          <div className="route-tabs bus-sheet-tabs" role="tablist">
-            {trips.map((t, i) => (
-              <button key={i} className="route-tab" role="tab" aria-selected={i === tab} onClick={() => setPicked(i)}>
-                {label(t)}
-              </button>
-            ))}
-          </div>
-        )}
         <p className="bus-sheet-hint muted small">
-          勾選上車站，看板就會顯示那一站的到站時間；可以勾多站，例如去程、回程各一站（切換上方方向）。
+          勾選上車站，看板就會顯示那一站的到站時間；可以勾多站，例如去程、回程各一站（切換右上方向）。
           {picks.length > 0 && `目前 ${picks.length} 站：${picks.map((c) => c.stop).join("、")}`}
         </p>
         <ol className="bus-stops" aria-busy={!state.data && !state.error}>
