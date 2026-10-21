@@ -15,6 +15,7 @@ import {
   type MarketItem,
   type Settings,
   TRAIN_TYPES,
+  type TrainType,
   type WeatherPlace,
   instrumentOf,
   marketSymbol,
@@ -703,11 +704,24 @@ function BusEditor({ s, set, sorting }: EditorProps) {
 
 // ---------- 火車 ----------
 
+function TrainTypePicker({ value, onChange }: { value: TrainType; onChange: (t: TrainType) => void }) {
+  return (
+    <div className="segmented" role="radiogroup" aria-label="車種">
+      {TRAIN_TYPES.map((t) => (
+        <button key={t} role="radio" aria-checked={value === t} onClick={() => onChange(t)}>
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void; onDone: () => void }) {
   const routes = s.trains;
   const [stations, setStations] = useState<string[]>([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [type, setType] = useState<TrainType>("區間");
   useEffect(() => {
     fetch("/api/stations", { headers: tdxHeaders() })
       .then((r) => (r.ok ? r.json() : []))
@@ -752,7 +766,11 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
         <button
           className="ed-primary"
           disabled={!ok}
-          onClick={() => (update([...routes, { from: norm(from), to: norm(to) }]), toast(`已新增「${norm(from)}→${norm(to)}」`), onDone())}
+          onClick={() => (
+            update([...routes, { from: norm(from), to: norm(to), type }]),
+            toast(`已新增「${norm(from)}→${norm(to)}（${type}）」`),
+            onDone()
+          )}
         >
           新增
         </button>
@@ -766,6 +784,11 @@ function TrainsAdd({ s, set, onDone }: { s: Settings; set: (s: Settings) => void
               ? "這條路線已經在清單裡了。"
               : `可選全部 ${stations.length || ""} 個臺鐵車站（輸入時會列出建議；不含高鐵、捷運），例如 臺北、汐科。`}
       </p>
+      <div className="setting">
+        <div className="setting-label">車種</div>
+        <TrainTypePicker value={type} onChange={setType} />
+        <div className="muted small">只列出這種車；「區間」也包含區間快車。之後可以在清單上改。</div>
+      </div>
     </>
   );
 }
@@ -779,6 +802,24 @@ function TrainsEditor({ s, set, sorting }: EditorProps) {
         {routes.map((r, i) => (
           <Row key={`${r.from}-${r.to}`} name={`${r.from}→${r.to}`} i={i} count={routes.length} {...rowEdit(sorting, routes, i, update)}>
             {r.from} → {r.to}
+            {sorting ? (
+              <span className="muted small">・{r.type}</span>
+            ) : (
+              <select
+                className="ed-inline-select"
+                value={r.type}
+                onChange={(e) => {
+                  const t = e.target.value as TrainType;
+                  update(routes.map((x, j) => (j === i ? { ...x, type: t } : x)));
+                  toast(`「${r.from}→${r.to}」改看「${t}」`);
+                }}
+                aria-label={`${r.from}→${r.to} 的車種`}
+              >
+                {TRAIN_TYPES.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+            )}
             {i === 0 && <span className="muted small">・預設顯示</span>}
           </Row>
         ))}
@@ -792,24 +833,7 @@ function TrainsEditor({ s, set, sorting }: EditorProps) {
           onClick={() => setAdding(true)}
         />
       )}
-      {!sorting && (
-        <div className="setting">
-          <div className="setting-label">車種</div>
-          <div className="segmented" role="radiogroup" aria-label="車種">
-            {TRAIN_TYPES.map((t) => (
-              <button
-                key={t}
-                role="radio"
-                aria-checked={s.trainType === t}
-                onClick={() => (set({ ...s, trainType: t }), toast(`車種改為「${t}」`))}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          <div className="muted small">「區間」也包含區間快車。</div>
-        </div>
-      )}
+      {!sorting && routes.length > 0 && <p className="muted small">每條路線各自選要看的車種；「區間」也包含區間快車。</p>}
       {adding && (
         <SubPage title="新增火車路線" onClose={() => setAdding(false)}>
           <TrainsAdd s={s} set={set} onDone={() => setAdding(false)} />

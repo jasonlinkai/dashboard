@@ -23,8 +23,7 @@ function summary(s: Settings): [string, string][] {
     ["天氣", s.weather.map((p) => p.name).join("、")],
     ["行情", s.markets.map((m) => instrumentOf(m).name).join("、")],
     ["公車", s.bus.map((b) => `${b.route} ${b.stop}`).join("、") || "（無）"],
-    ["火車", s.trains.map((t) => `${t.from}→${t.to}`).join("、") || "（無）"],
-    ["車種", s.trainType],
+    ["火車", s.trains.map((t) => `${t.from}→${t.to}（${t.type}）`).join("、") || "（無）"],
     ...orderedTopics(s).map(([id, label]): [string, string] => [
       `新聞・${label}`,
       s.news[id].map((x) => NEWS_BY_ID.get(x)?.name ?? x).join("、") || "（不顯示）",

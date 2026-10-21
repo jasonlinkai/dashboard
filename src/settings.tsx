@@ -38,6 +38,8 @@ export interface BusStop {
 export interface TrainRoute {
   from: string;
   to: string;
+  /** Which trains this route lists. */
+  type: TrainType;
 }
 
 export interface Settings {
@@ -46,7 +48,6 @@ export interface Settings {
   markets: MarketItem[];
   bus: BusStop[];
   trains: TrainRoute[];
-  trainType: TrainType;
   news: Record<Topic, string[]>;
   /** Order of the news tabs on the dashboard. */
   newsOrder: Topic[];
@@ -117,11 +118,10 @@ export const DEFAULT_SETTINGS: Settings = {
     { city: "NewTaipei", route: "590", stop: "南港車站", direction: "auto", toward: "日月光社區" },
   ],
   trains: [
-    { from: "汐科", to: "臺北" },
-    { from: "臺北", to: "汐科" },
-    { from: "松山", to: "汐科" },
+    { from: "汐科", to: "臺北", type: "區間" },
+    { from: "臺北", to: "汐科", type: "區間" },
+    { from: "松山", to: "汐科", type: "區間" },
   ],
-  trainType: "區間",
   news: DEFAULT_NEWS,
   newsOrder: TOPICS.map(([id]) => id),
 };
@@ -250,6 +250,9 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     if (cities.size > MAX_BUS_CITIES) err(`bus 最多 ${MAX_BUS_CITIES} 個縣市（每個縣市每分鐘多查一次 TDX）`);
   }
 
+  // Files from before each route had its own type carry one shared trainType: it applies to all.
+  const sharedType = raw.trainType ?? "區間";
+  if (!TRAIN_TYPES.includes(sharedType as TrainType)) err(`trainType 只能是 ${TRAIN_TYPES.join("、")}`);
   const trains: TrainRoute[] = [];
   if (!Array.isArray(raw.trains)) err("trains 必須是陣列");
   else {
@@ -257,12 +260,12 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     raw.trains.forEach((t, i) => {
       if (!isObj(t) || !text(t.from, 8) || !text(t.to, 8)) return err(`trains[${i}]：需要 from 與 to 站名`);
       if (t.from === t.to) return err(`trains[${i}]：上下車站不能相同`);
-      trains.push({ from: t.from as string, to: t.to as string });
+      const type = t.type ?? sharedType;
+      if (!TRAIN_TYPES.includes(type as TrainType)) return err(`trains[${i}]：type 只能是 ${TRAIN_TYPES.join("、")}`);
+      if (trains.some((r) => r.from === t.from && r.to === t.to)) return err(`trains[${i}]：${t.from}→${t.to} 重複`);
+      trains.push({ from: t.from as string, to: t.to as string, type: type as TrainType });
     });
   }
-
-  const trainType = raw.trainType ?? "區間";
-  if (!TRAIN_TYPES.includes(trainType as TrainType)) err(`trainType 只能是 ${TRAIN_TYPES.join("、")}`);
 
   const news = {} as Record<Topic, string[]>;
   if (!isObj(raw.news)) err("news 必須是物件");
@@ -294,7 +297,7 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
   }
 
   if (errors.length) return { errors };
-  return { settings: { version: 1, weather, markets, bus, trains, trainType: trainType as TrainType, news, newsOrder }, errors };
+  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder }, errors };
 }
 
 // ---------- Storage and React context ----------

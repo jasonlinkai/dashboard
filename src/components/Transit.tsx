@@ -493,7 +493,7 @@ export function Train() {
   const q = new URLSearchParams({
     from: route?.from ?? "",
     to: route?.to ?? "",
-    type: trainTypeKeyword(settings.trainType),
+    type: route ? trainTypeKeyword(route.type) : "",
     limit: String(TRAIN_LIMIT),
   }).toString();
   const state = usePolling(
@@ -541,20 +541,14 @@ export function Train() {
               {routes.map((r, i) => (
                 <button key={keyOf(r)} data-reorder role="tab" className="route-tab" aria-selected={i === open} onClick={() => setOpen(i)}>
                   {station(r.from)} → {station(r.to)}
+                  <span className="route-tab-type">{r.type}</span>
                 </button>
               ))}
             </div>
           </div>
           {route &&
             (current ? (
-              <TrainList
-                key={open}
-                trains={current.trains}
-                from={route.from}
-                to={route.to}
-                type={trainTypeKeyword(settings.trainType)}
-                now={now}
-              />
+              <TrainList key={open} trains={current.trains} from={route.from} to={route.to} type={trainTypeKeyword(route.type)} now={now} />
             ) : state.error ? (
               <p className="hint error">{state.error}</p>
             ) : (

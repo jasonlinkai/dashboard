@@ -157,6 +157,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .ed-tabs { align-self: start; flex-wrap: wrap; }
 .ed-list { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); }
 .ed-row { display: flex; align-items: center; gap: 4px; background: var(--card-2); border-radius: 8px; padding: 4px 4px 4px 10px; min-height: 38px; }
+.ed-inline-select { margin-left: 8px; padding: 1px 4px; font-size: 12.5px; border-radius: 6px; vertical-align: 1px; }
 .ed-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .ed-row { padding-left: 2px; }
 .ed-row.ed-row-plain { padding-left: 10px; }
@@ -422,6 +423,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer;
 }
 .route-tab[aria-selected="true"] { background: var(--blue); color: #fff; }
+.route-tab-type { margin-left: 5px; font-size: 11px; font-weight: 500; opacity: 0.75; }
 .eta { font-size: 18px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .time { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
