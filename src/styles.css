@@ -486,25 +486,31 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   .tab-icon { font-size: 15px; }
 }
 
-/* Tablet portrait (iPad Air 820×1180): everything on one screen, stacked. */
+/* Tablet portrait (iPad mini 744×1133, iPad Air 820×1180): everything on one screen. Bus and
+   train stack on the left and news takes the whole right column, so the three lists get real
+   height; the market and weather rows scale with the screen height so a mini isn't squeezed. */
 @media (min-width: 700px) and (max-aspect-ratio: 1/1) {
   .tabbar { display: none; }
   .grid > .card { display: flex; }
   .grid[data-tab] {
+    --tile-h: clamp(96px, 9vh, 128px);
+    --wx-h: clamp(104px, 9.6vh, 132px);
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas: "markets markets" "weather weather" "bus train" "news news";
+    grid-template-areas: "markets markets" "weather weather" "bus news" "train news";
   }
   .grid > .markets { grid-area: markets; }
   .grid > .weather { grid-area: weather; }
   .grid > .bus { grid-area: bus; }
   .grid > .train { grid-area: train; }
   .grid > .news { grid-area: news; }
-  .grid[data-tab] .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: 124px; max-height: calc(2 * 124px + 8px); }
+  .grid[data-tab] .tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none;
+    grid-auto-rows: var(--tile-h); max-height: calc(2 * var(--tile-h) + 8px);
+  }
   .grid[data-tab] .tile-price { font-size: 21px; }
   /* Weather 2×2 so each card is wide enough for 12 hourly columns. */
-  /* The weather card grows with its content here, so it never needs to scroll. */
-  .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: 120px; max-height: calc(2 * 120px + 8px); }
+  .wx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: var(--wx-h); max-height: calc(2 * var(--wx-h) + 8px); }
   .clock { font-size: 34px; }
 }
 
