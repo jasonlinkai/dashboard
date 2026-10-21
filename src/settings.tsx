@@ -23,6 +23,7 @@ export type MarketItem = string | { symbol: string; name: string; decimals?: num
 export interface BusStop {
   city: BusCity;
   route: string;
+  /** 上車站；空字串＝沒有勾選上車站（看板只列路線，點開看全線） */
   stop: string;
   /** "auto" = 選目的地看起來是往台北的方向；0 = 去程、1 = 返程 */
   direction: 0 | 1 | "auto";
@@ -209,7 +210,9 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
       const at = `bus[${i}]`;
       if (!isObj(b)) return err(`${at} 必須是物件`);
       if (!isBusCity(b.city)) return err(`${at}：city 要是 TDX 的縣市代碼（例如 Taipei、NewTaipei、Taichung）`);
-      if (!text(b.route, 12) || !text(b.stop, 24)) return err(`${at}：route、stop 必填（不能含 , 或 :）`);
+      if (!text(b.route, 12)) return err(`${at}：route 必填（不能含 , 或 :）`);
+      // "" = no boarding stop picked: the board lists the route only.
+      if (b.stop !== "" && !text(b.stop, 24)) return err(`${at}：stop 要是 24 字內的站名，或空字串（不指定上車站）`);
       const direction = b.direction ?? "auto";
       if (direction !== "auto" && direction !== 0 && direction !== 1) return err(`${at}：direction 只能是 "auto"、0 或 1`);
       if (b.toward !== undefined && !text(b.toward, 24)) return err(`${at}：toward 不能是空字串，也不能含 , 或 :`);

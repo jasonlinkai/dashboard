@@ -31,6 +31,8 @@ export const links = {
   /** 每個縣市都一樣：用 Google 地圖搜尋這條公車路線 */
   bus: (city: string, route: string) =>
     `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${BUS_CITY_NAME.get(city) ?? ""} ${route} 公車`)}`,
+  /** 大台北公車（5284）的路線頁：雙北路線另外提供，整條路線的官方動態 */
+  bus5284: (routeId: string) => `https://pda5284.gov.taipei/MQS/route.jsp?rid=${encodeURIComponent(routeId)}`,
   /** 臺鐵車次查詢，含停靠站與即時誤點 */
   train: (trainNo: string, date: string) =>
     `https://tip.railway.gov.tw/tra-tip-web/tip/tip001/tip112/querybytrainno?rideDate=${date.replace(/-/g, "/")}&trainNo=${trainNo}`,

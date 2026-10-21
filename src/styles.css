@@ -671,3 +671,47 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-hits-tip { padding: 0 8px 4px; line-height: 1.4; }
 .pk-hits-tip.warn { color: var(--accent); }
 .pk-coord-nav { display: block; text-align: center; font-size: 12px; color: var(--muted); text-decoration: underline; padding: 4px 0 0; }
+
+/* Parking source marks: T = TDX, 新 = 新北市, O = OpenStreetMap */
+.pk-pin { position: relative; padding-left: 4px; }
+.pk-pin > i {
+  position: absolute; left: -9px; top: -9px; width: 16px; height: 16px; border-radius: 50%;
+  font: 700 10px/16px -apple-system, BlinkMacSystemFont, sans-serif; font-style: normal; text-align: center;
+  color: #fff; border: 1.5px solid #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+.pk-pin.src-tdx > i, .pk-src.src-tdx { background: #1a73e8; }
+.pk-pin.src-ntpc > i, .pk-src.src-ntpc { background: #8e44ad; }
+.pk-pin.src-osm > i, .pk-src.src-osm { background: #6b7a2a; }
+/* OpenStreetMap pins: location only, so an outlined pin instead of a filled one. */
+.pk-pin.src-osm { background: #fff; color: #555; border: 2px dashed #6b7a2a; }
+.pk-srcs { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
+.pk-src {
+  display: inline-block; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; font-style: normal;
+  font: 700 10px/16px -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; text-align: center;
+}
+.pk-legend {
+  display: flex; flex-direction: column; gap: 3px; padding: 5px 7px; border-radius: 8px;
+  background: rgb(255 255 255 / 0.92); color: #333; font-size: 11px; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+}
+.pk-legend span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pk-popup-src { color: #666; font-size: 12px; }
+
+/* ---------- Bus: whole-route sheet ---------- */
+.bus-sheet { width: min(560px, 100%); height: 100%; }
+.bus-sheet .modal-head h2 { display: flex; align-items: center; gap: 8px; flex: none; }
+.bus-sheet-status { flex: 1; text-align: right; padding-right: 10px; }
+.bus-sheet-tabs { padding: 8px 12px 2px; flex: none; }
+.bus-stops { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px 12px 10px; }
+.bus-stops li { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.bus-stops li.mine { background: color-mix(in srgb, var(--blue) 14%, transparent); border-radius: 8px; }
+.bus-stop-eta { flex: none; width: 5.2em; text-align: center; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.bus-stop-eta.muted { font-weight: 500; font-size: 12.5px; }
+.bus-stop-name { flex: 1; min-width: 8em; font-size: 15px; }
+.bus-plate { flex: none; font-size: 12px; padding: 2px 6px; border-radius: 6px; background: var(--card-2); color: var(--muted); }
+.bus-plate.at { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); font-weight: 600; }
+.bus-sheet-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 8px 14px 10px; border-top: 1px solid var(--line); flex: none; }
+.bus-sheet-links { display: flex; gap: 14px; }
+.bus-sheet-links a { color: var(--blue); }
+.bus-stop-pick { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--blue); cursor: pointer; }
+.bus-sheet-hint { padding: 6px 14px 0; margin: 0; flex: none; }
+.bus-plate { margin-left: auto; }

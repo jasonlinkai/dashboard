@@ -400,7 +400,7 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
 // ---------- 公車 ----------
 
 const busLabel = (b: BusStop) =>
-  `${b.stop}${b.headsign ? `・${b.headsign}` : b.toward ? `・往 ${b.toward}` : ""}${b.city !== "Taipei" && b.city !== "NewTaipei" ? `・${BUS_CITY_NAME.get(b.city)}` : ""}`;
+  `${b.stop || "未勾選上車站（在看板點路線，於全線動態勾選）"}${b.headsign ? `・${b.headsign}` : b.toward ? `・往 ${b.toward}` : ""}${b.city !== "Taipei" && b.city !== "NewTaipei" ? `・${BUS_CITY_NAME.get(b.city)}` : ""}`;
 
 /** GET a TDX-backed API with the visitor's own key (if any); throws the server's message on error. */
 async function tdxApi<T>(url: string): Promise<T> {

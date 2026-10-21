@@ -24,6 +24,7 @@ const patterns: [RegExp, number][] = [
   [new RegExp(`${NUM}\\s*元\\s*[/／]\\s*(?:每)?\\s*1?\\s*${HOUR}`, "g"), 1], // 40元/時, 40元/小時, 40元/1小時
   [new RegExp(`${NUM}\\s*元\\s*每\\s*${HOUR}`, "g"), 1], // 40元每小時
   [new RegExp(`每\\s*${HOUR}\\s*[:：]?\\s*${NUM}\\s*元`, "g"), 1], // 每小時40元
+  [new RegExp(`計時\\s*${NUM}\\s*元(?!\\s*[/／])`, "g"), 1], // 新北市資料：小型車計時80元（每小時）
 ];
 const perEntry = [new RegExp(`${NUM}\\s*元\\s*[/／]\\s*次`, "g"), new RegExp(`每\\s*次\\s*[:：]?\\s*${NUM}\\s*元`, "g")];
 

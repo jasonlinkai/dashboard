@@ -1,5 +1,5 @@
 import { type BusRouteInfo, type BusTrip, isBusCity } from "../src/bus-cities";
-import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../src/shared";
+import type { BusArrival, BusResponse, BusRouteDetail, TrainDeparture, TrainResponse } from "../src/shared";
 import { type Env, type TdxCreds, cached, rows, taipeiNow, tdxCreds } from "./util";
 
 const API = "https://tdx.transportdata.tw/api/basic";
@@ -290,6 +290,90 @@ export async function busTrips(env: Env, city: string, route: string): Promise<B
       )
       .filter((t) => t.stops.length > 1),
   );
+}
+
+// ---------- Whole route (tap a bus on the board) ----------
+
+/** Every trip of a route with its stops (by StopUID) in order. One call per route per day. */
+function routeStops(env: Env, city: string, route: string) {
+  return cached(`busroute-stops2:${city}:${route}`, 86400, async () =>
+    rows(await tdx(env, `/v2/Bus/StopOfRoute/City/${city}`, { $filter: `RouteName/Zh_tw eq ${quote(route)}` }))
+      .filter((r) => zh(r.RouteName) === route)
+      .map((r) => ({
+        routeId: String(r.RouteID ?? ""),
+        direction: Number(r.Direction),
+        subRoute: zh(r.SubRouteName) || route,
+        stops: ((r.Stops ?? []) as any[]).map((s) => ({ uid: String(s.StopUID), name: zh(s.StopName) })),
+      }))
+      .filter((t) => t.stops.length > 1),
+  );
+}
+
+/**
+ * Every stop of a route with its arrival estimate and the buses at/near each stop: what the
+ * operator sites (5284 etc.) show, for any city. Two live calls a minute while it is open.
+ */
+export async function busRoute(env: Env, city: string, route: string): Promise<BusRouteDetail> {
+  if (!isBusCity(city)) throw new Error("不支援的縣市");
+  if (!route || route.length > 20) throw new Error("路線名稱不正確");
+  const trips = await routeStops(env, city, route);
+  if (!trips.length) throw new Error(`找不到路線 ${route}`);
+  const path = `${encodeURIComponent(route)}`;
+  const etas = await cached(`busroute-eta:${city}:${route}`, 50, async () => {
+    const fetchedAt = Date.now();
+    return rows(await tdx(env, `/v2/Bus/EstimatedTimeOfArrival/City/${city}/${path}`))
+      .filter((e) => zh(e.RouteName) === route)
+      .map((e) => ({
+        key: `${e.Direction}|${e.StopUID}`,
+        sec: typeof e.EstimateTime === "number" ? e.EstimateTime : null,
+        status: Number(e.StopStatus),
+        next: hhmm(e.NextBusTime),
+        last: e.IsLastBus === true,
+        asOf: Date.parse(e.SrcUpdateTime ?? e.UpdateTime ?? "") || fetchedAt,
+      }));
+  });
+  // Where the buses are: optional, the estimates alone still make the page useful.
+  let near: { key: string; plate: string; arriving: boolean }[] = [];
+  let busesOk = true;
+  try {
+    near = await cached(`busroute-near:${city}:${route}`, 50, async () =>
+      rows(await tdx(env, `/v2/Bus/RealTimeNearStop/City/${city}/${path}`))
+        .filter((b) => zh(b.RouteName) === route)
+        .map((b) => ({ key: `${b.Direction}|${b.StopUID}`, plate: String(b.PlateNumb ?? ""), arriving: b.A2EventType === 1 })),
+    );
+  } catch {
+    busesOk = false;
+  }
+  // Sub-routes share stops: keep the soonest estimate per direction and stop.
+  const best = new Map<string, (typeof etas)[number]>();
+  for (const e of etas) {
+    const prev = best.get(e.key);
+    if (!prev || (e.sec != null && (prev.sec == null || e.sec < prev.sec))) best.set(e.key, e);
+  }
+  const asOf = etas.length ? Math.min(...etas.map((e) => e.asOf)) : null;
+  return {
+    city,
+    route,
+    routeId: trips[0].routeId,
+    busesOk,
+    asOf,
+    trips: trips.map((t) => ({
+      direction: t.direction,
+      subRoute: t.subRoute,
+      headsign: `往 ${t.stops.at(-1)!.name}`,
+      stops: t.stops.map((s) => {
+        const e = best.get(`${t.direction}|${s.uid}`);
+        const status = e ? (STOP_STATUS[e.status] ?? (e.sec == null ? "暫無資料" : null)) : "暫無資料";
+        return {
+          name: s.name,
+          estimateSec: e?.sec ?? null,
+          status: status === "尚未發車" && e?.next ? `${e.next} 發車` : status,
+          lastBus: e?.last ?? false,
+          buses: near.filter((b) => b.key === `${t.direction}|${s.uid}`).map((b) => ({ plate: b.plate, arriving: b.arriving })),
+        };
+      }),
+    })),
+  };
 }
 
 // ---------- Train (TRA) ----------

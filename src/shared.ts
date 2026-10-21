@@ -44,6 +44,32 @@ export interface BusResponse {
   notFound: string[]; // "route:stop" pairs that matched no stop
 }
 
+/** A whole route: every stop's estimate and where the buses are (the board's tap-through). */
+export interface BusRouteDetail {
+  city: string;
+  route: string;
+  /** TDX RouteID (also the 5284 route page id in 雙北) */
+  routeId: string;
+  /** Bus positions could be fetched (else stops show estimates only). */
+  busesOk: boolean;
+  /** Oldest estimate's source time (unix ms). */
+  asOf: number | null;
+  trips: {
+    direction: number;
+    subRoute: string;
+    headsign: string;
+    stops: {
+      name: string;
+      estimateSec: number | null;
+      /** 尚未發車 / 末班車已過 / HH:MM 發車 …; null while a bus is on its way. */
+      status: string | null;
+      lastBus: boolean;
+      /** Buses at this stop; arriving = pulling in (otherwise just left). */
+      buses: { plate: string; arriving: boolean }[];
+    }[];
+  }[];
+}
+
 export interface TrainDeparture {
   trainNo: string;
   type: string; // 區間 / 區間快
@@ -106,9 +132,16 @@ export interface GeoResponse {
 /** Free / total spaces of one kind; total is null when the source doesn't say. */
 export type SpaceCount = { available: number; total: number | null } | null;
 
+/** TDX; NTPC = 新北市政府開放資料; OSM = OpenStreetMap (location only, no live spaces). */
+export type ParkingSource = "TDX" | "NTPC" | "OSM";
+
 export interface ParkingLot {
   id: string;
-  city: string; // TDX city code
+  /** Where the details shown come from (the source with the most information). */
+  source: ParkingSource;
+  /** Every source that has this car park (points within 30 m count as the same one). */
+  sources: ParkingSource[];
+  city: string; // TDX city code ("" when not known)
   name: string;
   lat: number;
   lon: number;
@@ -133,6 +166,10 @@ export interface ParkingLot {
   serviceStatus: number | null;
   /** When the car park reported its count (ISO). */
   liveTime: string | null;
+  /** liveTime is when we fetched the count, because the source gives no report time. */
+  liveTimeIsFetch?: boolean;
+  /** e.g. 限顧客使用 */
+  note?: string;
 }
 
 export interface ParkingResponse {
@@ -143,10 +180,14 @@ export interface ParkingResponse {
     name: string;
     /** empty: TDX has no car park list for this city (e.g. 新北市 at the time of writing). */
     lots: "ok" | "empty" | "error";
+    /** Another source used for this city's car parks instead (e.g. 新北市政府開放資料). */
+    coveredBy?: string;
     /** none: TDX has no live spaces for this city at all. */
     live: "ok" | "none" | "error";
     liveTime: string | null;
     error?: string;
   }[];
+  /** The non-TDX sources and whether they answered. */
+  extra: { source: ParkingSource; name: string; status: "ok" | "error"; error?: string; /** snapshot date (OSM) */ asOf?: string }[];
   lots: ParkingLot[];
 }

@@ -6,7 +6,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON } from "../hooks";
-import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse, SpaceCount } from "../shared";
+import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse, ParkingSource, SpaceCount } from "../shared";
 import { toast } from "../toast";
 
 const RADII = [300, 500, 1000, 2000] as const;
@@ -48,6 +48,25 @@ const navUrl = (p: { lat: number; lon: number; name: string; address: string }) 
     ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${p.name} ${p.address}`)}&travelmode=driving`
     : coordNavUrl(p);
 
+/** Each source's mark: the letter in the pin's corner badge, the legend, and the list. */
+const SOURCE: Record<ParkingSource, { badge: string; short: string; long: string }> = {
+  TDX: { badge: "T", short: "TDX", long: "交通部 TDX" },
+  NTPC: { badge: "新", short: "新北", long: "新北市政府開放資料" },
+  OSM: { badge: "O", short: "OSM", long: "OpenStreetMap（只有位置）" },
+};
+
+function SourceTags({ lot }: { lot: ParkingLot }) {
+  return (
+    <span className="pk-srcs" title={`來源：${lot.sources.map((s) => SOURCE[s].long).join("、")}`}>
+      {lot.sources.map((s) => (
+        <span key={s} className={`pk-src src-${s.toLowerCase()}`}>
+          {SOURCE[s].badge}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** The count to show and compare: cars when broken down, else the undivided total. */
 const mainCount = (p: ParkingLot): SpaceCount => p.car ?? p.spaces;
 
@@ -75,6 +94,7 @@ function fareText(p: ParkingLot): string {
   if (e?.perEntry) return `約 ${r(e.perEntry)} 元/次`;
   if (!p.fare) return "未提供費率";
   if (/現場/.test(p.fare) && p.fare.length < 12) return "費率依現場公告";
+  if (p.fare.length <= 16 && !p.fare.includes("\n")) return p.fare; // e.g. 免費（OpenStreetMap 標示）
   return "費率見說明";
 }
 
@@ -229,6 +249,8 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   const problems = (data?.cities ?? []).filter(
     (c) => c.lots !== "ok" || (c.live !== "ok" && data!.lots.some((p) => p.city === c.city)),
   );
+  const osmAsOf = data?.extra.find((x) => x.source === "OSM")?.asOf;
+  const osmDate = osmAsOf ? osmAsOf.slice(0, 10) : null;
   const noLiveAtAll = data && data.lots.length > 0 && data.lots.every((p) => p.live !== "ok");
 
   return (
@@ -340,9 +362,11 @@ export default function Parking({ onClose }: { onClose: () => void }) {
             </p>
           )}
           {problems.map((c) => (
-            <p key={c.city} className="pk-note warn">
-              {c.lots === "empty"
-                ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的停車場不會出現在結果中`
+            <p key={c.city} className={`pk-note ${c.coveredBy ? "" : "warn"}`}>
+              {c.coveredBy
+                ? `TDX 沒有${c.name}的停車場資料，${c.name}改用${c.coveredBy}`
+                : c.lots === "empty"
+                ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（仍會列出 OpenStreetMap 上的停車場）`
                 : c.lots === "error"
                 ? `⚠ ${c.name}停車場資料暫時無法取得（${c.error ?? ""}）`
                 : c.live === "error"
@@ -350,10 +374,18 @@ export default function Parking({ onClose }: { onClose: () => void }) {
                   : `${c.name}目前沒有提供即時空位資料`}
             </p>
           ))}
+          {(data?.extra ?? [])
+            .filter((x) => x.error)
+            .map((x) => (
+              <p key={x.source} className="pk-note warn">
+                ⚠ {x.name}
+                {x.status === "error" ? "暫時無法取得，這個來源的停車場不會出現" : ""}（{x.error}）
+              </p>
+            ))}
           {data && !loading && data.lots.length === 0 && !error && (
             <p className="pk-note">
               這個範圍內沒有找到停車場。可以加大半徑。
-              {" 注意：TDX 的停車場清單並未涵蓋所有停車場，沒列出不代表附近沒有停車場。"}
+              {" 注意：各資料來源都沒有涵蓋所有停車場，沒列出不代表附近沒有停車場。"}
             </p>
           )}
           {noLiveAtAll && <p className="pk-note">這附近的停車場都沒有即時空位資料，空位請以現場為準。</p>}
@@ -365,7 +397,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
           </ol>
 
           <p className="pk-source">
-            停車場與即時空位：交通部 TDX 運輸資料流通服務（政府資料開放授權條款－第1版）・地圖：內政部國土測繪中心・地點搜尋：TDX、© OpenStreetMap 貢獻者（ODbL）・距離為直線距離・費率由業者公告文字推估，實際以現場為準
+            停車場與即時空位：交通部 TDX 運輸資料流通服務、新北市政府資料開放平臺（政府資料開放授權條款－第1版）、© OpenStreetMap 貢獻者（ODbL，只有位置{osmDate ? `，${osmDate} 的資料` : ""}）・地圖：內政部國土測繪中心・地點搜尋：TDX、© OpenStreetMap 貢獻者（ODbL）・距離為直線距離・費率由業者公告文字推估，實際以現場為準
           </p>
         </div>
       </div>
@@ -375,7 +407,8 @@ export default function Parking({ onClose }: { onClose: () => void }) {
 
 function SpaceLine({ lot, now }: { lot: ParkingLot; now: number }) {
   if (lot.live === "unavailable") return <span className="pk-live unknown">即時空位暫時無法取得</span>;
-  if (lot.live === "none") return <span className="pk-live unknown">無即時空位資料</span>;
+  if (lot.live === "none")
+    return <span className="pk-live unknown">{lot.source === "OSM" ? "無即時空位（OpenStreetMap 只有位置）" : "無即時空位資料"}</span>;
   const c = mainCount(lot);
   const age = liveAgeMin(lot, now);
   const time = lot.liveTime ? hm.format(new Date(lot.liveTime)) : null;
@@ -393,8 +426,12 @@ function SpaceLine({ lot, now }: { lot: ParkingLot; now: number }) {
       )}
       {lot.scooter && <span className="muted">・機車剩 {lot.scooter.available}</span>}
       {time && (
-        <span className={old ? "red" : "muted"}>
+        <span
+          className={old ? "red" : "muted"}
+          title={lot.liveTimeIsFetch ? "這個來源沒有提供停車場的回報時間，這是伺服器取得資料的時間（來源約每 3 分鐘更新）" : undefined}
+        >
           ・{time}
+          {lot.liveTimeIsFetch && " 取得"}
           {old && `（${age! >= 120 ? `${Math.round(age! / 60)} 小時` : `${age} 分鐘`}前，可能已過時）`}
         </span>
       )}
@@ -417,6 +454,8 @@ function LotItem({ lot, now, open, onToggle }: { lot: ParkingLot; now: number; o
           <span className="pk-lot-name">
             {lot.name}
             {/機車/.test(lot.name) && !/汽車/.test(lot.name) && <span className="pk-tag">機車</span>}
+            {lot.note && <span className="pk-tag">{lot.note}</span>}
+            <SourceTags lot={lot} />
           </span>
           <SpaceLine lot={lot} now={now} />
           <span className="pk-fare">{fareText(lot)}</span>
@@ -441,6 +480,13 @@ function LotItem({ lot, now, open, onToggle }: { lot: ParkingLot; now: number; o
               <b>說明</b>
               {lot.description}
             </p>
+          )}
+          <p>
+            <b>來源</b>
+            {lot.sources.map((s, i) => `${SOURCE[s].long}${i === 0 && lot.sources.length > 1 ? "（主要）" : ""}`).join("、")}
+          </p>
+          {lot.sources.length > 1 && (
+            <p className="muted tiny">多個來源在 30 公尺內標了停車場，視為同一個；顯示資訊最多的那筆，缺的欄位由其他來源補上。</p>
           )}
           <a className="pk-btn primary pk-nav" href={navUrl(lot)} target="_blank" rel="noopener noreferrer">
             用 Google 地圖導航
@@ -467,7 +513,7 @@ function lotIcon(p: ParkingLot, selected: boolean) {
   const text = p.live === "ok" && c ? (c.available > 999 ? "999+" : String(c.available)) : "P";
   return L.divIcon({
     className: "",
-    html: `<div class="pk-pin ${level(p)}${selected ? " sel" : ""}">${text}</div>`,
+    html: `<div class="pk-pin ${level(p)} src-${p.source.toLowerCase()}${selected ? " sel" : ""}"><i>${SOURCE[p.source].badge}</i>${text}</div>`,
     iconSize: [0, 0],
   });
 }
@@ -510,6 +556,17 @@ function ParkingMap({
       cb.current.onView({ lat: c.lat, lon: c.lng, zoom: m.getZoom() });
     });
     layer.current = L.layerGroup().addTo(m);
+    // Legend: which source each pin's corner letter means.
+    const legend = new L.Control({ position: "topright" });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create("div", "pk-legend");
+      div.innerHTML = (Object.keys(SOURCE) as ParkingSource[])
+        .map((k) => `<span><i class="pk-src src-${k.toLowerCase()}">${SOURCE[k].badge}</i>${SOURCE[k].short}</span>`)
+        .join("");
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    };
+    legend.addTo(m);
     map.current = m;
     // The panel lays out after mount (and the phone rotates): tell Leaflet its real size, and
     // re-zoom to the search circle, which may have been fitted while the map was still 0×0.
@@ -542,7 +599,7 @@ function ParkingMap({
     for (const p of lots) {
       const mk = L.marker([p.lat, p.lon], { icon: lotIcon(p, false), title: p.name, riseOnHover: true })
         .bindPopup(
-          `<b>${esc(p.name)}</b><br>${esc(fmtDistance(p.distance))}・${esc(fareText(p))}<br><a class="pk-popup-nav" href="${navUrl(p)}" target="_blank" rel="noopener noreferrer">Google 地圖導航 ›</a>`,
+          `<b>${esc(p.name)}</b><br><span class="pk-popup-src">來源：${esc(p.sources.map((s) => SOURCE[s].long).join("、"))}</span><br>${esc(fmtDistance(p.distance))}・${esc(fareText(p))}<br><a class="pk-popup-nav" href="${navUrl(p)}" target="_blank" rel="noopener noreferrer">Google 地圖導航 ›</a>`,
           { closeButton: false, autoPanPadding: [20, 20] },
         )
         .on("click", () => cb.current.onSelect(p.id))

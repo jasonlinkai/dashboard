@@ -1,11 +1,13 @@
 import { BUS_CITY_NAME } from "../bus-cities";
 import { BUS_ESTIMATE_STALE_MIN, REFRESH_SEC, STALE_AFTER_SEC, TOWARD_TAIPEI, TRAIN_LIMIT, links } from "../config";
 import { type BusStop, trainTypeKeyword, useSettings } from "../settings";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
-import type { BusArrival, BusResponse, TrainDeparture, TrainResponse } from "../shared";
+import type { BusArrival, BusResponse, BusRouteDetail, TrainDeparture, TrainResponse } from "../shared";
 import { Flip } from "./Flip";
 import { Section } from "./Section";
+import { toast } from "../toast";
 
 const NOT_CONFIGURED = <p className="hint">網站尚未設定 TDX 金鑰，可在右上角「設定」填入你自己的金鑰。</p>;
 
@@ -46,7 +48,11 @@ export function Bus() {
   const now = useNow(1000);
   const { settings } = useSettings();
   const stops = settings.bus;
-  const routes = stops.map((s) => [s.city, s.route, s.stop, ...(s.toward ? [s.toward] : [])].join(":")).join(",");
+  // Routes without a picked stop have no arrivals to ask for: the board just lists them.
+  const routes = stops
+    .filter((s) => s.stop)
+    .map((s) => [s.city, s.route, s.stop, ...(s.toward ? [s.toward] : [])].join(":"))
+    .join(",");
   const state = usePolling(
     () =>
       routes
@@ -60,6 +66,7 @@ export function Bus() {
   // Long-press a stop to drag it; the list is in the order set by the user.
   const dragRef = useReorder<HTMLUListElement>((from, to) => setSettings({ ...settings, bus: moveTo(stops, from, to) }));
   const all = state.data?.arrivals ?? [];
+  const [open, setOpen] = useState<{ city: string; route: string; direction: number; routeId: string } | null>(null);
   const notFound = new Set(state.data?.notFound ?? []);
   return (
     <Section
@@ -83,8 +90,9 @@ export function Bus() {
           {state.error && !state.data && <li className="hint error">{state.error}</li>}
           {/* One item per configured stop (it can show both directions), in the user's order. */}
           {stops.map((cfg) => {
+            // No boarding stop picked: list the route only (ignore arrivals still on screen from before).
             const rows = all
-              .filter((a) => sameRoute(a, cfg) && wanted(a, all, stops))
+              .filter((a) => cfg.stop && sameRoute(a, cfg) && wanted(a, all, stops))
               .sort((a, b) => (a.estimateSec ?? 1e9) - (b.estimateSec ?? 1e9));
             return (
               <li key={`${cfg.city}:${cfg.route}`} data-reorder className="bus-stop">
@@ -94,13 +102,23 @@ export function Bus() {
                     <span className="grow hint error">找不到站牌：{cfg.stop}</span>
                   </div>
                 ) : !rows.length ? (
-                  <div className="row">
+                  <a
+                    className="row link"
+                    href={links.bus(cfg.city, cfg.route)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(ev) => {
+                      if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+                      ev.preventDefault();
+                      setOpen({ city: cfg.city, route: cfg.route, direction: typeof cfg.direction === "number" ? cfg.direction : 0, routeId: "" });
+                    }}
+                  >
                     <span className="chip blue-chip">{cfg.route}</span>
                     <span className="grow">
-                      <div>{cfg.stop}</div>
+                      {cfg.stop ? <div>{cfg.stop}</div> : <div className="muted">未勾選上車站・點開看全線</div>}
                     </span>
-                    <span className="eta muted">{state.data ? "暫無資料" : "—"}</span>
-                  </div>
+                    <span className="eta muted">{!cfg.stop ? "›" : state.data ? "暫無資料" : "—"}</span>
+                  </a>
                 ) : (
                   rows.map((a) => {
                     const e = eta(a);
@@ -111,6 +129,12 @@ export function Bus() {
                         href={links.bus(cfg.city, cfg.route)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        // Tap: the whole route in a sheet. (The link stays for open-in-new-tab.)
+                        onClick={(ev) => {
+                          if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+                          ev.preventDefault();
+                          setOpen({ city: cfg.city, route: cfg.route, direction: a.direction, routeId: a.routeId });
+                        }}
                       >
                         <span className="chip blue-chip">{a.route}</span>
                         <span className="grow">
@@ -135,7 +159,195 @@ export function Bus() {
           })}
         </ul>
       )}
+      {open && <BusRouteSheet {...open} onClose={() => setOpen(null)} />}
     </Section>
+  );
+}
+
+function isSubsequence(needle: string, hay: string): boolean {
+  let i = 0;
+  for (const ch of hay) if (ch === needle[i]) i++;
+  return i === needle.length;
+}
+
+/** One stop's estimate on the route sheet, worded like the board. */
+function stopEta(s: BusRouteDetail["trips"][number]["stops"][number]): { text: string; cls: string } {
+  return eta({ estimateSec: s.estimateSec, status: s.status } as BusArrival);
+}
+
+/**
+ * The whole route (every stop's estimate and where the buses are), like the operator sites, for
+ * any city. Opens on the trip and stop the board row is for.
+ */
+function BusRouteSheet({
+  city,
+  route,
+  direction,
+  routeId,
+  onClose,
+}: {
+  city: string;
+  route: string;
+  direction: number;
+  routeId: string;
+  onClose: () => void;
+}) {
+  const { settings, setSettings } = useSettings();
+  const cfg: BusStop = settings.bus.find((b) => b.city === city && b.route === route) ?? {
+    city: city as BusStop["city"],
+    route,
+    stop: "",
+    direction: "auto",
+  };
+  const state = usePolling(
+    () => getJSON<BusRouteDetail>(`/api/bus-route?city=${cfg.city}&route=${encodeURIComponent(cfg.route)}`),
+    REFRESH_SEC.bus,
+    [cfg.city, cfg.route],
+  );
+  const trips = state.data?.trips ?? [];
+  const has = (t: (typeof trips)[number]) => Boolean(cfg.stop) && t.stops.some((s) => s.name === cfg.stop || isSubsequence(cfg.stop, s.name));
+  // Start on the trip with this stop in the board row's direction, main route before sub-routes.
+  const initial = Math.max(
+    0,
+    [...trips.keys()].sort(
+      (a, b) =>
+        Number(has(trips[b]) && trips[b].direction === direction) - Number(has(trips[a]) && trips[a].direction === direction) ||
+        Number(trips[b].subRoute === cfg.route) - Number(trips[a].subRoute === cfg.route) ||
+        a - b,
+    )[0] ?? 0,
+  );
+  const [picked, setPicked] = useState<number | null>(null);
+  const tab = picked ?? initial;
+  const trip = trips[tab];
+  const mineRef = useRef<HTMLLIElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  // Bring the configured stop into view when the trip is shown.
+  useEffect(() => {
+    mineRef.current?.scrollIntoView({ block: "center" });
+  }, [tab, Boolean(state.data)]);
+  // The rider's stop. A loop route passes it twice: with "toward", it's the pass that still has
+  // that stop ahead (like the board); otherwise the first pass. Names may differ slightly
+  // (樟樹實中 vs 樟樹國際實中), as on the board.
+  const mineAt = (() => {
+    const stops = trip?.stops ?? [];
+    if (!cfg.stop) return -1;
+    for (const match of [(n: string) => n === cfg.stop, (n: string) => isSubsequence(cfg.stop, n)]) {
+      const hits = stops.flatMap((s, i) => (match(s.name) ? [i] : []));
+      const ok = cfg.toward ? hits.filter((i) => stops.slice(i + 1).some((t) => t.name === cfg.toward)) : hits;
+      if (ok.length) return ok[0];
+    }
+    return -1;
+  })();
+  /**
+   * Tick a stop: the board then shows this route's arrivals there. Like the settings picker, the
+   * next stop is saved as `toward`, which pins the side of the road (and the pass, on a loop).
+   * One stop per route; tick it again to go back to listing the route only.
+   */
+  const pick = (i: number) => {
+    if (!trip) return;
+    const s = trip.stops[i];
+    const next = trip.stops[i + 1]?.name;
+    const loop = trip.stops[0].name === trip.stops.at(-1)!.name;
+    const others = settings.bus.filter((b) => !(b.city === cfg.city && b.route === cfg.route));
+    const at = settings.bus.findIndex((b) => b.city === cfg.city && b.route === cfg.route);
+    const entry: BusStop =
+      i === mineAt
+        ? { city: cfg.city, route: cfg.route, stop: "", direction: "auto" }
+        : {
+            city: cfg.city,
+            route: cfg.route,
+            stop: s.name,
+            direction: next ? "auto" : (trip.direction as 0 | 1),
+            ...(next ? { toward: next } : {}),
+            headsign: loop ? `環狀・下一站 ${next ?? s.name}` : trip.headsign,
+          };
+    const bus = [...others];
+    bus.splice(at < 0 ? bus.length : at, 0, entry);
+    setSettings({ ...settings, bus });
+    toast(entry.stop ? `已將「${cfg.route} ${entry.stop}」設為上車站，看板會顯示這站的到站時間` : `已取消「${cfg.route}」的上車站，看板只列路線`);
+  };
+  const label = (t: (typeof trips)[number]) => (t.subRoute !== cfg.route ? `${t.subRoute} ${t.headsign}` : t.headsign);
+  const twoCities = cfg.city === "Taipei" || cfg.city === "NewTaipei";
+  return createPortal(
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal bus-sheet" role="dialog" aria-modal="true" aria-label={`${cfg.route} 全線動態`} onClick={(e) => e.stopPropagation()}>
+        <header className="modal-head">
+          <h2>
+            <span className="chip blue-chip">{cfg.route}</span> 全線動態
+          </h2>
+          <span className="muted small bus-sheet-status">
+            {state.loading && !state.data ? "載入中…" : state.error ? <span className="error">⚠ {state.error}</span> : null}
+          </span>
+          <button className="modal-close" onClick={onClose} aria-label="關閉">
+            ✕
+          </button>
+        </header>
+        {trips.length > 1 && (
+          <div className="route-tabs bus-sheet-tabs" role="tablist">
+            {trips.map((t, i) => (
+              <button key={i} className="route-tab" role="tab" aria-selected={i === tab} onClick={() => setPicked(i)}>
+                {label(t)}
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="bus-sheet-hint muted small">
+          {cfg.stop ? `勾選的站是看板上顯示到站時間的上車站；取消勾選，看板就只列路線。` : `勾選一站當上車站，看板就會顯示那一站的到站時間。`}
+        </p>
+        <ol className="bus-stops">
+          {trip?.stops.map((s, i) => {
+            const e = stopEta(s);
+            const mine = i === mineAt;
+            return (
+              <li key={i} ref={mine ? mineRef : undefined} className={mine ? "mine" : ""}>
+                <input
+                  type="checkbox"
+                  className="bus-stop-pick"
+                  checked={mine}
+                  onChange={() => pick(i)}
+                  aria-label={`把 ${s.name} 設為上車站`}
+                  title="勾選後，看板顯示這一站的到站時間"
+                />
+                <span className={`bus-stop-eta ${e.cls}`}>{e.text}</span>
+                <span className="bus-stop-name">
+                  {s.name}
+                  {mine && <span className="pk-tag">上車站</span>}
+                  {s.lastBus && <span className="red small">・末班車</span>}
+                </span>
+                {s.buses.map((b) => (
+                  <span key={b.plate} className={`bus-plate ${b.arriving ? "at" : ""}`} title={b.arriving ? "進站中" : "已離站"}>
+                    🚌 {b.plate}
+                  </span>
+                ))}
+              </li>
+            );
+          })}
+        </ol>
+        <footer className="bus-sheet-foot muted small">
+          <span>
+            資料：交通部 TDX・每分鐘更新
+            {state.data && !state.data.busesOk && "・公車位置暫時無法取得"}
+          </span>
+          <span className="bus-sheet-links">
+            {twoCities && (routeId || state.data?.routeId) && (
+              <a href={links.bus5284(routeId || state.data!.routeId)} target="_blank" rel="noopener noreferrer">
+                5284 大台北公車 ›
+              </a>
+            )}
+            <a href={links.bus(cfg.city, cfg.route)} target="_blank" rel="noopener noreferrer">
+              Google 地圖 ›
+            </a>
+          </span>
+        </footer>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

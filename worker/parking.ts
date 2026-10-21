@@ -5,7 +5,8 @@
 import towns from "../src/data/towns.json";
 import { BUS_CITY_LIST } from "../src/bus-cities";
 import { estimateFare } from "../src/parking-fare";
-import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse } from "../src/shared";
+import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse, ParkingSource } from "../src/shared";
+import { type ExtraLot, ntpcLive, ntpcLots, osmLots } from "./parking-extra";
 import { tdx } from "./tdx";
 import { type Env, cached, rows } from "./util";
 
@@ -125,13 +126,35 @@ function liveFeed(env: Env, city: string): Promise<LiveFeed> {
   });
 }
 
-export async function parking(env: Env, lat: number, lon: number, radius: number): Promise<ParkingResponse> {
+export async function parking(env: Env, origin: string, lat: number, lon: number, radius: number): Promise<ParkingResponse> {
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < 21 || lat > 27 || lon < 118 || lon > 123)
     throw new Error("位置不在臺灣範圍內");
   if (!PARKING_RADII.includes(radius)) radius = 500;
   const cities = citiesNear(lat, lon, radius);
-  const lots: ParkingLot[] = [];
   const status: ParkingResponse["cities"] = [];
+  const extra: ParkingResponse["extra"] = [];
+  // The three sources are independent: fetch them side by side, and let one fail alone.
+  const [tdxLots, ntpc, osm] = await Promise.all([
+    tdxNear(env, cities, lat, lon, radius, status),
+    cities.includes("NewTaipei") ? ntpcNear(lat, lon, radius, extra) : Promise.resolve([]),
+    osmNear(env, origin, lat, lon, radius, extra),
+  ]);
+  const ntpcOk = extra.some((e) => e.source === "NTPC" && e.status === "ok");
+  for (const c of status) if (c.city === "NewTaipei" && c.lots === "empty" && ntpcOk) c.coveredBy = "新北市政府開放資料";
+  const lots = merge([...tdxLots, ...ntpc, ...osm]);
+  lots.sort((a, b) => a.distance - b.distance);
+  return { center: { lat, lon }, radius, cities: status, extra, lots };
+}
+
+async function tdxNear(
+  env: Env,
+  cities: string[],
+  lat: number,
+  lon: number,
+  radius: number,
+  status: ParkingResponse["cities"],
+): Promise<ParkingLot[]> {
+  const lots: ParkingLot[] = [];
   for (const city of cities) {
     const entry: ParkingResponse["cities"][number] = { city, name: CITY_NAME.get(city) ?? city, lots: "ok", live: "ok", liveTime: null };
     status.push(entry);
@@ -166,6 +189,8 @@ export async function parking(env: Env, lat: number, lon: number, radius: number
       const row = feed?.byId[p.id];
       lots.push({
         id: p.id,
+        source: "TDX",
+        sources: ["TDX"],
         city,
         name: p.name,
         lat: p.lat,
@@ -184,8 +209,121 @@ export async function parking(env: Env, lat: number, lon: number, radius: number
       });
     }
   }
-  lots.sort((a, b) => a.distance - b.distance);
-  return { center: { lat, lon }, radius, cities: status, lots };
+  return lots;
+}
+
+function extraLot(p: ExtraLot, source: ParkingSource, city: string, distance: number): ParkingLot {
+  return {
+    id: p.id,
+    source,
+    sources: [source],
+    city,
+    name: p.name,
+    lat: p.lat,
+    lon: p.lon,
+    address: p.address,
+    description: p.desc,
+    fare: p.fare,
+    fareEstimate: estimateFare(p.fare),
+    distance,
+    live: "none",
+    car: null,
+    scooter: null,
+    spaces: null,
+    serviceStatus: null,
+    liveTime: null,
+    note: p.note,
+  };
+}
+
+async function ntpcNear(lat: number, lon: number, radius: number, extra: ParkingResponse["extra"]): Promise<ParkingLot[]> {
+  const entry: ParkingResponse["extra"][number] = { source: "NTPC", name: "新北市政府開放資料", status: "ok" };
+  extra.push(entry);
+  let list: ExtraLot[];
+  try {
+    list = await ntpcLots();
+  } catch (e) {
+    entry.status = "error";
+    entry.error = e instanceof Error ? e.message : String(e);
+    return [];
+  }
+  const near = list.map((p) => ({ p, d: metres(lat, lon, p.lat, p.lon) })).filter((x) => x.d <= radius);
+  if (!near.length) return [];
+  let live: Awaited<ReturnType<typeof ntpcLive>> | null = null;
+  try {
+    live = await ntpcLive();
+  } catch (e) {
+    entry.error = `即時空位暫時無法取得（${e instanceof Error ? e.message : String(e)}）`;
+  }
+  return near.map(({ p, d }) => {
+    const lot = extraLot(p, "NTPC", "NewTaipei", d);
+    if (!live) lot.live = "unavailable";
+    else if (p.id in live.byId) {
+      const n = live.byId[p.id];
+      lot.live = n == null ? "none" : "ok";
+      lot.car = n == null ? null : count(n, p.total);
+      lot.liveTime = n == null ? null : live.fetchedAt;
+      lot.liveTimeIsFetch = true;
+    }
+    return lot;
+  });
+}
+
+async function osmNear(env: Env, origin: string, lat: number, lon: number, radius: number, extra: ParkingResponse["extra"]): Promise<ParkingLot[]> {
+  const entry: ParkingResponse["extra"][number] = { source: "OSM", name: "OpenStreetMap", status: "ok" };
+  extra.push(entry);
+  try {
+    const { lots, osmTime } = await osmLots(env.ASSETS, origin, lat, lon, radius);
+    entry.asOf = osmTime ?? undefined;
+    return lots
+      .map((p) => ({ p, d: metres(lat, lon, p.lat, p.lon) }))
+      .filter((x) => x.d <= radius)
+      .map(({ p, d }) => extraLot(p, "OSM", "", d));
+  } catch (e) {
+    entry.status = "error";
+    entry.error = e instanceof Error ? e.message : String(e);
+    return [];
+  }
+}
+
+/** Points this close are taken to be the same car park, whatever their names. */
+const SAME_PLACE_M = 30;
+
+/** How much a record tells the driver; the richest one of a merged car park is shown. */
+function richness(p: ParkingLot): number {
+  const named = p.source !== "OSM" || p.name !== "停車場（未命名）";
+  return (
+    (p.live === "ok" && (p.car || p.spaces) ? 8 : 0) +
+    (p.fareEstimate ? 4 : p.fare && !/^依現場/.test(p.fare) ? 2 : 0) +
+    (named ? 2 : 0) +
+    (p.address ? 1 : 0) +
+    (p.description ? 1 : 0) +
+    (p.source === "OSM" ? 0 : 0.5) // tie: prefer the official record
+  );
+}
+
+/**
+ * One pin per car park. Records from different sources within 30 m are merged: the richest
+ * record is kept and blanks in it are filled from the others. Two records from the same source
+ * are never merged (a source lists neighbouring car parks separately on purpose).
+ */
+function merge(all: ParkingLot[]): ParkingLot[] {
+  const ranked = [...all].sort((a, b) => richness(b) - richness(a));
+  const out: ParkingLot[] = [];
+  for (const p of ranked) {
+    const same = out.find((q) => !q.sources.includes(p.source) && metres(q.lat, q.lon, p.lat, p.lon) <= SAME_PLACE_M);
+    if (!same) {
+      out.push({ ...p, sources: [...p.sources] });
+      continue;
+    }
+    same.sources.push(p.source);
+    if (same.source === "OSM" && same.name === "停車場（未命名）" && p.name !== "停車場（未命名）") same.name = p.name;
+    if (!same.address && p.address) same.address = p.address;
+    if (!same.fare && p.fare) (same.fare = p.fare), (same.fareEstimate = p.fareEstimate);
+    if (!same.description && p.description) same.description = p.description;
+    if (!same.note && p.note) same.note = p.note;
+  }
+  return out;
 }
 
 // ---------- Place search ----------
