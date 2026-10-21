@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { NEWS_BY_ID } from "../news-sources";
-import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, type Settings, cardName, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
+import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, PANEL_NAMES, type Settings, cardName, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
 import type { ThemePref } from "../theme";
 import { toast } from "../toast";
 
@@ -40,7 +40,9 @@ function summary(s: Settings): [string, string][] {
       `新聞・${label}`,
       s.news[id].map((x) => NEWS_BY_ID.get(x)?.name ?? x).join("、") || "（不顯示）",
     ]),
+    ["待辦", s.todos.length ? `${s.todos.length} 項` : "（無）"],
     ["額外板塊", s.extras.map((e) => cardName(s, e.id)).join("、") || "（無）"],
+    ["未使用的板塊", s.absent.map((t) => PANEL_NAMES[t]).join("、") || "（無）"],
     ["版面", layoutSummary(s)],
   ];
 }

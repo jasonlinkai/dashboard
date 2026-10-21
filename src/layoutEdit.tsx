@@ -38,7 +38,7 @@ export interface LayoutEdit {
   mode: Mode;
   /** Where the card is, in words (for its move button's label). */
   where: (p: CardId) => string;
-  /** Take the card off the dashboard (it comes back from the edit bar); an extra card is removed. */
+  /** Take the card off this layout (it comes back from the edit bar); deleting is in the settings. */
   hide: (p: CardId) => void;
   /** Phone: the cards of a card's type (the switch in its title), and showing one of them. */
   sameType: (p: CardId) => CardId[];
@@ -162,10 +162,24 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
 // 170 high: the default market row on a short laptop window (about 780 px tall) is 171.
 const MIN_PX = { w: 280, h: 170 };
 /** That minimum in cells on this screen. */
+const cellsFor = (width: number, height: number, gap: number) => ({
+  w: Math.ceil((MIN_PX.w + gap) / ((width + gap) / GRID)),
+  h: Math.ceil((MIN_PX.h + gap) / ((height + gap) / GRID)),
+});
 export function minCells(grid: HTMLElement) {
-  const { stepX, stepY } = cellAt(grid, 0, 0);
-  const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
-  return { w: Math.ceil((MIN_PX.w + gap) / stepX), h: Math.ceil((MIN_PX.h + gap) / stepY) };
+  const g = grid.getBoundingClientRect();
+  return cellsFor(g.width, g.height, parseFloat(getComputedStyle(grid).columnGap) || 0);
+}
+/**
+ * The same for the other orientation, which can't be measured: the screen turned, with the same
+ * room around the board.
+ * shortcut: assumes the page chrome is the same both ways; measure on that layout if cards come out too small.
+ */
+export function minCellsElsewhere(grid: HTMLElement) {
+  const g = grid.getBoundingClientRect();
+  const w = Math.max(1, innerHeight - (innerWidth - g.width));
+  const h = Math.max(1, innerWidth - (innerHeight - g.height));
+  return cellsFor(w, h, parseFloat(getComputedStyle(grid).columnGap) || 0);
 }
 /**
  * Every shown card on the board and clear of the others; the ones that moved or changed size
@@ -296,6 +310,8 @@ export function usePanelDrag(
       if (drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
       const el = (e.target as Element).closest(".card");
       if (!(el instanceof HTMLElement) || el.parentElement !== grid || !movable(mode)) return;
+      // Pointer capture would send the button's click to the card instead.
+      if ((e.target as Element).closest(".card-hide")) return;
       const handle = latest.current.boxes && (e.target as Element).closest<HTMLElement>("[data-resize]");
       const resize = handle ? (handle.dataset.resize as "corner" | "x" | "y" | "x0" | "y0") : null;
       drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, lifted: false, target: null, resize, spot: null };

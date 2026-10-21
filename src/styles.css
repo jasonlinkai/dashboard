@@ -144,6 +144,10 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .ed-add-btn:active { background: color-mix(in srgb, var(--blue) 16%, transparent); }
 .ed-sort-hint { margin: 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--blue) 12%, transparent); font-size: 13px; }
 .ed-sections { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); }
+/* 設定 → 顯示內容: one group per card type, its add button at the bottom. */
+.ed-group { display: grid; gap: 6px; }
+.ed-group + .ed-group { margin-top: 10px; }
+.ed-group-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 .ed-section {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px;
   background: var(--card-2); color: var(--text); text-align: left; font: inherit;
@@ -151,6 +155,13 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .ed-section-name { flex: none; font-weight: 600; font-size: 15px; }
 .ed-section-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
 .ed-section-chev { flex: none; color: var(--muted); font-size: 18px; }
+.ed-section-row { display: flex; gap: 6px; }
+.ed-section-row .ed-section { flex: 1; min-width: 0; }
+.ed-section-del {
+  flex: none; border: 1px solid var(--line); border-radius: 8px; background: var(--card-2); color: var(--red);
+  padding: 0 12px; font-size: 14px;
+}
+.ed-section-del.on { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
 .settings-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y; overscroll-behavior: contain; }
 /* Content editor (設定 → 顯示內容) and backup. */
 .ed-tabs { align-self: start; flex-wrap: wrap; }
@@ -179,7 +190,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .settings-body select { text-overflow: ellipsis; }
 .ed-grid > select, .ed-grid > input { flex: 1 1 140px; }
 .ed-name { display: grid; gap: 6px; margin-bottom: 14px; }
-.settings-body select, .settings-body input, .settings-body textarea {
+.settings-body select, .settings-body input, .settings-body textarea, .todo-add input {
   font: inherit; font-size: 16px; /* 16px keeps iOS from zooming in */
   color: var(--text); background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
 }
@@ -311,7 +322,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .card-source a { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent); }
 .card-warn { border-color: color-mix(in srgb, var(--red) 60%, transparent); }
 .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex: none; min-width: 0; }
-.card-head h2 { margin: 0; font-size: 16px; font-weight: 650; white-space: nowrap; }
+.card-head h2 { margin: 0; font-size: 16px; font-weight: 650; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .card-gear {
   flex: none; width: 26px; height: 26px; margin-left: -4px; padding: 4px; border: 0; border-radius: 6px;
   background: none; color: var(--muted); cursor: pointer; opacity: 0.7;
@@ -340,6 +351,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .tile {
   background: color-mix(in srgb, var(--card-2) 55%, transparent); border-radius: 10px; padding: 8px 10px; min-width: 0; min-height: 0;
   display: flex; flex-direction: column; overflow: hidden;
+  /* One or two tiles in a big card keep a tile's size (at the top of their row) instead of stretching. */
+  max-height: 240px;
 }
 .tile-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; white-space: nowrap; }
 .tile-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
@@ -363,6 +376,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .wx {
   background: color-mix(in srgb, var(--card-2) 55%, transparent); border-radius: 10px; padding: 7px 10px; min-height: 0; overflow: hidden;
   display: grid; gap: 2px 10px; align-content: center;
+  /* A single place in a big card keeps a place's size instead of filling it. */
+  max-height: 230px;
   /* Name + rain/humidity across the top; temperature on the left, hourly strip on the right. */
   grid-template-columns: minmax(96px, 0.55fr) minmax(0, 2fr);
   grid-template-areas: "head head" "main strip";
@@ -381,7 +396,9 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .wx-strip {
   grid-area: strip; align-self: center;
   /* Horizontal only: setting overflow-x alone makes the browser treat y as scrollable too. */
-  min-width: 0; display: flex; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; overscroll-behavior-x: contain;
+  min-width: 0; display: flex; overflow-x: auto; overflow-y: hidden; touch-action: pan-x;
+  /* No rubber band (iOS): the strips scroll together, and only the touched one would bounce. */
+  overscroll-behavior-x: none;
   scrollbar-width: none; text-align: center; font-size: 11px; line-height: 1.3;
   font-variant-numeric: tabular-nums; white-space: nowrap;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent);
@@ -462,7 +479,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .grid[data-tab="weather"] > .weather,
 .grid[data-tab="news"] > .news,
 .grid[data-tab="transit"] > .bus,
-.grid[data-tab="transit"] > .train { display: flex; }
+.grid[data-tab="transit"] > .train,
+.grid[data-tab="todo"] > .todo { display: flex; }
 /* Bus takes what it needs, but at most half: a long bus list scrolls instead of squeezing the trains. */
 .grid[data-tab="transit"] { grid-template-rows: fit-content(50%) minmax(0, 1fr); }
 .grid[data-tab="markets"] .tile-price { font-size: 24px; }
@@ -639,9 +657,13 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 }
 /* Everything after 恢復預設 (hidden cards, add, finish) sits at the right end. */
 .layout-reset + * { margin-left: auto; }
-/* Many hidden cards: the bar scrolls sideways instead of pushing buttons off screen. */
-.layout-bar { overflow-x: auto; scrollbar-width: none; }
-.layout-bar::-webkit-scrollbar { display: none; }
+.layout-bar .layout-chip { flex: none; }
+/* Many hidden cards: their chips scroll sideways in their own strip, so the add and finish buttons stay put. */
+.layout-chips {
+  flex: 0 1 auto; min-width: 0; max-width: 45%; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
+  touch-action: pan-x; overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.layout-chips::-webkit-scrollbar { display: none; }
 /* Corner handle: drag to resize. Only in edit mode (Section renders it then). */
 .card-resize {
   position: absolute; z-index: 1; right: 0; bottom: 0; width: 28px; height: 28px; cursor: nwse-resize; touch-action: none;
@@ -681,10 +703,42 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   background: color-mix(in srgb, var(--blue) 14%, color-mix(in srgb, var(--card) 62%, transparent));
 }
 
-/* Phone: several cards of a type (天氣, 公司天氣 …) share its tab; the title switches between them. */
-.card-switch { min-width: 0; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; scrollbar-width: none; }
-.card-switch::-webkit-scrollbar { display: none; }
-.card-switch button { flex: none; font-size: 14px; font-weight: 600; padding: 3px 10px; }
+/* Phone: several cards of a type (天氣, 公司天氣 …) share its tab; arrows by the title switch between them. */
+.card-switch { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.card-switch-arrow {
+  flex: none; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--card-2);
+  color: var(--text); font-size: 18px; line-height: 1; padding: 0;
+}
+.card-switch-arrow:disabled { opacity: 0.35; }
+.card-switch-count { flex: none; font-variant-numeric: tabular-nums; }
+
+/* A phone tab with no card of its type, or a board with nothing on it: a way to add one. */
+.card-empty { align-items: center; justify-content: center; gap: 10px; text-align: center; }
+.card-empty .ed-add-btn { width: auto; padding: 10px 18px; }
+.grid-empty { grid-area: 1 / 1 / -1 / -1; display: flex; flex-direction: column; }
+
+/* ---------- To-do ---------- */
+.todo-list { flex: 1; min-height: 0; }
+.todo-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.todo-item + .todo-item { border-top: 1px solid var(--line); }
+.todo-item label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; }
+.todo-item label span { min-width: 0; overflow-wrap: anywhere; }
+.todo-item input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--blue); }
+.todo-done label span { color: var(--muted); text-decoration: line-through; }
+.todo-del { flex: none; border: 0; background: none; color: var(--muted); padding: 4px 8px; border-radius: 6px; }
+.todo-add { flex: none; display: flex; gap: 6px; margin-top: 6px; }
+.todo-add input { flex: 1; min-width: 0; }
+.todo-add button { border: 1px solid var(--blue); background: var(--blue); color: #fff; border-radius: 8px; padding: 6px 12px; font-weight: 600; }
+.todo-add button:disabled { opacity: 0.45; }
+
+/* Yes / no question (native <dialog>). */
+dialog.confirm { padding: 16px 18px; color: var(--text); }
+dialog.confirm::backdrop { background: rgb(0 0 0 / 0.55); }
+dialog.confirm h2 { margin: 0 0 8px; font-size: 18px; }
+dialog.confirm p { margin: 0 0 16px; line-height: 1.5; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-actions button { border: 1px solid var(--line); background: var(--card-2); color: var(--text); border-radius: 999px; padding: 7px 16px; font-size: 15px; }
+.confirm-actions .confirm-ok { background: var(--red); border-color: var(--red); color: #fff; }
 
 /* ---------- Toasts ---------- */
 .toasts {

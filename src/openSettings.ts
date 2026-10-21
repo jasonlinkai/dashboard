@@ -1,6 +1,6 @@
 // Any card can open its own page of the settings (the gear next to its title); App listens.
 
-export type ContentSection = "weather" | "markets" | "bus" | "trains" | "news";
+export type ContentSection = "weather" | "markets" | "bus" | "trains" | "news" | "todo";
 
 const EVENT = "open-settings";
 

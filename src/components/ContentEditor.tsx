@@ -14,6 +14,7 @@ import {
   MAX_PER_TYPE,
   PANEL_NAMES,
   type Panel,
+  cardIds,
   cardName,
   cardView,
   typeOf,
@@ -42,6 +43,7 @@ const SECTIONS = [
   ["bus", "公車"],
   ["trains", "火車"],
   ["news", "新聞"],
+  ["todo", "待辦"],
 ] as const;
 type Section = ContentSection;
 
@@ -1062,17 +1064,19 @@ function summary(section: Section, s: Settings): string {
         .filter(([id]) => s.news[id].length)
         .map(([, name]) => name)
         .join("、");
+    case "todo":
+      return s.todos.length ? `${s.todos.filter((t) => !t.done).length}／${s.todos.length} 項未完成` : "沒有項目";
   }
 }
 
 
-const TITLES: Record<Section, string> = { weather: "天氣地點", markets: "市場行情", bus: "公車", trains: "火車", news: "新聞" };
+const TITLES: Record<Section, string> = { weather: "天氣地點", markets: "市場行情", bus: "公車", trains: "火車", news: "新聞", todo: "待辦事項" };
 
 /** The card type each page edits. */
-const TYPE_OF: Record<Section, Panel> = { markets: "markets", weather: "weather", bus: "bus", trains: "train", news: "news" };
+const TYPE_OF: Record<Section, Panel> = { markets: "markets", weather: "weather", bus: "bus", trains: "train", news: "news", todo: "todo" };
 
 /**
- * Lists every card (行情, 行情 2 …); each opens its own page. `initial` (+ `initialCard`): a page
+ * Lists every card by type (行情, 行情 2 …), each type with its own add button; each card opens its own page. `initial` (+ `initialCard`): a page
  * opened from a card's gear. Leaving that page goes straight back to the dashboard (`onExit`),
  * since that's where the user came from.
  */
@@ -1095,6 +1099,7 @@ export function ContentEditor({
     initial ? { section: initial, card: initialCard ?? TYPE_OF[initial] } : null,
   );
   const fromCard = useRef(Boolean(initial));
+  const [deleting, setDeleting] = useState<CardId | null>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   const close = useCallback(() => (fromCard.current && onExitRef.current ? onExitRef.current() : setOpen(null)), []);
@@ -1107,40 +1112,49 @@ export function ContentEditor({
       <div className="muted small">
         點進去可以新增、刪除、改名稱；右上角「排序」調整順序。也可以直接在看板上長按天氣卡片、行情方塊或火車路線，拖到想要的位置。
       </div>
-      <ul className="ed-sections">
-        {SECTIONS.flatMap(([id, label]) =>
-          [TYPE_OF[id], ...settings.extras.filter((e) => e.type === TYPE_OF[id]).map((e) => e.id)].map((card) => (
-            <li key={card}>
-              <button className="ed-section" onClick={() => ((fromCard.current = false), setOpen({ section: id, card }))}>
-                <span className="ed-section-name">{listName(card, label)}</span>
-                <span className="ed-section-sum muted small">{summary(id, cardView(settings, card))}</span>
-                <span className="ed-section-chev" aria-hidden>
-                  ›
-                </span>
-              </button>
-            </li>
-          )),
-        )}
-      </ul>
-      <div className="ed-actions">
-        <select
-          className="layout-add"
-          aria-label="新增板塊"
-          value=""
-          onChange={(e) => {
-            const section = e.target.value as Section;
-            const card = section && onAdd(TYPE_OF[section]);
-            if (card) (fromCard.current = false), setOpen({ section, card });
-          }}
-        >
-          <option value="">新增板塊…</option>
-          {SECTIONS.map(([id, label]) => (
-            <option key={id} value={id} disabled={settings.extras.filter((e) => e.type === TYPE_OF[id]).length + 1 >= MAX_PER_TYPE}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
+      {SECTIONS.map(([id, label]) => {
+        const cards = cardIds(settings).filter((c) => typeOf(settings, c) === TYPE_OF[id]);
+        return (
+          <section key={id} className="ed-group" aria-label={PANEL_NAMES[TYPE_OF[id]]}>
+            <h3 className="ed-group-title">{PANEL_NAMES[TYPE_OF[id]]}</h3>
+            {cards.length > 0 ? (
+              <ul className="ed-sections">
+                {cards.map((card) => (
+                  <li key={card} className="ed-section-row">
+                    <button className="ed-section" onClick={() => ((fromCard.current = false), setOpen({ section: id, card }))}>
+                      <span className="ed-section-name">{listName(card, label)}</span>
+                      <span className="ed-section-sum muted small">{summary(id, cardView(settings, card))}</span>
+                      <span className="ed-section-chev" aria-hidden>
+                        ›
+                      </span>
+                    </button>
+                    {/* Tap twice: deleting loses the card's content. */}
+                    <button
+                      className={`ed-section-del ${deleting === card ? "on" : ""}`}
+                      onClick={() => (deleting === card ? (setDeleting(null), onRemove(card)) : setDeleting(card))}
+                      onBlur={() => deleting === card && setDeleting(null)}
+                      aria-label={deleting === card ? `再按一次確認刪除${listName(card, label)}` : `刪除${listName(card, label)}`}
+                    >
+                      {deleting === card ? "確認刪除" : "刪除"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted small">看板上沒有這種板塊。</p>
+            )}
+            <AddButton
+              label={`新增${label}板塊`}
+              full={cards.length >= MAX_PER_TYPE}
+              fullNote={`每種板塊最多 ${MAX_PER_TYPE} 個。`}
+              onClick={() => {
+                const card = onAdd(TYPE_OF[id]);
+                if (card) (fromCard.current = false), setOpen({ section: id, card });
+              }}
+            />
+          </section>
+        );
+      })}
       {open && (
         // Inside, the page sees (and writes) this card's own content.
         <CardSettings key={open.card} id={open.card}>
@@ -1148,10 +1162,7 @@ export function ContentEditor({
             section={open.section}
             card={open.card}
             onClose={close}
-            // A type's last card stays (it can be hidden in layout mode).
-            onRemove={
-              settings.extras.some((e) => e.type === TYPE_OF[open.section]) ? () => (setOpen(null), onRemove(open.card)) : undefined
-            }
+            onRemove={() => (setOpen(null), onRemove(open.card))}
           />
         </CardSettings>
       )}
@@ -1169,7 +1180,7 @@ function CardPage({
   section: Section;
   card: CardId;
   onClose: () => void;
-  onRemove?: () => void;
+  onRemove: () => void;
 }) {
   const { settings, setSettings } = useSettings();
   // Tap twice: deleting loses the card's content.
@@ -1177,7 +1188,7 @@ function CardPage({
   // Sorting is a mode of the page; every page starts out in the normal mode.
   const [sorting, setSorting] = useState(false);
   const props = { s: settings, set: setSettings, sorting };
-  const count = section === "news" ? TOPICS.length : settings[section].length;
+  const count = section === "news" ? TOPICS.length : section === "todo" ? 0 : settings[section].length;
   const plain = cardName({ ...settings, names: {} }, card);
   const named = settings.names[card];
   const rename = (v: string) => {
@@ -1207,12 +1218,15 @@ function CardPage({
       {section === "bus" && <BusEditor {...props} />}
       {section === "trains" && <TrainsEditor {...props} />}
       {section === "news" && <NewsEditor {...props} />}
+      {section === "todo" && <p className="muted small">待辦事項直接在看板上的板塊新增、勾選與刪除。</p>}
       <div className="ed-actions">
-        <button className="ed-remove" disabled={!onRemove} onClick={() => (confirming ? onRemove?.() : setConfirming(true))}>
+        <button className="ed-remove" onClick={() => (confirming ? onRemove() : setConfirming(true))}>
           {confirming ? "再按一次確認刪除（內容會一起刪掉）" : "刪除板塊"}
         </button>
       </div>
-      {!onRemove && <div className="muted small">每種板塊至少要留一個；不想看到可以在平板或電腦的排版模式隱藏。</div>}
+      {confirming && !cardIds(settings).some((c) => c !== card && typeOf(settings, c) === TYPE_OF[section]) && (
+        <div className="muted small">這是最後一個{PANEL_NAMES[TYPE_OF[section]]}板塊；之後可以從「顯示內容」或排版模式再新增，內容會是預設值。</div>
+      )}
     </SubPage>
   );
 }

@@ -8,6 +8,8 @@ import { Reliability } from "./components/Reliability";
 import { Settings } from "./components/Settings";
 import { Bus, Train } from "./components/Transit";
 import { Weather } from "./components/Weather";
+import { Todo } from "./components/Todo";
+import { Confirm } from "./components/Confirm";
 import { type Scene, type SceneKind, WeatherFx } from "./components/WeatherFx";
 import { useNow, useWakeLock } from "./hooks";
 import { ScreenSaver } from "./components/ScreenSaver";
@@ -20,7 +22,7 @@ import {
   cardView,
   type CardId,
   CardSettings,
-  DEFAULT_LAYOUT,
+  DEFAULT_SETTINGS,
   GRID,
   type LayoutMode,
   SCREENS,
@@ -30,6 +32,8 @@ import {
   PHONE_TABS,
   type Panel,
   type PhoneTab,
+  type Preset,
+  PRESETS,
   type Rect,
   type Settings as SettingsData,
   cardIds,
@@ -49,6 +53,7 @@ import {
   area,
   cardOf,
   minCells,
+  minCellsElsewhere,
   moveLine,
   neighbor,
   onEditLayout,
@@ -70,10 +75,11 @@ const TABS: Record<Tab, [label: string, icon: string]> = {
   weather: ["天氣", "⛅"],
   transit: ["交通", "🚌"],
   news: ["新聞", "📰"],
+  todo: ["待辦", "✅"],
 };
 type Tab = PhoneTab;
-/** Each card type's page in the content settings. */
-const SECTION_OF: Record<Panel, ContentSection> = { markets: "markets", weather: "weather", bus: "bus", train: "trains", news: "news" };
+/** A type's content as it ships, for a type's first card coming back. */
+const defaultsOf = (types: Panel[]) => Object.fromEntries(types.flatMap((t) => FIELDS[t].map((f) => [f, DEFAULT_SETTINGS[f]])));
 
 function loadTab(): Tab {
   try {
@@ -131,9 +137,11 @@ export default function App() {
       localStorage.setItem("phoneCards", JSON.stringify(next));
     } catch {}
   };
+  const has = (t: Panel) => ids.some((id) => kind(id) === t);
   const shownIds = phone
-    ? PANELS.map((t) => (picked[t] && ids.includes(picked[t]) && kind(picked[t]) === t ? picked[t] : t))
+    ? PANELS.filter(has).map((t) => (picked[t] && ids.includes(picked[t]) && kind(picked[t]) === t ? picked[t] : t))
     : ids.filter((id) => !hidden.includes(id));
+  const [confirmReset, setConfirmReset] = useState(false);
   const shown = preview ?? (shownIds.includes("weather") ? scene : null);
   const [editing, setEditing] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -180,13 +188,14 @@ export default function App() {
     if (setBoxes(next, first)) setAnnounce(said);
   });
   /**
-   * A card, removed everywhere with its content. A type's first card can't go away, so the type's
-   * next card moves into it (content, name, place); a type's last card stays.
+   * A card, removed everywhere with its content. A type's first card holds the type's top-level
+   * content, so the type's next card moves into it (content, name, place); with none left the type
+   * becomes absent and its content goes back to the defaults (what it starts with when added again).
    */
   const removeCard = (p: CardId) => {
     const type = kind(p);
     const next = isPanel(p) ? settings.extras.find((e) => e.type === type) : undefined;
-    if (isPanel(p) && !next) return toast(`每種板塊至少要留一個${PANEL_NAMES[type]}`, "error");
+    const last = isPanel(p) && !next;
     const gone = next?.id ?? p;
     const take = (boxes: Boxes) => {
       const { [gone]: box, ...rest } = boxes;
@@ -198,34 +207,43 @@ export default function App() {
         return [sc, next && layout.hidden[sc].includes(gone) ? [...h, p] : h];
       }),
     ) as typeof layout.hidden;
-    if (SCREENS.some((sc) => rest[sc].length >= ids.length - 1)) return toast("至少要留一個板塊不隱藏", "error");
     const { [p]: _n, [gone]: movedName, ...names } = settings.names;
-    const content = next ? Object.fromEntries(FIELDS[type].map((f) => [f, cardView(settings, gone)[f]])) : {};
+    const content = next ? Object.fromEntries(FIELDS[type].map((f) => [f, cardView(settings, gone)[f]])) : last ? defaultsOf([type]) : {};
     flip.capture();
     setSettings({
       ...settings,
       ...content,
+      absent: last ? [...settings.absent, type] : settings.absent,
       extras: settings.extras.filter((e) => e.id !== gone),
       names: next && movedName ? { ...names, [p]: movedName } : names,
       layout: { ...layout, wide: take(layout.wide), tall: take(layout.tall), hidden: rest },
     });
     toast(`已移除${name(p)}`);
   };
-  /** On this layout only: a type's first card is hidden (it keeps its content); an extra one is removed everywhere. */
+  /** On this layout only; the card keeps its content (deleting is in the settings). */
   const hide = (p: CardId) => {
     if (shownIds.length <= 1) return toast("至少要留一個板塊", "error");
-    if (isPanel(p)) {
-      setLayout({ hidden: { ...layout.hidden, [mode]: [...hidden, p] } });
-      setAnnounce(`已隱藏${name(p)}，可以從上方的「＋${name(p)}」顯示回來`);
-    } else removeCard(p);
+    setLayout({ hidden: { ...layout.hidden, [mode]: [...hidden, p] } });
+    setAnnounce(`已隱藏${name(p)}，可以從上方的「＋${name(p)}」顯示回來`);
     setTimeout(() => document.querySelector<HTMLElement>(".layout-bar .layout-toggle")?.focus()); // its button is gone
   };
-  /** Room for a card on a board: its old box if free, else free cells (at least `min`); null if none. */
+  /**
+   * Room for a card on a board, never under `min`: its old box (grown to `min` if it was smaller,
+   * e.g. laid out on a bigger screen or parked when there was no room) if free, else free cells of
+   * that size or of `min`; null if none.
+   */
   const roomOn = (m: LayoutMode, p: CardId, min: { w: number; h: number }, rest = layout.hidden[m]) => {
     const own = layout[m][p];
-    return findSpot(layout[m], p, rest, own ? [{ w: own.w, h: own.h }, min] : [min]);
+    if (!own) return findSpot(layout[m], p, rest, [min]);
+    const w = Math.max(own.w, min.w);
+    const h = Math.max(own.h, min.h);
+    const grown = { x: Math.min(own.x, GRID - w), y: Math.min(own.y, GRID - h), w, h };
+    return findSpot({ ...layout[m], [p]: grown }, p, rest, [{ w, h }, min]);
   };
   const here = () => (gridRef.current ? minCells(gridRef.current) : BOARD_MIN);
+  /** The minimum on a board, measured on this screen or estimated for the other orientation (a phone has neither). */
+  const minOn = (m: LayoutMode) =>
+    mode === "phone" || !gridRef.current ? BOARD_MIN : m === mode ? minCells(gridRef.current) : minCellsElsewhere(gridRef.current);
   const unhide = (p: CardId) => {
     const rest = hidden.filter((q) => q !== p);
     const r = mode === "phone" ? null : roomOn(mode, p, here(), rest);
@@ -233,37 +251,43 @@ export default function App() {
     setLayout({ ...(r && mode !== "phone" ? { [mode]: { ...layout[mode], [p]: r } } : {}), hidden: { ...layout.hidden, [mode]: rest } });
     setAnnounce(`已顯示${name(p)}`);
   };
-  /** Another card of a type, starting with a little of the first card's content, then its settings open. */
+  /**
+   * A card of a type at its minimum size. An absent type gets its first card back with the default
+   * content; otherwise another card starting with a little of the first card's content. The settings
+   * page opens the new card's page itself; the layout bar doesn't.
+   */
   const addCard = (type: Panel): CardId | undefined => {
     if (ids.filter((id) => kind(id) === type).length >= MAX_PER_TYPE) return void toast(`每種板塊最多 ${MAX_PER_TYPE} 個`, "error");
-    const id = `${type}-${Date.now().toString(36).slice(-6)}`;
+    const back = settings.absent.includes(type);
+    const id = back ? type : `${type}-${Date.now().toString(36).slice(-6)}`;
     const start: Partial<SettingsData> = {
       markets: { markets: settings.markets.slice(0, 1) },
       weather: { weather: settings.weather.slice(0, 1) },
       bus: { bus: [] },
       train: { trains: [] },
       news: { news: settings.news, newsOrder: settings.newsOrder },
+      todo: { todos: [] },
     }[type];
     // A free spot on each board (this screen's minimum here). None: hidden on that board until
     // it is made room for in layout mode.
     const next = { ...layout, hidden: { ...layout.hidden } };
     let noRoom = false;
     for (const m of ["wide", "tall"] as const) {
-      const r = roomOn(m, id, m === mode ? here() : BOARD_MIN);
+      const r = roomOn(m, id, minOn(m));
       if (!r && m === mode) noRoom = true;
       next[m] = { ...layout[m], [id]: r ?? { x: 0, y: 0, ...BOARD_MIN } };
       if (!r) next.hidden[m] = [...layout.hidden[m], id];
     }
-    const added = { ...settings, extras: [...settings.extras, { id, type, ...start }], layout: next };
-    // Checked here too (setSettings would refuse it), so a card that isn't added doesn't open its settings.
+    const added = back
+      ? { ...settings, ...defaultsOf([type]), absent: settings.absent.filter((t) => t !== type), layout: next }
+      : { ...settings, extras: [...settings.extras, { id, type, ...start }], layout: next };
+    // Checked here too (setSettings would refuse it), so a card that isn't added doesn't open its page.
     const over = overLimit(added);
     if (over) return void toast(`無法新增：${over}`, "error");
     flip.capture();
     setSettings(added);
     if (noRoom) toast(`畫面上沒有空位，新的${PANEL_NAMES[type]}先隱藏；可在排版模式騰出空間後顯示`, "info");
-    setSettingsCard(id);
-    setSettingsSection(SECTION_OF[type]);
-    setShowSettings(true);
+    else setAnnounce(`已新增${cardName(added, id)}`);
     return id;
   };
   const edit = {
@@ -308,18 +332,37 @@ export default function App() {
     const first = [...shownIds].sort((a, c) => b[a].y - b[c].y || b[a].x - b[c].x)[0];
     const grid = gridRef.current;
     (grid && cardOf(grid, first))?.querySelector<HTMLElement>(".card-move")?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEditing(false);
+    // Esc in the reset question closes only the question.
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector("dialog[open]") && setEditing(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // Only when edit mode starts or the layout switches, not on every swap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, mode]);
-  // Everything: hiding is shared by all layouts, so resetting one alone could leave overlaps in
-  // another. Extra cards are kept, placed in free cells (or hidden) as when loading a file.
-  const resetLayout = () => {
-    setLayout(validate({ ...settings, layout: undefined }).settings?.layout ?? DEFAULT_LAYOUT);
-    setAnnounce("已恢復預設版面，隱藏的板塊也都顯示回來");
-    toast("已恢復預設版面（所有版面，隱藏的板塊也會顯示）");
+  /**
+   * This layout only (each one has its own boxes and hidden list): the preset's boxes, its types
+   * that were deleted come back with their default content, and the other cards go in free cells
+   * (or are hidden) as when loading a file. A type that came back gets a free spot in the other layout.
+   */
+  const resetLayout = (preset: Preset = PRESETS.default) => {
+    if (mode === "phone") return;
+    const back = settings.absent.filter((t) => preset[mode][t]);
+    const { [mode]: _, ...keep } = layout;
+    const next = validate(
+      {
+        ...settings,
+        ...defaultsOf(back),
+        absent: settings.absent.filter((t) => !back.includes(t)),
+        layout: { ...keep, hidden: { ...layout.hidden, [mode]: [] } },
+      },
+      preset,
+    ).settings;
+    if (!next) return toast("無法恢復預設版面", "error");
+    flip.capture();
+    setSettings(next);
+    const added = back.length ? `，補回${back.map((t) => PANEL_NAMES[t]).join("、")}` : "";
+    setAnnounce(`已恢復這個方向的預設版面${added}`);
+    toast(`已恢復${mode === "wide" ? "橫向" : "直向"}的預設版面${added}`);
   };
 
   const choose = (t: Tab) => {
@@ -338,14 +381,19 @@ export default function App() {
             <div className="layout-bar" role="toolbar" aria-label="調整版面">
               <span className="layout-bar-hint">拖到另一板塊上交換、拖到空位移動，拖右下角調整大小</span>
               {/* Left, by the hint: away from the finish button so it isn't tapped by mistake. */}
-              <button className="layout-reset" onClick={resetLayout}>
+              <button className="layout-reset" onClick={() => setConfirmReset(true)}>
                 恢復預設
               </button>
-              {hidden.map((p) => (
-                <button key={p} className="layout-chip" onClick={() => unhide(p)} aria-label={`顯示${name(p)}`} title={`顯示${name(p)}`}>
-                  ＋{name(p)}
-                </button>
-              ))}
+              {/* Many hidden cards scroll here instead of pushing the other buttons off the bar. */}
+              {hidden.length > 0 && (
+                <div className="layout-chips">
+                  {hidden.map((p) => (
+                    <button key={p} className="layout-chip" onClick={() => unhide(p)} aria-label={`顯示${name(p)}`} title={`顯示${name(p)}`}>
+                      ＋{name(p)}
+                    </button>
+                  ))}
+                </div>
+              )}
               {mode !== "phone" && (
                 <select
                   className="layout-add"
@@ -416,9 +464,30 @@ export default function App() {
                   bus: <Bus />,
                   train: <Train />,
                   news: <News />,
+                  todo: <Todo />,
                 }[kind(id)]}
               </CardSettings>
             ))}
+            {/* Phone: a tab whose type has no card offers to add one. */}
+            {phone &&
+              PANELS.filter((t) => !has(t)).map((t) => (
+                <section key={t} className={`card ${t} card-empty`}>
+                  <p className="muted">還沒有{PANEL_NAMES[t]}板塊</p>
+                  <button className="ed-add-btn" onClick={() => addCard(t)}>
+                    ＋ 新增{PANEL_NAMES[t]}
+                  </button>
+                </section>
+              ))}
+            {!phone && !shownIds.length && (
+              <div className="card-empty grid-empty">
+                <p className="muted">看板上沒有板塊</p>
+                {!editing && (
+                  <button className="ed-add-btn" onClick={() => setEditing(true)}>
+                    進入排版模式新增或顯示板塊
+                  </button>
+                )}
+              </div>
+            )}
           </main>
         </LayoutEditContext.Provider>
         <nav className="tabbar">
@@ -439,6 +508,17 @@ export default function App() {
           </Suspense>
         )}
         {showInfo && <Reliability onClose={() => setShowInfo(false)} />}
+        {confirmReset && (
+          <Confirm
+            title="恢復預設版面？"
+            ok="恢復預設"
+            onOk={() => (setConfirmReset(false), resetLayout())}
+            onCancel={() => setConfirmReset(false)}
+          >
+            {mode === "wide" ? "橫向（桌機、平板橫放）" : "直向（平板直放）"}
+            的板塊位置與大小會回到預設，隱藏的板塊也會顯示回來；被刪除的預設板塊會用預設內容補回。另一個方向的版面不受影響。
+          </Confirm>
+        )}
         {showSettings && (
           <Settings
             card={settingsCard}

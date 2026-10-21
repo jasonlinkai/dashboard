@@ -43,6 +43,11 @@ export interface TrainRoute {
   type: TrainType;
 }
 
+export interface TodoItem {
+  text: string;
+  done: boolean;
+}
+
 export interface Settings {
   version: 1;
   weather: WeatherPlace[];
@@ -52,6 +57,9 @@ export interface Settings {
   news: Record<Topic, string[]>;
   /** Order of the news tabs on the dashboard. */
   newsOrder: Topic[];
+  todos: TodoItem[];
+  /** Types whose first card was deleted (or never added): not on the dashboard. Such a type has no extras. */
+  absent: Panel[];
   /** Which card sits in which slot of the tablet / desktop layouts. */
   layout: Layout;
   /** More cards of a type, each with its own content (the fields above are each type's first card). */
@@ -61,13 +69,13 @@ export interface Settings {
 }
 
 /** The dashboard's cards. */
-export const PANELS = ["markets", "weather", "bus", "train", "news"] as const;
+export const PANELS = ["markets", "weather", "bus", "train", "news", "todo"] as const;
 export type Panel = (typeof PANELS)[number];
 export const isPanel = (s: unknown): s is Panel => (PANELS as readonly unknown[]).includes(s);
-export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", weather: "天氣", bus: "公車", train: "火車", news: "新聞" };
+export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", weather: "天氣", bus: "公車", train: "火車", news: "新聞", todo: "待辦事項" };
 
 /** The phone's bottom tabs (the parking button always comes last). */
-export const PHONE_TABS = ["markets", "weather", "transit", "news"] as const;
+export const PHONE_TABS = ["markets", "weather", "transit", "news", "todo"] as const;
 export type PhoneTab = (typeof PHONE_TABS)[number];
 export const TRANSIT = ["bus", "train"] as const;
 
@@ -124,6 +132,8 @@ const SLOTS: Record<LayoutMode, Rect[]> = {
     { x: 12, y: 14, w: 12, h: 10 },
   ],
 };
+/** The first version's cards, in its slot order (to-do came later). */
+const SLOT_PANELS = ["markets", "weather", "bus", "train", "news"] as const satisfies readonly Panel[];
 const fromSlots = (m: LayoutMode, slots: readonly Panel[]) => Object.fromEntries(slots.map((p, i) => [p, SLOTS[m][i]])) as Boxes;
 
 export interface Layout {
@@ -140,11 +150,12 @@ export const FIELDS = {
   bus: ["bus"],
   train: ["trains"],
   news: ["news", "newsOrder"],
+  todo: ["todos"],
 } as const satisfies Record<Panel, readonly (keyof Settings)[]>;
-export type Extra = { id: CardId; type: Panel } & Partial<Pick<Settings, "weather" | "markets" | "bus" | "trains" | "news" | "newsOrder">>;
+export type Extra = { id: CardId; type: Panel } & Partial<Pick<Settings, "weather" | "markets" | "bus" | "trains" | "news" | "newsOrder" | "todos">>;
 /** Cards of one type, the first one included. */
 export const MAX_PER_TYPE = 3;
-export const cardIds = (s: Settings): CardId[] => [...PANELS, ...s.extras.map((e) => e.id)];
+export const cardIds = (s: Settings): CardId[] => [...PANELS.filter((p) => !s.absent.includes(p)), ...s.extras.map((e) => e.id)];
 export const typeOf = (s: Settings, id: CardId): Panel => (isPanel(id) ? id : s.extras.find((e) => e.id === id)!.type);
 export const MAX_NAME = 12;
 /** A card's title: the user's, else its type's name, numbered after the first (天氣 2). */
@@ -182,11 +193,17 @@ export function overLimit(s: Settings): string | null {
 export type LayoutMode = "wide" | "tall";
 /** The layouts a user arranges: desktop and landscape tablet, portrait tablet. A phone has fixed tabs. */
 export const SCREENS: LayoutMode[] = ["wide", "tall"];
+/**
+ * A preset: the boxes of the cards it puts on each board (by type, each type's first card).
+ * Types it leaves out are not added by it. Only the default exists so far.
+ */
+export type Preset = Record<LayoutMode, Boxes>;
 export const DEFAULT_LAYOUT: Layout = {
-  wide: fromSlots("wide", PANELS),
-  tall: fromSlots("tall", PANELS),
+  wide: fromSlots("wide", SLOT_PANELS),
+  tall: fromSlots("tall", SLOT_PANELS),
   hidden: { wide: [], tall: [] },
 };
+export const PRESETS: Record<string, Preset> = { default: DEFAULT_LAYOUT };
 
 // ---------- Catalogs and limits ----------
 
@@ -232,7 +249,8 @@ export const INSTRUMENT_CATALOG: Instrument[] = [
 ];
 const CATALOG_BY_SYMBOL = new Map(INSTRUMENT_CATALOG.map((i) => [i.symbol, i]));
 
-export const LIMITS = { weather: 10, markets: 12, bus: 10, trains: 8, news: MAX_NEWS_SOURCES };
+export const LIMITS = { weather: 10, markets: 12, bus: 10, trains: 8, news: MAX_NEWS_SOURCES, todos: 30 };
+export const MAX_TODO = 60;
 
 // ---------- Defaults (what the dashboard shipped with) ----------
 
@@ -259,6 +277,9 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   news: DEFAULT_NEWS,
   newsOrder: TOPICS.map(([id]) => id),
+  todos: [],
+  // The default preset has no to-do card; it is added from the settings or the layout bar.
+  absent: ["todo"],
   layout: DEFAULT_LAYOUT,
   extras: [],
   names: {},
@@ -286,7 +307,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length > 0 && v.length <= max && !/[,:]/.test(v);
 const SYMBOL = /^[A-Za-z0-9.^=\-]{1,20}$/;
 
-export function validate(raw: unknown): { settings?: Settings; errors: string[] } {
+/** `preset`: where a type's first card goes when the file gives no box for it (a reset passes the one chosen). */
+export function validate(raw: unknown, preset: Preset = DEFAULT_LAYOUT): { settings?: Settings; errors: string[] } {
   const errors: string[] = [];
   const err = (msg: string) => errors.push(msg);
   if (!isObj(raw)) return { errors: ["檔案內容不是設定物件（JSON 物件）"] };
@@ -434,6 +456,23 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     for (const [id] of TOPICS) if (!newsOrder.includes(id)) newsOrder.push(id);
   }
 
+  // Older files have no to-do list.
+  const todos: TodoItem[] = [];
+  const rawTodos = raw.todos ?? [];
+  if (!Array.isArray(rawTodos) || rawTodos.length > LIMITS.todos) err(`todos 要是陣列，最多 ${LIMITS.todos} 項`);
+  else
+    rawTodos.forEach((t, i) => {
+      if (!isObj(t) || typeof t.text !== "string" || !t.text.trim() || t.text.length > MAX_TODO || typeof t.done !== "boolean")
+        return err(`todos[${i}]：需要 text（1～${MAX_TODO} 字）與 done（true／false）`);
+      todos.push({ text: t.text, done: t.done });
+    });
+
+  // Older files have every type of their time on the board: only the ones added later are absent.
+  const rawAbsent = raw.absent ?? DEFAULT_SETTINGS.absent;
+  const absent: Panel[] = [];
+  if (!Array.isArray(rawAbsent) || !rawAbsent.every(isPanel)) err(`absent 要是板塊種類的陣列（${PANELS.join("、")}）`);
+  else absent.push(...new Set(rawAbsent));
+
   // Extra cards: each one's content is checked like the first card's (the rest of the file as is).
   const extras: Extra[] = [];
   const rawExtras = raw.extras ?? [];
@@ -452,9 +491,13 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     });
   const over = errors.length ? null : overLimit({ ...DEFAULT_SETTINGS, weather, markets, bus, trains, extras });
   if (over) err(over);
+  // A type with extras keeps its first card (deleting the first moves an extra into it).
+  const present = absent.filter((t) => !extras.some((e) => e.type === t));
+  absent.length = 0;
+  absent.push(...present);
 
   // Older files have no layout: the default boxes. Every card needs a box in both layouts.
-  const ids = [...PANELS, ...extras.map((e) => e.id)];
+  const ids = [...PANELS.filter((p) => !absent.includes(p)), ...extras.map((e) => e.id)];
   const layout: Layout = {
     ...DEFAULT_LAYOUT,
     wide: { ...DEFAULT_LAYOUT.wide },
@@ -470,16 +513,17 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     for (const sc of SCREENS) {
       const list = Array.isArray(h) ? h : isObj(h) ? (h[sc] ?? []) : null;
       const known = Array.isArray(list) ? [...new Set(list.filter((p) => ids.includes(p as string)))] : null;
-      if (!known || known.length >= ids.length) err(`layout.hidden.${sc} 要是板塊 id 的陣列（至少留一個不隱藏）`);
+      // Every card hidden is allowed: the board is then empty, as with every card deleted.
+      if (!known) err(`layout.hidden.${sc} 要是板塊 id 的陣列`);
       else layout.hidden[sc] = known as CardId[];
     }
     for (const m of ["wide", "tall"] as const) {
       const v = raw.layout[m];
       if (v === undefined) continue;
       // The first version stored a card per fixed slot.
-      if (Array.isArray(v) && v.length === PANELS.length && PANELS.every((p) => v.includes(p))) {
+      if (Array.isArray(v) && v.length === SLOT_PANELS.length && SLOT_PANELS.every((p) => v.includes(p))) {
         layout[m] = fromSlots(m, v as Panel[]);
-        given[m] = [...PANELS];
+        given[m] = SLOT_PANELS.filter((p) => ids.includes(p));
         continue;
       }
       given[m] = isObj(v) ? ids.filter((p) => v[p] !== undefined) : [];
@@ -503,11 +547,12 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
   for (const m of ["wide", "tall"] as const) {
     const boxes: Boxes = Object.fromEntries(given[m].map((p) => [p, layout[m][p]]));
     for (const p of ids.filter((q) => !given[m].includes(q))) {
-      if (isPanel(p) && !given[m].length) boxes[p] = DEFAULT_LAYOUT[m][p];
+      const own = isPanel(p) ? preset[m][p] : undefined;
+      if (own && !given[m].length) boxes[p] = own;
       else {
         // The biggest of these sizes that has room (the smallest can be too small to read on a screen).
         const sizes = [{ w: 8, h: 9 }, { w: 6, h: 6 }, { w: MIN_W, h: MIN_H }];
-        const spot = findSpot({ ...boxes, ...(isPanel(p) ? { [p]: DEFAULT_LAYOUT[m][p] } : {}) }, p, layout.hidden[m], sizes);
+        const spot = findSpot({ ...boxes, ...(own ? { [p]: own } : {}) }, p, layout.hidden[m], sizes);
         if (spot) boxes[p] = spot;
         else {
           boxes[p] = { x: 0, y: 0, w: MIN_W, h: MIN_H };
@@ -528,7 +573,7 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     }
 
   if (errors.length) return { errors };
-  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, layout, extras, names }, errors };
+  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, todos, absent, layout, extras, names }, errors };
 }
 
 // ---------- Storage and React context ----------

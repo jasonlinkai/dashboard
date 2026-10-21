@@ -48,6 +48,16 @@ function freshness(state: Polled<unknown>, maxAgeSec: number, now: number): { te
   return { text: `資料 ${hms.format(state.dataTime!)}`, warn: false };
 }
 
+/** Phone: the card before / after this one of its type (none at the ends). */
+function SwitchArrow({ to, label, onPick }: { to?: string; label: string; onPick: (id: string) => void }) {
+  const { settings } = useSettings();
+  return (
+    <button className="card-switch-arrow" disabled={!to} onClick={() => to && onPick(to)} aria-label={to ? `${label}：${cardName(settings, to)}` : `沒有${label}`}>
+      {label === "上一個" ? "‹" : "›"}
+    </button>
+  );
+}
+
 /** Card wrapper: title, refresh countdown, and how fresh the data is (red when it isn't). */
 export function Section({
   title,
@@ -61,9 +71,10 @@ export function Section({
 }: {
   title: string;
   className: string;
-  state: Polled<unknown>;
+  /** Without it (a card with no data to fetch) there is no refresh countdown. */
+  state?: Polled<unknown>;
   /** Data older than this is flagged as delayed. */
-  maxAgeSec: number;
+  maxAgeSec?: number;
   actions?: ReactNode;
   /** The settings page for this card, opened by the gear next to the title. */
   edit?: ContentSection;
@@ -75,9 +86,9 @@ export function Section({
   // Read the clock directly: useNow's value can be up to 1 s old when a fetch finishing triggers
   // the render, which made a fresh countdown start at 10:01 instead of 10:00.
   const now = Date.now();
-  const fresh = freshness(state, maxAgeSec, now);
+  const fresh = state ? freshness(state, maxAgeSec ?? Infinity, now) : null;
   // Polls run on the page's beat, so the next one is up to 1.5 intervals away (see usePolling).
-  const left = state.nextAt == null ? null : Math.min(state.intervalSec * 1.5, (state.nextAt - now) / 1000);
+  const left = state?.nextAt == null ? null : Math.min(state.intervalSec * 1.5, (state.nextAt - now) / 1000);
   const layout = useLayoutEdit();
   const panel = isPanel(className) ? className : null;
   const movable = layout.editing && panel && canMove(layout.mode) && panel;
@@ -128,12 +139,16 @@ export function Section({
           </button>
         )}
         {siblings.length > 1 ? (
-          <div className="tabs card-switch" role="tablist" aria-label={`切換${panel ? PANEL_NAMES[panel] : title}`}>
-            {siblings.map((q) => (
-              <button key={q} role="tab" aria-selected={q === id} onClick={() => layout.pick(q)}>
-                {cardName(settings, q)}
-              </button>
-            ))}
+          // Arrows, not a tab per card: names don't fit side by side on a phone.
+          <div className="card-switch" role="group" aria-label={`切換${panel ? PANEL_NAMES[panel] : title}`}>
+            <SwitchArrow to={siblings[siblings.indexOf(id) - 1]} label="上一個" onPick={layout.pick} />
+            <h2 aria-live="polite" title={heading}>
+              {heading}
+            </h2>
+            <span className="muted small card-switch-count">
+              {siblings.indexOf(id) + 1}/{siblings.length}
+            </span>
+            <SwitchArrow to={siblings[siblings.indexOf(id) + 1]} label="下一個" onPick={layout.pick} />
           </div>
         ) : (
           <h2
@@ -150,6 +165,7 @@ export function Section({
             onPointerCancel={release}
             onPointerLeave={release}
             onContextMenu={(e) => layout.editing || e.preventDefault()}
+            title={heading}
           >
             {heading}
           </h2>
@@ -169,14 +185,14 @@ export function Section({
           <button
             className="card-hide"
             onClick={() => layout.hide(id)}
-            aria-label={`${extra ? "移除" : "隱藏"}${name}`}
-            title={extra ? "移除這個板塊（連同它的設定）" : "隱藏這個板塊"}
+            aria-label={`隱藏${name}`}
+            title="隱藏這個板塊（要刪除請到設定）"
           >
-            {extra ? "移除" : "隱藏"}
+            隱藏
           </button>
         )}
         <span className="muted status">
-          {left == null ? (
+          {!state ? null : left == null ? (
             state.loading ? (
               "載入中…"
             ) : (

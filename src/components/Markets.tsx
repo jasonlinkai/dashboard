@@ -103,7 +103,8 @@ export function Markets() {
         className="tiles"
         ref={tilesRef}
         style={
-          { "--tile-cols": Math.min(n, 6), "--tile-rows-2": Math.ceil(n / 2), "--tile-rows-3": Math.ceil(n / 3) } as React.CSSProperties
+          // A wide row is laid out for at least three tiles, so one or two don't stretch across it.
+          { "--tile-cols": Math.min(Math.max(n, 3), 6), "--tile-rows-2": Math.ceil(n / 2), "--tile-rows-3": Math.ceil(n / 3) } as React.CSSProperties
         }
       >
         {items.map((inst) => (
