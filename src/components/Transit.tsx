@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { getJSON, moveTo, useNow, usePolling, useReorder, useScrollHint } from "../hooks";
 import type { BusArrival, BusResponse, BusRouteDetail, TrainDeparture, TrainResponse } from "../shared";
 import { Flip } from "./Flip";
-import { Section } from "./Section";
+import { Section, hms } from "./Section";
 import { SkeletonBar, SkeletonRows, SkeletonStops } from "./Skeleton";
 import { toast } from "../toast";
 
@@ -30,6 +30,38 @@ function wanted(a: BusArrival, all: BusArrival[], cfg: BusStop): boolean {
   const dirs = new Set(toward.map((x) => x.direction));
   // If both or neither direction looks like Taipei we can't tell, so show both.
   return dirs.size !== 1 || dirs.has(a.direction);
+}
+
+/**
+ * The newest estimate seen for each stop, whether it came with the board or with the route sheet.
+ * The two are fetched separately, each on its own minute (and cached separately by the Worker), so
+ * on their own they could disagree by a minute or two about the same stop; both show the newer.
+ * Keyed by StopUID: a loop route passes a stop of the same name twice.
+ */
+interface Estimate {
+  estimateSec: number | null;
+  status: string | null;
+  lastBus: boolean;
+  /** When TDX computed it. */
+  asOf: number;
+}
+/** Also when it was fetched (the "資料 HH:MM:SS" shown with it). */
+const newest = new Map<string, { e: Estimate; fetched: number | null }>();
+const stopKey = (city: string, route: string, direction: number, uid: string | undefined) =>
+  uid ? `${city}|${route}|${direction}|${uid}` : null;
+function remember(key: string | null, { estimateSec, status, lastBus, asOf }: Estimate, fetched: number | null) {
+  const prev = key && newest.get(key);
+  if (key && (!prev || asOf > prev.e.asOf)) newest.set(key, { e: { estimateSec, status, lastBus, asOf }, fetched });
+}
+/**
+ * `own`, or the same stop's estimate from the other view if that one is newer. `time` is moved
+ * forward to when that one was fetched.
+ */
+function newer<T extends Estimate>(key: string | null, own: T, time: { at: number | null }): T {
+  const n = key ? newest.get(key) : undefined;
+  if (!n || n.e.asOf <= own.asOf) return own;
+  if (n.fetched != null) time.at = Math.max(time.at ?? 0, n.fetched);
+  return { ...own, ...n.e };
 }
 
 // TDX re-estimates about once a minute; older than this and the estimate may be off.
@@ -72,7 +104,15 @@ export function Bus() {
   const listRef = useScrollHint<HTMLUListElement>();
   // Long-press a stop to drag it; the list is in the order set by the user.
   const dragRef = useReorder<HTMLUListElement>((from, to) => setSettings({ ...settings, bus: moveTo(stops, from, to) }));
-  const all = state.data?.arrivals ?? [];
+  const raw = state.data?.arrivals;
+  const keyOf = (a: BusArrival) => (a.city ? stopKey(a.city, a.route, a.direction, a.stopUid) : null);
+  useEffect(() => {
+    for (const a of raw ?? []) remember(keyOf(a), a, state.dataTime);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raw]);
+  // A stop the open route sheet has newer data for shows that, and so does the update time.
+  const time = { at: state.dataTime };
+  const all = (raw ?? []).map((a) => newer(keyOf(a), a, time));
   const [open, setOpen] = useState<{ city: string; route: string; direction: number; routeId: string } | null>(null);
   const notFound = new Set(state.data?.notFound ?? []);
   return (
@@ -80,7 +120,7 @@ export function Bus() {
       title="公車"
       edit="bus"
       className="bus"
-      state={state}
+      state={{ ...state, dataTime: time.at }}
       maxAgeSec={STALE_AFTER_SEC.bus}
       source={
         <>
@@ -228,7 +268,18 @@ function BusRouteSheet({
     REFRESH_SEC.bus,
     [city, route],
   );
-  const trips = state.data?.trips ?? [];
+  useEffect(() => {
+    for (const t of state.data?.trips ?? [])
+      for (const s of t.stops)
+        if (s.asOf != null) remember(stopKey(city, route, t.direction, s.uid), { ...s, asOf: s.asOf }, state.dataTime);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.data]);
+  // Stops the board has newer estimates for show those (this sheet re-renders with the board).
+  const time = { at: state.dataTime };
+  const trips = (state.data?.trips ?? []).map((t) => ({
+    ...t,
+    stops: t.stops.map((s) => (s.asOf != null ? newer(stopKey(city, route, t.direction, s.uid), { ...s, asOf: s.asOf }, time) : s)),
+  }));
   type Trip = (typeof trips)[number];
 
   /**
@@ -386,6 +437,7 @@ function BusRouteSheet({
         <footer className="bus-sheet-foot muted small">
           <span>
             資料：交通部 TDX・每分鐘更新
+            {time.at != null && `・資料 ${hms.format(time.at)}`}
             {state.data && !state.data.busesOk && "・公車位置暫時無法取得"}
           </span>
           <span className="bus-sheet-links">

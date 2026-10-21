@@ -29,6 +29,7 @@ export interface BusArrival {
   route: string;
   routeId: string; // also the 5284 (大台北公車) route page id
   stop: string; // stop name as TDX spells it
+  stopUid?: string; // TDX StopUID (older servers didn't send it)
   direction: number; // 0 = 去程, 1 = 返程
   headsign: string; // e.g. "往 捷運昆陽站"
   toward: string | null; // set when the config asks for buses heading toward a given stop
@@ -60,7 +61,11 @@ export interface BusRouteDetail {
     headsign: string;
     stops: {
       name: string;
+      /** TDX StopUID (older servers didn't send it). */
+      uid?: string;
       estimateSec: number | null;
+      /** When TDX computed this stop's estimate (unix ms). */
+      asOf?: number | null;
       /** 尚未發車 / 末班車已過 / HH:MM 發車 …; null while a bus is on its way. */
       status: string | null;
       lastBus: boolean;

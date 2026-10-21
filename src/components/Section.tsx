@@ -6,7 +6,8 @@ import { type Polled, useNow } from "../hooks";
 import { type ContentSection, openSettings } from "../openSettings";
 import { GearIcon } from "./GearIcon";
 
-const hms = new Intl.DateTimeFormat("zh-TW", {
+/** HH:MM:SS, for "資料 …" (also on the bus route sheet). */
+export const hms = new Intl.DateTimeFormat("zh-TW", {
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",

@@ -242,6 +242,7 @@ async function busCity(env: Env, city: string, queries: BusQuery[]) {
       route,
       routeId: routeIds[route] ?? String(e.RouteID ?? ""),
       stop: zh(e.StopName),
+      stopUid: String(e.StopUID),
       direction: e.Direction,
       // A loop route's own terminus says nothing about where this rider is going.
       headsign: toward ? `往 ${toward}` : (headsigns[route]?.[e.Direction] ?? ""),
@@ -380,7 +381,9 @@ export async function busRoute(env: Env, city: string, route: string): Promise<B
         const status = e ? (STOP_STATUS[e.status] ?? (e.sec == null ? "暫無資料" : null)) : "暫無資料";
         return {
           name: s.name,
+          uid: s.uid,
           estimateSec: e?.sec ?? null,
+          asOf: e?.asOf ?? null,
           status: status === "尚未發車" && e?.next ? `${e.next} 發車` : status,
           lastBus: e?.last ?? false,
           buses: near.filter((b) => b.key === `${t.direction}|${s.uid}`).map((b) => ({ plate: b.plate, arriving: b.arriving })),
