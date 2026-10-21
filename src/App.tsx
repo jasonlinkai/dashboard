@@ -252,20 +252,22 @@ export default function App() {
     setAnnounce(`已顯示${name(p)}`);
   };
   /**
-   * A card of a type at its minimum size. An absent type gets its first card back with the default
-   * content; otherwise another card starting with a little of the first card's content. The settings
-   * page opens the new card's page itself; the layout bar doesn't.
+   * A card of a type at its minimum size, always starting with a little content: one place / tile
+   * (the first card's, or the defaults' when the type is absent and its first card comes back), no
+   * stops or routes. Only a reset fills in a preset's full defaults. The settings page opens the new
+   * card's page itself; the layout bar doesn't.
    */
   const addCard = (type: Panel): CardId | undefined => {
     if (ids.filter((id) => kind(id) === type).length >= MAX_PER_TYPE) return void toast(`每種板塊最多 ${MAX_PER_TYPE} 個`, "error");
     const back = settings.absent.includes(type);
     const id = back ? type : `${type}-${Date.now().toString(36).slice(-6)}`;
+    const from = back ? DEFAULT_SETTINGS : settings;
     const start: Partial<SettingsData> = {
-      markets: { markets: settings.markets.slice(0, 1) },
-      weather: { weather: settings.weather.slice(0, 1) },
+      markets: { markets: from.markets.slice(0, 1) },
+      weather: { weather: from.weather.slice(0, 1) },
       bus: { bus: [] },
       train: { trains: [] },
-      news: { news: settings.news, newsOrder: settings.newsOrder },
+      news: { news: from.news, newsOrder: from.newsOrder },
       todo: { todos: [] },
     }[type];
     // A free spot on each board (this screen's minimum here). None: hidden on that board until
@@ -279,7 +281,7 @@ export default function App() {
       if (!r) next.hidden[m] = [...layout.hidden[m], id];
     }
     const added = back
-      ? { ...settings, ...defaultsOf([type]), absent: settings.absent.filter((t) => t !== type), layout: next }
+      ? { ...settings, ...start, absent: settings.absent.filter((t) => t !== type), layout: next }
       : { ...settings, extras: [...settings.extras, { id, type, ...start }], layout: next };
     // Checked here too (setSettings would refuse it), so a card that isn't added doesn't open its page.
     const over = overLimit(added);

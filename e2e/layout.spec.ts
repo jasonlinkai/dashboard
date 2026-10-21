@@ -137,7 +137,7 @@ test.describe("adding cards in layout mode", () => {
     layout: { wide: { markets: DEF.wide.markets, weather: DEF.wide.weather }, tall: { markets: DEF.tall.markets, weather: DEF.tall.weather }, hidden: { wide: [], tall: [] } },
   };
 
-  test("an absent type comes back with its default content, at the minimum size, without opening the settings", async ({ page }) => {
+  test("an absent type comes back with a little content, at the minimum size, without opening the settings", async ({ page }) => {
     await open(page, WIDE, roomy);
     await startEditing(page);
     await bar(page).getByRole("combobox", { name: "新增板塊" }).selectOption("bus");
@@ -146,7 +146,7 @@ test.describe("adding cards in layout mode", () => {
     await expectAtLeastMin(page, "bus");
     const s = (await stored(page))!;
     expect(s.absent).not.toContain("bus");
-    expect(s.bus.length).toBe(4); // the default stops
+    expect(s.bus).toEqual([]); // no stops, as when adding from the settings
     // Inserted at the minimum, not bigger: one cell less either way would be under it.
     const box = s.layout.wide.bus;
     const step = await page.evaluate(() => {
@@ -158,6 +158,19 @@ test.describe("adding cards in layout mode", () => {
     expect((box.h - 1) * step.y - step.gap).toBeLessThan(MIN.h + 1);
     // The other orientation got a box too.
     expect(s.layout.tall.bus).toBeTruthy();
+  });
+
+  test("adding a type in layout mode starts with the same content as in the settings", async ({ page }) => {
+    // Weather absent: its first card comes back. Before, it got all four default places here but
+    // one place from the settings page (which added an extra card while weather was still there).
+    await open(page, WIDE, { ...roomy, weather: [PLACE, place("南港"), place("內湖")], absent: ["weather", "bus", "train", "news", "todo"], layout: undefined });
+    await startEditing(page);
+    await bar(page).getByRole("combobox", { name: "新增板塊" }).selectOption("weather");
+    const names = (list: unknown) => (list as { name: string }[]).map((p) => p.name);
+    expect(names((await stored(page))!.weather)).toEqual(["汐止"]); // the defaults' first place
+    await bar(page).getByRole("combobox", { name: "新增板塊" }).selectOption("weather");
+    const s = (await stored(page))!;
+    expect(names((s.extras[0] as unknown as { weather: unknown[] }).weather)).toEqual(["汐止"]); // the first card's first place
   });
 
   test("another card of a present type is an extra one", async ({ page }) => {
@@ -378,7 +391,7 @@ test.describe("phone", () => {
     await page.getByRole("button", { name: "＋ 新增天氣" }).click();
     await expect(card(page, "weather")).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    expect((await stored(page))!.weather).toHaveLength(4);
+    expect((await stored(page))!.weather).toHaveLength(1); // one default place, not all four
   });
 
   test("several cards of a type: arrows switch, a long name is cut with …", async ({ page }) => {
