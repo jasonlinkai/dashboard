@@ -1148,8 +1148,10 @@ export function ContentEditor({
             section={open.section}
             card={open.card}
             onClose={close}
-            // Only extra cards: a type's first card always exists (it can be hidden in layout mode).
-            onRemove={open.card === TYPE_OF[open.section] ? undefined : () => (setOpen(null), onRemove(open.card))}
+            // A type's last card stays (it can be hidden in layout mode).
+            onRemove={
+              settings.extras.some((e) => e.type === TYPE_OF[open.section]) ? () => (setOpen(null), onRemove(open.card)) : undefined
+            }
           />
         </CardSettings>
       )}
@@ -1205,13 +1207,12 @@ function CardPage({
       {section === "bus" && <BusEditor {...props} />}
       {section === "trains" && <TrainsEditor {...props} />}
       {section === "news" && <NewsEditor {...props} />}
-      {onRemove && (
-        <div className="ed-actions">
-          <button className="ed-remove" onClick={() => (confirming ? onRemove() : setConfirming(true))}>
-            {confirming ? "再按一次確認刪除（內容會一起刪掉）" : "刪除板塊"}
-          </button>
-        </div>
-      )}
+      <div className="ed-actions">
+        <button className="ed-remove" disabled={!onRemove} onClick={() => (confirming ? onRemove?.() : setConfirming(true))}>
+          {confirming ? "再按一次確認刪除（內容會一起刪掉）" : "刪除板塊"}
+        </button>
+      </div>
+      {!onRemove && <div className="muted small">每種板塊至少要留一個；不想看到可以在平板或電腦的排版模式隱藏。</div>}
     </SubPage>
   );
 }

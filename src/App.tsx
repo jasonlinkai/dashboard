@@ -16,6 +16,8 @@ import { type ContentSection, onOpenSettings } from "./openSettings";
 import { toast } from "./toast";
 import {
   type Boxes,
+  FIELDS,
+  cardView,
   type CardId,
   CardSettings,
   DEFAULT_LAYOUT,
@@ -177,14 +179,36 @@ export default function App() {
     const said = changes(next);
     if (setBoxes(next, first)) setAnnounce(said);
   });
-  /** An extra card, removed everywhere with its content. */
+  /**
+   * A card, removed everywhere with its content. A type's first card can't go away, so the type's
+   * next card moves into it (content, name, place); a type's last card stays.
+   */
   const removeCard = (p: CardId) => {
-    const { [p]: _w, ...wide } = layout.wide;
-    const { [p]: _t, ...tall } = layout.tall;
-    const rest = Object.fromEntries(SCREENS.map((sc) => [sc, layout.hidden[sc].filter((q) => q !== p)])) as typeof layout.hidden;
+    const type = kind(p);
+    const next = isPanel(p) ? settings.extras.find((e) => e.type === type) : undefined;
+    if (isPanel(p) && !next) return toast(`每種板塊至少要留一個${PANEL_NAMES[type]}`, "error");
+    const gone = next?.id ?? p;
+    const take = (boxes: Boxes) => {
+      const { [gone]: box, ...rest } = boxes;
+      return next ? { ...rest, [p]: box } : rest;
+    };
+    const rest = Object.fromEntries(
+      SCREENS.map((sc) => {
+        const h = layout.hidden[sc].filter((q) => q !== p && q !== gone);
+        return [sc, next && layout.hidden[sc].includes(gone) ? [...h, p] : h];
+      }),
+    ) as typeof layout.hidden;
+    if (SCREENS.some((sc) => rest[sc].length >= ids.length - 1)) return toast("至少要留一個板塊不隱藏", "error");
+    const { [p]: _n, [gone]: movedName, ...names } = settings.names;
+    const content = next ? Object.fromEntries(FIELDS[type].map((f) => [f, cardView(settings, gone)[f]])) : {};
     flip.capture();
-    const { [p]: _n, ...names } = settings.names;
-    setSettings({ ...settings, extras: settings.extras.filter((e) => e.id !== p), names, layout: { ...layout, wide, tall, hidden: rest } });
+    setSettings({
+      ...settings,
+      ...content,
+      extras: settings.extras.filter((e) => e.id !== gone),
+      names: next && movedName ? { ...names, [p]: movedName } : names,
+      layout: { ...layout, wide: take(layout.wide), tall: take(layout.tall), hidden: rest },
+    });
     toast(`已移除${name(p)}`);
   };
   /** On this layout only: a type's first card is hidden (it keeps its content); an extra one is removed everywhere. */
@@ -220,12 +244,13 @@ export default function App() {
       train: { trains: [] },
       news: { news: settings.news, newsOrder: settings.newsOrder },
     }[type];
-    // A free spot on each board (this screen's minimum here). None on this screen: nothing is
-    // added; none on the other layout: hidden there until it is made room for.
+    // A free spot on each board (this screen's minimum here). None: hidden on that board until
+    // it is made room for in layout mode.
     const next = { ...layout, hidden: { ...layout.hidden } };
+    let noRoom = false;
     for (const m of ["wide", "tall"] as const) {
       const r = roomOn(m, id, m === mode ? here() : BOARD_MIN);
-      if (!r && m === mode) return void toast(`畫面上沒有空位放新的${PANEL_NAMES[type]}，請先縮小其他板塊`, "error");
+      if (!r && m === mode) noRoom = true;
       next[m] = { ...layout[m], [id]: r ?? { x: 0, y: 0, ...BOARD_MIN } };
       if (!r) next.hidden[m] = [...layout.hidden[m], id];
     }
@@ -235,6 +260,7 @@ export default function App() {
     if (over) return void toast(`無法新增：${over}`, "error");
     flip.capture();
     setSettings(added);
+    if (noRoom) toast(`畫面上沒有空位，新的${PANEL_NAMES[type]}先隱藏；可在排版模式騰出空間後顯示`, "info");
     setSettingsCard(id);
     setSettingsSection(SECTION_OF[type]);
     setShowSettings(true);

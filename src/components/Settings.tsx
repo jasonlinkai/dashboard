@@ -61,7 +61,7 @@ export function Settings({
   onEditLayout: () => void;
   /** Add a card of a type (also on a phone, which has no layout mode); its id, or undefined if refused. */
   onAddCard: (type: Panel) => string | undefined;
-  /** Delete an extra card (行情 2 …) with its content. */
+  /** Delete a card with its content (a type's last card stays). */
   onRemoveCard: (card: string) => void;
   /** With `section`: which card's page to open (an extra card's id, e.g. 天氣 2's). */
   card?: string;
