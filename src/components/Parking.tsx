@@ -6,7 +6,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON } from "../hooks";
-import type { GeoHit, ParkingLot, ParkingResponse, SpaceCount } from "../shared";
+import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse, SpaceCount } from "../shared";
 import { toast } from "../toast";
 
 const RADII = [300, 500, 1000, 2000] as const;
@@ -91,7 +91,9 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   const [radius, setRadius] = useState<Radius>(saved.radius);
   const [sort, setSort] = useState<Sort>(saved.sort);
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<GeoHit[] | null>(null);
+  const [hits, setHits] = useState<GeoResponse | null>(null);
+  /** Where the map is looking, so a search like "麥當勞" finds the branches around there. */
+  const view = useRef<{ lat: number; lon: number; zoom: number } | null>(null);
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
   const [data, setData] = useState<ParkingResponse | null>(null);
@@ -158,12 +160,19 @@ export default function Parking({ onClose }: { onClose: () => void }) {
     if (!q) return;
     setSearching(true);
     try {
-      const res = await getJSON<GeoHit[]>(`/api/geocode?q=${encodeURIComponent(q)}`);
-      if (!res.data.length) {
+      // Search around the map's centre once it shows a town-sized area (not all of Taiwan).
+      const v = view.current;
+      const near = v && v.zoom >= 11 ? `&lat=${v.lat.toFixed(4)}&lon=${v.lon.toFixed(4)}` : "";
+      const res = await getJSON<GeoResponse>(`/api/geocode?q=${encodeURIComponent(q)}${near}`);
+      const found = res.data.hits;
+      if (!found.length) {
         setHits(null);
-        toast("找不到這個地點，換個說法，或直接在地圖上點選位置", "error");
-      } else if (res.data.length === 1) {
-        choose(res.data[0]);
+        toast(
+          res.data.errors.length ? `找不到這個地點（${res.data.errors.join("；")}）` : "找不到這個地點，換個說法，或直接在地圖上點選位置",
+          "error",
+        );
+      } else if (found.length === 1 && !res.data.errors.length) {
+        choose(found[0]);
       } else setHits(res.data);
     } catch (err) {
       toast(`搜尋失敗：${err instanceof Error ? err.message : err}`, "error");
@@ -241,12 +250,26 @@ export default function Parking({ onClose }: { onClose: () => void }) {
 
       {hits && (
         <ul className="pk-hits" aria-label="搜尋結果">
-          <li className="muted small">找到多個地點，請選擇：</li>
-          {hits.map((h, i) => (
+          <li className="muted small">
+            {hits.nearby ? "地圖目前位置附近的結果（近到遠），請選擇：" : "全台的搜尋結果，請選擇："}
+          </li>
+          {!hits.nearby && (
+            <li className="muted tiny pk-hits-tip">想找附近的分店？先把地圖移到大概的位置（或按「目前位置」），再搜尋一次。</li>
+          )}
+          {hits.errors.map((e) => (
+            <li key={e} className="tiny pk-hits-tip warn">⚠ {e}，以下只有另一個來源的結果</li>
+          ))}
+          {hits.hits.map((h, i) => (
             <li key={i}>
               <button onClick={() => choose(h)}>
-                <b>{h.name}</b>
-                {h.address && h.address !== h.name && <span className="muted small">{h.address}</span>}
+                <span className="pk-hit-top">
+                  <b>{h.name}</b>
+                  {h.distance != null && <span className="muted small">{fmtDistance(h.distance)}</span>}
+                </span>
+                <span className="muted small">
+                  {h.address && h.address !== h.name ? `${h.address}・` : ""}
+                  {h.source === "OSM" ? "OpenStreetMap" : "TDX"}
+                </span>
               </button>
             </li>
           ))}
@@ -282,7 +305,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="pk-body">
-        <ParkingMap dest={dest} radius={radius} lots={lots} selected={selected} onSelect={(id) => select(id, "map")} onPick={pickOnMap} />
+        <ParkingMap dest={dest} radius={radius} lots={lots} selected={selected} onSelect={(id) => select(id, "map")} onPick={pickOnMap} onView={(v) => (view.current = v)} />
 
         <div className="pk-list">
           {!dest && <p className="pk-note">輸入目的地、按「目前位置」，或直接在地圖上點一下，就會列出附近的停車場。</p>}
@@ -333,7 +356,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
           </ol>
 
           <p className="pk-source">
-            停車場與即時空位：交通部 TDX 運輸資料流通服務（政府資料開放授權條款－第1版）・地圖：內政部國土測繪中心・距離為直線距離・費率由業者公告文字推估，實際以現場為準
+            停車場與即時空位：交通部 TDX 運輸資料流通服務（政府資料開放授權條款－第1版）・地圖：內政部國土測繪中心・地點搜尋：TDX、© OpenStreetMap 貢獻者（ODbL）・距離為直線距離・費率由業者公告文字推估，實際以現場為準
           </p>
         </div>
       </div>
@@ -442,6 +465,7 @@ function ParkingMap({
   selected,
   onSelect,
   onPick,
+  onView,
 }: {
   dest: Dest | null;
   radius: number;
@@ -449,6 +473,7 @@ function ParkingMap({
   selected: string | null;
   onSelect: (id: string) => void;
   onPick: (lat: number, lon: number) => void;
+  onView: (v: { lat: number; lon: number; zoom: number }) => void;
 }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -457,8 +482,8 @@ function ParkingMap({
   const fitted = useRef("");
   /** The circle to keep in view until the user moves the map themselves. */
   const fitTo = useRef<L.LatLngBounds | null>(null);
-  const cb = useRef({ onSelect, onPick });
-  cb.current = { onSelect, onPick };
+  const cb = useRef({ onSelect, onPick, onView });
+  cb.current = { onSelect, onPick, onView };
 
   useEffect(() => {
     const m = L.map(el.current!, { zoomControl: true, attributionControl: true }).setView(TAIWAN, 7);
@@ -466,6 +491,10 @@ function ParkingMap({
     m.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
     m.on("click", (e: L.LeafletMouseEvent) => cb.current.onPick(e.latlng.lat, e.latlng.lng));
     m.on("dragstart", () => (fitTo.current = null));
+    m.on("moveend", () => {
+      const c = m.getCenter();
+      cb.current.onView({ lat: c.lat, lon: c.lng, zoom: m.getZoom() });
+    });
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
     // The panel lays out after mount (and the phone rotates): tell Leaflet its real size, and

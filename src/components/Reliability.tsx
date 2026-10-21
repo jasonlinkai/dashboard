@@ -117,6 +117,7 @@ const SOURCES: [name: string, href: string, use: string, licence: string][] = [
   ["Yahoo Finance", "https://finance.yahoo.com/", "行情報價與走勢", "非官方介面，僅供個人參考，報價以券商為準"],
   ["各新聞媒體", "https://www.cna.com.tw/", "新聞標題與連結（RSS、TVBS 網站地圖）", "版權屬各媒體；只顯示標題並連回原文"],
   ["內政部國土測繪中心 電子地圖", "https://maps.nlsc.gov.tw/", "停車場搜尋的底圖", "政府資料開放授權條款－第 1 版，標示來源"],
+  ["OpenStreetMap（Nominatim）", "https://www.openstreetmap.org/copyright", "停車場搜尋的店家／地點查詢", "© OpenStreetMap 貢獻者，ODbL；遵守每秒 1 次與快取規範"],
   ["Leaflet", "https://leafletjs.com/", "互動地圖元件", "BSD-2-Clause 開源授權"],
   ["Google 地圖", "https://www.google.com/maps", "公車路線、停車場導航連結", "僅開啟網址連結，不使用 API"],
 ];

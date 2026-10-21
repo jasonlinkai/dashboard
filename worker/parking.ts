@@ -5,7 +5,7 @@
 import towns from "../src/data/towns.json";
 import { BUS_CITY_LIST } from "../src/bus-cities";
 import { estimateFare } from "../src/parking-fare";
-import type { GeoHit, ParkingLot, ParkingResponse } from "../src/shared";
+import type { GeoHit, GeoResponse, ParkingLot, ParkingResponse } from "../src/shared";
 import { tdx } from "./tdx";
 import { type Env, cached, rows } from "./util";
 
@@ -197,16 +197,23 @@ function point(geometry: unknown): { lat: number; lon: number } | null {
   return m ? { lon: Number(m[1]), lat: Number(m[2]) } : null;
 }
 
+const HAS_CITY = /^[臺台]?\S{1,2}[市縣]/;
+
 /**
- * Address ("市府路1號") or landmark name ("台北101") → candidates. Landmark search returns many
- * places containing the words, so the page lets the user pick instead of assuming the first.
+ * TDX's geocoder: good for addresses, stations and landmarks; it has almost no shops. Its
+ * address search fails (503) without a city, so `city` (where the map is) is put in front of
+ * an address that doesn't name one.
  */
-export async function geocode(env: Env, raw: string): Promise<GeoHit[]> {
-  const q = raw.trim().replace(/\s+/g, " ").slice(0, 60);
-  if (!q) return [];
-  return cached(`geocode:${q}`, 7 * 86400, async () => {
+function tdxPlaces(env: Env, q: string, city: string | null): Promise<GeoHit[]> {
+  const address = city && !HAS_CITY.test(q) ? city + q : q;
+  return cached(`geocode:${q}:${address}`, 7 * 86400, async () => {
     const byAddress = async () =>
-      rows(await tdx(env, `/api/advanced/V3/Map/GeoCode/Coordinate/Address/${encodeURIComponent(q)}`).catch(notFoundIsEmpty));
+      rows(
+        await tdx(env, `/api/advanced/V3/Map/GeoCode/Coordinate/Address/${encodeURIComponent(address)}`).catch((e) =>
+          // "該API服務失效": what it answers for an address it can't parse.
+          e instanceof Error && /TDX 503/.test(e.message) ? [] : notFoundIsEmpty(e),
+        ),
+      );
     const byName = async () =>
       rows(await tdx(env, `/api/advanced/V3/Map/GeoCode/Coordinate/Markname/${encodeURIComponent(q)}`).catch(notFoundIsEmpty));
     const first = ADDRESS_LIKE.test(q) ? byAddress : byName;
@@ -218,11 +225,87 @@ export async function geocode(env: Env, raw: string): Promise<GeoHit[]> {
       const pt = point(r.Geometry);
       if (!pt) continue;
       const address = String(r.Address ?? "").trim();
-      hits.push({ name: String(r.Name ?? "").trim() || address, address, ...pt });
-      if (hits.length >= 12) break;
+      hits.push({ name: String(r.Name ?? "").trim() || address, address, ...pt, source: "TDX" });
+      if (hits.length >= 20) break;
     }
     return hits;
   });
+}
+
+// OpenStreetMap's Nominatim, for shops and chains ("麥當勞"). Its usage policy: at most one
+// request a second, an identifying User-Agent, cache results, no search-as-you-type. All
+// /api/geocode requests go through the single TdxGate object, so this throttle is global.
+const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+const NOMINATIM_UA = "TaiwanDashboard/1.0 (+https://dashboard.jasonlinkai.workers.dev)";
+let nominatimLast = 0;
+
+async function nominatim(params: Record<string, string>): Promise<any[]> {
+  const wait = nominatimLast + 1100 - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  nominatimLast = Date.now();
+  const qs = new URLSearchParams({ format: "jsonv2", countrycodes: "tw", addressdetails: "1", "accept-language": "zh-TW", ...params });
+  const res = await fetch(`${NOMINATIM}?${qs}`, {
+    headers: { "User-Agent": NOMINATIM_UA, Referer: "https://dashboard.jasonlinkai.workers.dev/" },
+  });
+  if (!res.ok) throw new Error(`OpenStreetMap ${res.status}`);
+  const body = await res.json();
+  return Array.isArray(body) ? body : [];
+}
+
+function osmAddress(a: any): string {
+  if (!a || typeof a !== "object") return "";
+  const no = a.house_number ? (/號$/.test(a.house_number) ? a.house_number : `${a.house_number}號`) : "";
+  return [a.city ?? a.county ?? a.state ?? "", a.suburb ?? a.town ?? a.city_district ?? a.village ?? "", a.road ?? "", no].join("");
+}
+
+/** Within about 6 km of `near` first (so "麥當勞" means the nearby branches); all Taiwan if none. */
+function osmPlaces(q: string, near: { lat: number; lon: number } | null): Promise<GeoHit[]> {
+  // OSM rarely has house numbers here: for an address, an all-Taiwan fallback only finds
+  // look-alikes far away (e.g. "福祿1號公園" for 市府路1號), so stay near.
+  const fallback = !(near && ADDRESS_LIKE.test(q));
+  const key = near ? `${near.lat.toFixed(2)},${near.lon.toFixed(2)}` : "tw";
+  return cached(`geocode-osm2:${q}:${key}`, 7 * 86400, async () => {
+    let found: any[] = [];
+    if (near) {
+      const box = [near.lon - 0.07, near.lat + 0.06, near.lon + 0.07, near.lat - 0.06].map((v) => v.toFixed(4)).join(",");
+      found = await nominatim({ q, limit: "40", viewbox: box, bounded: "1" });
+    }
+    if (!found.length && fallback) found = await nominatim({ q, limit: "20" });
+    return found
+      .map((x): GeoHit => ({
+        name: String(x.name || String(x.display_name ?? "").split(",")[0]).trim(),
+        address: osmAddress(x.address),
+        lat: Number(x.lat),
+        lon: Number(x.lon),
+        source: "OSM",
+      }))
+      .filter((h) => h.name && Number.isFinite(h.lat) && Number.isFinite(h.lon));
+  });
+}
+
+/**
+ * Text → places to choose from, from TDX and OpenStreetMap together (either may fail or find
+ * nothing; that's only an error if both do). With `near` (the map's centre), nearest first.
+ */
+export async function geocode(env: Env, raw: string, near: { lat: number; lon: number } | null): Promise<GeoResponse> {
+  const q = raw.trim().replace(/\s+/g, " ").slice(0, 60);
+  if (!q) return { hits: [], nearby: Boolean(near), errors: [] };
+  if (near && !(near.lat > 21 && near.lat < 27 && near.lon > 118 && near.lon < 123)) near = null;
+  const city = near ? (CITY_NAME.get(citiesNear(near.lat, near.lon, 0)[0] ?? "") ?? null) : null;
+  const [tdxRes, osmRes] = await Promise.allSettled([tdxPlaces(env, q, city), osmPlaces(q, near)]);
+  const errors: string[] = [];
+  const hits: GeoHit[] = [];
+  for (const [name, r] of [["TDX", tdxRes], ["OpenStreetMap", osmRes]] as const) {
+    // Copies: the cached arrays are shared with later requests, which have their own `near`.
+    if (r.status === "fulfilled") hits.push(...r.value.map((h) => ({ ...h })));
+    else errors.push(`${name}：${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+  }
+  if (!hits.length && errors.length === 2) throw new Error(`地點搜尋失敗（${errors.join("；")}）`);
+  if (near) for (const h of hits) h.distance = metres(near.lat, near.lon, h.lat, h.lon);
+  // The same place from both sources (or twice from one): keep the first.
+  const unique = hits.filter((h, i) => !hits.slice(0, i).some((o) => o.name === h.name && metres(o.lat, o.lon, h.lat, h.lon) < 60));
+  if (near) unique.sort((a, b) => a.distance! - b.distance!);
+  return { hits: unique.slice(0, 15), nearby: Boolean(near), errors };
 }
 
 function notFoundIsEmpty(e: unknown): unknown[] {

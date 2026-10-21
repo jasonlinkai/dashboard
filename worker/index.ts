@@ -85,7 +85,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
       case "/api/parking":
         return json(await parking(env, Number(q.get("lat")), Number(q.get("lon")), Number(q.get("r") ?? 500)));
       case "/api/geocode":
-        return json(await geocode(env, q.get("q") ?? ""));
+        return json(
+          await geocode(env, q.get("q") ?? "", q.has("lat") ? { lat: Number(q.get("lat")), lon: Number(q.get("lon")) } : null),
+        );
       case "/api/tdx-check":
         return json(await checkCreds(env));
       case "/api/stations":

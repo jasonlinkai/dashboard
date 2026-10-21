@@ -90,6 +90,17 @@ export interface GeoHit {
   address: string;
   lat: number;
   lon: number;
+  source: "TDX" | "OSM";
+  /** Metres from the point the search was made around, when there was one. */
+  distance?: number;
+}
+
+export interface GeoResponse {
+  hits: GeoHit[];
+  /** Results were looked for around the given point (else all of Taiwan). */
+  nearby: boolean;
+  /** A source that failed while the other still answered. */
+  errors: string[];
 }
 
 /** Free / total spaces of one kind; total is null when the source doesn't say. */

@@ -666,3 +666,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-dot.old { background: none; border: 2px solid var(--muted); }
 .pk-pin.old { background: #9aa3ad; }
 .pk-tag { margin-left: 6px; font-size: 11px; font-weight: 600; padding: 1px 5px; border-radius: 5px; background: var(--card-2); color: var(--muted); vertical-align: 2px; }
+.pk-hit-top { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
+.pk-hit-top .muted { flex: none; font-variant-numeric: tabular-nums; }
+.pk-hits-tip { padding: 0 8px 4px; line-height: 1.4; }
+.pk-hits-tip.warn { color: var(--accent); }
