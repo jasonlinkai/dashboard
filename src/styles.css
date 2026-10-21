@@ -148,6 +148,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .ed-row { display: flex; align-items: center; gap: 4px; background: var(--card-2); border-radius: 8px; padding: 4px 4px 4px 10px; min-height: 38px; }
 .ed-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .ed-row { padding-left: 2px; }
+.ed-row.ed-row-plain { padding-left: 10px; }
+.ed-topic { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; padding: 4px 6px; border-radius: 6px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ed-topic > :first-child { flex: 1; }
+.ed-topic[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.ed-topic-off { opacity: 0.5; text-decoration: line-through; }
 .ed-handle {
   flex: none; width: 34px; height: 30px; border: 0; background: none; color: var(--muted); font-size: 18px;
   cursor: grab; touch-action: none; /* the finger drags the row instead of scrolling the page */

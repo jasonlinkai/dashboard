@@ -48,6 +48,8 @@ export interface Settings {
   trains: TrainRoute[];
   trainType: TrainType;
   news: Record<Topic, string[]>;
+  /** Order of the news tabs on the dashboard. */
+  newsOrder: Topic[];
 }
 
 // ---------- Catalogs and limits ----------
@@ -60,7 +62,13 @@ export type TrainType = (typeof TRAIN_TYPES)[number];
 export const trainTypeKeyword = (t: TrainType) => (t === "全部" ? "" : t);
 
 const price = (decimals: number, prefix?: string) => ({ kind: "price" as const, decimals, ...(prefix ? { prefix } : {}) });
-const yieldOf = (symbol: string, name: string): Instrument => ({ symbol, name, subtitle: "殖利率", format: { kind: "yield" }, feedDelayMin: 15 });
+const yieldOf = (symbol: string, name: string): Instrument => ({
+  symbol,
+  name,
+  subtitle: "殖利率",
+  format: { kind: "yield" },
+  feedDelayMin: 15,
+});
 
 /** Market tiles to choose from. */
 export const INSTRUMENT_CATALOG: Instrument[] = [
@@ -115,9 +123,13 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   trainType: "區間",
   news: DEFAULT_NEWS,
+  newsOrder: TOPICS.map(([id]) => id),
 };
 
 // ---------- Derived helpers ----------
+
+/** News topics as [id, label], in the user's tab order. */
+export const orderedTopics = (s: Settings) => s.newsOrder.map((id) => TOPICS.find(([t]) => t === id)!);
 
 export const marketSymbol = (m: MarketItem) => (typeof m === "string" ? m : m.symbol);
 
@@ -216,7 +228,8 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
       const direction = b.direction ?? "auto";
       if (direction !== "auto" && direction !== 0 && direction !== 1) return err(`${at}：direction 只能是 "auto"、0 或 1`);
       if (b.toward !== undefined && !text(b.toward, 24)) return err(`${at}：toward 不能是空字串，也不能含 , 或 :`);
-      if (b.headsign !== undefined && !(typeof b.headsign === "string" && b.headsign.length <= 30)) return err(`${at}：headsign 要是 30 字內的文字`);
+      if (b.headsign !== undefined && !(typeof b.headsign === "string" && b.headsign.length <= 30))
+        return err(`${at}：headsign 要是 30 字內的文字`);
       bus.push({
         city: b.city,
         route: b.route as string,
@@ -268,8 +281,20 @@ export function validate(raw: unknown): { settings?: Settings; errors: string[] 
     }
   }
 
+  // Older files have no order: catalog order. Topics added later go at the end.
+  const newsOrder: Topic[] = [];
+  const rawOrder = raw.newsOrder ?? [];
+  if (!Array.isArray(rawOrder)) err("newsOrder 必須是分類代號的陣列");
+  else {
+    for (const id of rawOrder) {
+      if (!TOPICS.some(([t]) => t === id)) err(`newsOrder：${JSON.stringify(id)} 不是新聞分類代號`);
+      else if (!newsOrder.includes(id as Topic)) newsOrder.push(id as Topic);
+    }
+    for (const [id] of TOPICS) if (!newsOrder.includes(id)) newsOrder.push(id);
+  }
+
   if (errors.length) return { errors };
-  return { settings: { version: 1, weather, markets, bus, trains, trainType: trainType as TrainType, news }, errors };
+  return { settings: { version: 1, weather, markets, bus, trains, trainType: trainType as TrainType, news, newsOrder }, errors };
 }
 
 // ---------- Storage and React context ----------

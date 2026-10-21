@@ -17,6 +17,7 @@ import {
   type WeatherPlace,
   instrumentOf,
   marketSymbol,
+  orderedTopics,
   useSettings,
 } from "../settings";
 
@@ -43,7 +44,8 @@ const without = <T,>(list: T[], i: number): T[] => list.filter((_, k) => k !== i
 
 /**
  * One row of an editable list: drag handle, label, remove. Drag the handle (mouse or touch) to
- * reorder; with the handle focused, the arrow keys move the row too.
+ * reorder; with the handle focused, the arrow keys move the row too. Without `onMove` there is
+ * no handle, without `onRemove` no remove button.
  */
 function Row({
   children,
@@ -60,8 +62,8 @@ function Row({
   i: number;
   count: number;
   min?: number;
-  onMove: (by: number) => void;
-  onRemove: () => void;
+  onMove?: (by: number) => void;
+  onRemove?: () => void;
 }) {
   const liRef = useRef<HTMLLIElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -95,7 +97,7 @@ function Row({
         const b = r.getBoundingClientRect();
         return e.clientY >= b.top && e.clientY <= b.bottom;
       });
-      if (to >= 0 && to !== latest.current.i) latest.current.onMove(to - latest.current.i);
+      if (to >= 0 && to !== latest.current.i) latest.current.onMove?.(to - latest.current.i);
       // Near the edge of the scrolling settings page: scroll so rows further away can be reached.
       const scroller = liRef.current.closest<HTMLElement>(".settings-body");
       if (scroller) {
@@ -126,38 +128,42 @@ function Row({
   }, [dragging]);
 
   return (
-    <li ref={liRef} className={`ed-row ${dragging ? "ed-dragging" : ""}`}>
-      <button
-        className="ed-handle"
-        aria-label="拖曳排序（也可用上下鍵）"
-        disabled={count < 2}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          startIndex.current = i;
-          grabAt.current = e.clientY;
-          grabY.current = e.clientY - (liRef.current?.getBoundingClientRect().top ?? e.clientY);
-          setDragging(true);
-          toast("拖到想要的位置後放開", "info");
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    <li ref={liRef} className={`ed-row ${dragging ? "ed-dragging" : ""} ${onMove ? "" : "ed-row-plain"}`}>
+      {onMove && (
+        <button
+          className="ed-handle"
+          aria-label="拖曳排序（也可用上下鍵）"
+          disabled={count < 2}
+          onPointerDown={(e) => {
             e.preventDefault();
-            onMove(e.key === "ArrowUp" ? -1 : 1);
-          }
-        }}
-      >
-        ≡
-      </button>
+            startIndex.current = i;
+            grabAt.current = e.clientY;
+            grabY.current = e.clientY - (liRef.current?.getBoundingClientRect().top ?? e.clientY);
+            setDragging(true);
+            toast("拖到想要的位置後放開", "info");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+              e.preventDefault();
+              onMove(e.key === "ArrowUp" ? -1 : 1);
+            }
+          }}
+        >
+          ≡
+        </button>
+      )}
       <span className="ed-label">{children}</span>
-      <button
-        className="ed-btn ed-del"
-        onClick={() => (onRemove(), toast(`已刪除「${name}」`))}
-        disabled={count <= min}
-        aria-label="刪除"
-        title={count <= min ? `至少要保留 ${min} 個` : undefined}
-      >
-        ✕
-      </button>
+      {onRemove && (
+        <button
+          className="ed-btn ed-del"
+          onClick={() => (onRemove(), toast(`已刪除「${name}」`))}
+          disabled={count <= min}
+          aria-label="刪除"
+          title={count <= min ? `至少要保留 ${min} 個` : undefined}
+        >
+          ✕
+        </button>
+      )}
     </li>
   );
 }
@@ -370,7 +376,13 @@ function MarketsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) 
               spellCheck={false}
               aria-label="Yahoo 代號"
             />
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="顯示名稱（選填）" maxLength={24} aria-label="顯示名稱" />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="顯示名稱（選填）"
+              maxLength={24}
+              aria-label="顯示名稱"
+            />
             <button className="ed-primary" disabled={!valid || used.has(sym) || busy} onClick={add}>
               {busy ? "確認報價中…" : "加入"}
             </button>
@@ -469,12 +481,21 @@ function BusEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
   /** This stop (in this direction) is already on the list; the same route at another stop is fine. */
   const taken = (i: number) =>
     Boolean(route && trip) &&
-    stops.some((b) => b.city === city && b.route === route!.name && b.stop === trip!.stops[i] && (b.toward ?? "") === (trip!.stops[i + 1] ?? ""));
+    stops.some(
+      (b) => b.city === city && b.route === route!.name && b.stop === trip!.stops[i] && (b.toward ?? "") === (trip!.stops[i + 1] ?? ""),
+    );
 
   const add = (i: number) => {
     if (!route || !trip || full || cityFull || taken(i)) return;
     const stop = trip.stops[i];
-    const entry: BusStop = { city, route: route.name, stop, direction: "auto", toward: trip.stops[i + 1], headsign: tripLabel(trip, trips as BusTrip[]) };
+    const entry: BusStop = {
+      city,
+      route: route.name,
+      stop,
+      direction: "auto",
+      toward: trip.stops[i + 1],
+      headsign: tripLabel(trip, trips as BusTrip[]),
+    };
     // Replaces the route's entry without a stop, if any; another stop of the route goes after its others.
     const rest = stops.filter((b) => !(b.city === city && b.route === route.name && !b.stop));
     const last = rest.reduce((acc, b, j) => (b.city === city && b.route === route.name ? j : acc), -1);
@@ -715,8 +736,9 @@ function TrainsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
 // ---------- 新聞 ----------
 
 function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
-  const [topic, setTopic] = useState<Topic>("top");
+  const [topic, setTopic] = useState<Topic>(s.newsOrder[0]);
   const ids = s.news[topic];
+  const label = TOPICS.find(([id]) => id === topic)![1];
   const update = (list: string[]) => set({ ...s, news: { ...s.news, [topic]: list } });
   const available = sourcesFor(topic).filter((src) => !ids.includes(src.id));
   const [pick, setPick] = useState("");
@@ -724,80 +746,79 @@ function NewsEditor({ s, set }: { s: Settings; set: (s: Settings) => void }) {
 
   return (
     <>
-      <div className="tabs ed-tabs" role="tablist">
-        {TOPICS.map(([id, label]) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={topic === id}
-            className={s.news[id].length ? "" : "tab-hidden"}
-            onClick={() => (setTopic(id), setPick(""))}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="setting">
+        <div className="setting-label">分類順序</div>
+        <div className="muted small">拖曳 ≡ 調整看板上新聞分類的順序；點分類可以設定它的來源、或不顯示。</div>
+        <ul className="ed-list">
+          {orderedTopics(s).map(([id, name], i) => (
+            <Row key={id} name={name} i={i} count={TOPICS.length} onMove={(by) => set({ ...s, newsOrder: move(s.newsOrder, i, by) })}>
+              <button className="ed-topic" aria-pressed={topic === id} onClick={() => (setTopic(id), setPick(""))}>
+                <span className={s.news[id].length ? "" : "ed-topic-off"}>{name}</span>
+                <span className="muted small">{s.news[id].length ? `${s.news[id].length} 個來源` : "不顯示"}</span>
+                <span className="ed-section-chev" aria-hidden>
+                  ›
+                </span>
+              </button>
+            </Row>
+          ))}
+        </ul>
       </div>
-      <div className="segmented" role="radiogroup" aria-label="在看板顯示這個分類">
-        {([true, false] as const).map((on) => (
-          <button
-            key={String(on)}
-            role="radio"
-            aria-checked={ids.length > 0 === on}
-            onClick={() => {
-              if (ids.length > 0 === on) return;
-              update(on ? DEFAULT_NEWS[topic] : []);
-              const label = TOPICS.find(([id]) => id === topic)![1];
-              toast(on ? `看板顯示「${label}」` : `看板不顯示「${label}」`);
-            }}
-          >
-            {on ? "顯示這個分類" : "不顯示"}
-          </button>
-        ))}
-      </div>
-      {ids.length > 0 && (
-        <>
-          <ul className="ed-list">
-            {ids.map((id, i) => {
-              const src = NEWS_BY_ID.get(id);
-              return (
-                <Row
-                  key={id}
-                  name={NEWS_BY_ID.get(id)?.name ?? id}
-                  i={i}
-                  count={ids.length}
-                  min={1}
-                  onMove={(by) => update(move(ids, i, by))}
-                  onRemove={() => update(without(ids, i))}
-                >
-                  {src?.name ?? id}
-                  {src?.note && <span className="muted small">・{src.note}</span>}
-                </Row>
-              );
-            })}
-          </ul>
-          <div className="ed-add">
-            <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="新增來源">
-              <option value="">{available.length ? "選擇來源" : "沒有其他來源"}</option>
-              {available.map((src) => (
-                <option key={src.id} value={src.id}>
-                  {src.name}
-                  {src.note ? `（${src.note}）` : ""}
-                </option>
-              ))}
-            </select>
+      <div className="setting">
+        <div className="setting-label">「{label}」的來源</div>
+        <div className="segmented" role="radiogroup" aria-label="在看板顯示這個分類">
+          {([true, false] as const).map((on) => (
             <button
-              className="ed-primary"
-              disabled={!pick || full}
-              onClick={() => (update([...ids, pick]), setPick(""), toast(`已新增「${NEWS_BY_ID.get(pick)?.name ?? pick}」`))}
+              key={String(on)}
+              role="radio"
+              aria-checked={ids.length > 0 === on}
+              onClick={() => {
+                if (ids.length > 0 === on) return;
+                update(on ? DEFAULT_NEWS[topic] : []);
+                toast(on ? `看板顯示「${label}」` : `看板不顯示「${label}」`);
+              }}
             >
-              新增
+              {on ? "顯示這個分類" : "不顯示"}
             </button>
-          </div>
-          <p className="muted small">
-            {full ? `每個分頁最多 ${LIMITS.news} 個來源。` : "排在前面的來源，在每一輪都排在前面。來源只能從清單選，不能填任意網址。"}
-          </p>
-        </>
-      )}
+          ))}
+        </div>
+        {ids.length > 0 && (
+          <>
+            <ul className="ed-list">
+              {ids.map((id, i) => {
+                const src = NEWS_BY_ID.get(id);
+                return (
+                  <Row key={id} name={src?.name ?? id} i={i} count={ids.length} min={1} onRemove={() => update(without(ids, i))}>
+                    {src?.name ?? id}
+                    {src?.note && <span className="muted small">・{src.note}</span>}
+                  </Row>
+                );
+              })}
+            </ul>
+            <div className="ed-add">
+              <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="新增來源">
+                <option value="">{available.length ? "選擇來源" : "沒有其他來源"}</option>
+                {available.map((src) => (
+                  <option key={src.id} value={src.id}>
+                    {src.name}
+                    {src.note ? `（${src.note}）` : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="ed-primary"
+                disabled={!pick || full}
+                onClick={() => (update([...ids, pick]), setPick(""), toast(`已新增「${NEWS_BY_ID.get(pick)?.name ?? pick}」`))}
+              >
+                新增
+              </button>
+            </div>
+            <p className="muted small">
+              {full ? `每個分類最多 ${LIMITS.news} 個來源。` : ""}
+              新聞一律依發布時間由新到舊排列，來源沒有先後之分。來源只能從清單選，不能填任意網址。
+            </p>
+          </>
+        )}
+      </div>
     </>
   );
 }
@@ -816,7 +837,10 @@ function summary(section: Section, s: Settings): string {
     case "trains":
       return s.trains.map((t) => `${t.from}→${t.to}`).join("、") || "未設定";
     case "news":
-      return `顯示 ${TOPICS.filter(([id]) => s.news[id].length).length}／${TOPICS.length} 個分類`;
+      return orderedTopics(s)
+        .filter(([id]) => s.news[id].length)
+        .map(([, name]) => name)
+        .join("、");
   }
 }
 
@@ -850,7 +874,7 @@ function SubPage({ title, onClose, children }: { title: string; onClose: () => v
   );
 }
 
-const TITLES: Record<Section, string> = { weather: "天氣地點", markets: "市場行情", bus: "公車", trains: "火車", news: "新聞來源" };
+const TITLES: Record<Section, string> = { weather: "天氣地點", markets: "市場行情", bus: "公車", trains: "火車", news: "新聞" };
 
 export function ContentEditor() {
   const { settings, setSettings } = useSettings();

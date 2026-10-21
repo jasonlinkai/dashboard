@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { REFRESH_SEC, STALE_AFTER_SEC } from "../config";
 import { TOPICS, type Topic } from "../news-sources";
-import { useSettings } from "../settings";
+import { orderedTopics, useSettings } from "../settings";
 import { ago } from "../format";
 import { getJSON, useNow, usePolling, useScrollHint } from "../hooks";
 import type { NewsItem } from "../shared";
@@ -11,7 +11,7 @@ import { SkeletonItems } from "./Skeleton";
 export function News() {
   const { settings } = useSettings();
   // Topics with no sources are hidden (set in 設定 → 新聞).
-  const visible = TOPICS.filter(([id]) => settings.news[id].length);
+  const visible = orderedTopics(settings).filter(([id]) => settings.news[id].length);
   const [chosen, setChosen] = useState<Topic>(() => {
     try {
       const t = localStorage.getItem("newsTopic");

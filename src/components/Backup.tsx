@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { NEWS_BY_ID, TOPICS } from "../news-sources";
-import { DEFAULT_SETTINGS, type Settings, instrumentOf, useSettings, validate } from "../settings";
+import { NEWS_BY_ID } from "../news-sources";
+import { DEFAULT_SETTINGS, type Settings, instrumentOf, orderedTopics, useSettings, validate } from "../settings";
 import type { ThemePref } from "../theme";
 import { toast } from "../toast";
 
@@ -25,7 +25,7 @@ function summary(s: Settings): [string, string][] {
     ["公車", s.bus.map((b) => `${b.route} ${b.stop}`).join("、") || "（無）"],
     ["火車", s.trains.map((t) => `${t.from}→${t.to}`).join("、") || "（無）"],
     ["車種", s.trainType],
-    ...TOPICS.map(([id, label]): [string, string] => [
+    ...orderedTopics(s).map(([id, label]): [string, string] => [
       `新聞・${label}`,
       s.news[id].map((x) => NEWS_BY_ID.get(x)?.name ?? x).join("、") || "（不顯示）",
     ]),
