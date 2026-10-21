@@ -177,21 +177,23 @@ export default function App() {
     const said = changes(next);
     if (setBoxes(next, first)) setAnnounce(said);
   });
+  /** An extra card, removed everywhere with its content. */
+  const removeCard = (p: CardId) => {
+    const { [p]: _w, ...wide } = layout.wide;
+    const { [p]: _t, ...tall } = layout.tall;
+    const rest = Object.fromEntries(SCREENS.map((sc) => [sc, layout.hidden[sc].filter((q) => q !== p)])) as typeof layout.hidden;
+    flip.capture();
+    const { [p]: _n, ...names } = settings.names;
+    setSettings({ ...settings, extras: settings.extras.filter((e) => e.id !== p), names, layout: { ...layout, wide, tall, hidden: rest } });
+    toast(`已移除${name(p)}`);
+  };
   /** On this layout only: a type's first card is hidden (it keeps its content); an extra one is removed everywhere. */
   const hide = (p: CardId) => {
     if (shownIds.length <= 1) return toast("至少要留一個板塊", "error");
     if (isPanel(p)) {
       setLayout({ hidden: { ...layout.hidden, [mode]: [...hidden, p] } });
       setAnnounce(`已隱藏${name(p)}，可以從上方的「＋${name(p)}」顯示回來`);
-    } else {
-      const { [p]: _w, ...wide } = layout.wide;
-      const { [p]: _t, ...tall } = layout.tall;
-      const rest = Object.fromEntries(SCREENS.map((sc) => [sc, layout.hidden[sc].filter((q) => q !== p)])) as typeof layout.hidden;
-      flip.capture();
-      const { [p]: _n, ...names } = settings.names;
-      setSettings({ ...settings, extras: settings.extras.filter((e) => e.id !== p), names, layout: { ...layout, wide, tall, hidden: rest } });
-      toast(`已移除${name(p)}`);
-    }
+    } else removeCard(p);
     setTimeout(() => document.querySelector<HTMLElement>(".layout-bar .layout-toggle")?.focus()); // its button is gone
   };
   /** Room for a card on a board: its old box if free, else free cells (at least `min`); null if none. */
@@ -208,8 +210,8 @@ export default function App() {
     setAnnounce(`已顯示${name(p)}`);
   };
   /** Another card of a type, starting with a little of the first card's content, then its settings open. */
-  const addCard = (type: Panel) => {
-    if (ids.filter((id) => kind(id) === type).length >= MAX_PER_TYPE) return toast(`每種板塊最多 ${MAX_PER_TYPE} 個`, "error");
+  const addCard = (type: Panel): CardId | undefined => {
+    if (ids.filter((id) => kind(id) === type).length >= MAX_PER_TYPE) return void toast(`每種板塊最多 ${MAX_PER_TYPE} 個`, "error");
     const id = `${type}-${Date.now().toString(36).slice(-6)}`;
     const start: Partial<SettingsData> = {
       markets: { markets: settings.markets.slice(0, 1) },
@@ -223,19 +225,20 @@ export default function App() {
     const next = { ...layout, hidden: { ...layout.hidden } };
     for (const m of ["wide", "tall"] as const) {
       const r = roomOn(m, id, m === mode ? here() : BOARD_MIN);
-      if (!r && m === mode) return toast(`畫面上沒有空位放新的${PANEL_NAMES[type]}，請先縮小其他板塊`, "error");
+      if (!r && m === mode) return void toast(`畫面上沒有空位放新的${PANEL_NAMES[type]}，請先縮小其他板塊`, "error");
       next[m] = { ...layout[m], [id]: r ?? { x: 0, y: 0, ...BOARD_MIN } };
       if (!r) next.hidden[m] = [...layout.hidden[m], id];
     }
     const added = { ...settings, extras: [...settings.extras, { id, type, ...start }], layout: next };
     // Checked here too (setSettings would refuse it), so a card that isn't added doesn't open its settings.
     const over = overLimit(added);
-    if (over) return toast(`無法新增：${over}`, "error");
+    if (over) return void toast(`無法新增：${over}`, "error");
     flip.capture();
     setSettings(added);
     setSettingsCard(id);
     setSettingsSection(SECTION_OF[type]);
     setShowSettings(true);
+    return id;
   };
   const edit = {
     editing,
@@ -413,6 +416,8 @@ export default function App() {
         {showSettings && (
           <Settings
             card={settingsCard}
+            onAddCard={addCard}
+            onRemoveCard={removeCard}
             theme={theme}
             onTheme={setTheme}
             fx={fx}

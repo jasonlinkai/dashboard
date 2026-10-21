@@ -156,6 +156,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .ed-tabs { align-self: start; flex-wrap: wrap; }
 .ed-list { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); }
 .ed-row { display: flex; align-items: center; gap: 4px; background: var(--card-2); border-radius: 8px; padding: 4px 4px 4px 10px; min-height: 38px; }
+.ed-remove { color: var(--red); }
 .ed-inline-select { margin-left: 8px; padding: 1px 4px; font-size: 12.5px; border-radius: 6px; vertical-align: 1px; }
 .ed-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .ed-row { padding-left: 2px; }
@@ -920,6 +921,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .sk-rows { flex: 1; min-height: 0; overflow: hidden; }
 .sk-item { padding: 9px 2px; border-bottom: 1px solid var(--line); list-style: none; }
 .sk-eta { width: 2.6em; height: 1.1em; }
+.sk-inline { display: inline-block; width: 40%; vertical-align: middle; }
 .sk-price { width: 70%; height: 1.4em; margin: 6px 0; }
 .sk-wx { width: 60%; height: 1.6em; margin-top: 10px; }
 .sk-box { flex: none; width: 16px; height: 16px; border-radius: 4px; }

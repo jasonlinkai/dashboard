@@ -175,7 +175,15 @@ export function Bus() {
                     }}
                   >
                     <span className="chip blue-chip">{cfg.route}</span>
-                    <span className="grow">{cfg.stop ? <div>{cfg.stop}</div> : <div className="muted">未勾選上車站・點開看全線</div>}</span>
+                    <span className="grow">
+                      {cfg.stop ? <div>{cfg.stop}</div> : <div className="muted">未勾選上車站・點開看全線</div>}
+                      {/* Hold the headsign line's height while loading, so the row doesn't grow when data arrives. */}
+                      {cfg.stop && !state.data && !state.error && (
+                        <div className="muted small">
+                          <SkeletonBar className="sk-inline" />
+                        </div>
+                      )}
+                    </span>
                     {!cfg.stop ? (
                       <span className="eta muted">›</span>
                     ) : state.data ? (

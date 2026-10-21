@@ -11,6 +11,7 @@ import {
   type CardId,
   CardSettings,
   MAX_NAME,
+  MAX_PER_TYPE,
   PANEL_NAMES,
   type Panel,
   cardName,
@@ -1075,7 +1076,20 @@ const TYPE_OF: Record<Section, Panel> = { markets: "markets", weather: "weather"
  * opened from a card's gear. Leaving that page goes straight back to the dashboard (`onExit`),
  * since that's where the user came from.
  */
-export function ContentEditor({ initial, initialCard, onExit }: { initial?: Section; initialCard?: CardId; onExit?: () => void }) {
+export function ContentEditor({
+  initial,
+  initialCard,
+  onExit,
+  onAdd,
+  onRemove,
+}: {
+  initial?: Section;
+  initialCard?: CardId;
+  onExit?: () => void;
+  /** Add a card of a type; its id, or undefined if it wasn't added. */
+  onAdd: (type: Panel) => CardId | undefined;
+  onRemove: (card: CardId) => void;
+}) {
   const { settings } = useSettings();
   const [open, setOpen] = useState<{ section: Section; card: CardId } | null>(
     initial ? { section: initial, card: initialCard ?? TYPE_OF[initial] } : null,
@@ -1108,10 +1122,35 @@ export function ContentEditor({ initial, initialCard, onExit }: { initial?: Sect
           )),
         )}
       </ul>
+      <div className="ed-actions">
+        <select
+          className="layout-add"
+          aria-label="新增板塊"
+          value=""
+          onChange={(e) => {
+            const section = e.target.value as Section;
+            const card = section && onAdd(TYPE_OF[section]);
+            if (card) (fromCard.current = false), setOpen({ section, card });
+          }}
+        >
+          <option value="">新增板塊…</option>
+          {SECTIONS.map(([id, label]) => (
+            <option key={id} value={id} disabled={settings.extras.filter((e) => e.type === TYPE_OF[id]).length + 1 >= MAX_PER_TYPE}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
       {open && (
         // Inside, the page sees (and writes) this card's own content.
         <CardSettings key={open.card} id={open.card}>
-          <CardPage section={open.section} card={open.card} onClose={close} />
+          <CardPage
+            section={open.section}
+            card={open.card}
+            onClose={close}
+            // Only extra cards: a type's first card always exists (it can be hidden in layout mode).
+            onRemove={open.card === TYPE_OF[open.section] ? undefined : () => (setOpen(null), onRemove(open.card))}
+          />
         </CardSettings>
       )}
     </div>
@@ -1119,8 +1158,20 @@ export function ContentEditor({ initial, initialCard, onExit }: { initial?: Sect
 }
 
 /** One card's page: its name, then its content editor. */
-function CardPage({ section, card, onClose }: { section: Section; card: CardId; onClose: () => void }) {
+function CardPage({
+  section,
+  card,
+  onClose,
+  onRemove,
+}: {
+  section: Section;
+  card: CardId;
+  onClose: () => void;
+  onRemove?: () => void;
+}) {
   const { settings, setSettings } = useSettings();
+  // Tap twice: deleting loses the card's content.
+  const [confirming, setConfirming] = useState(false);
   // Sorting is a mode of the page; every page starts out in the normal mode.
   const [sorting, setSorting] = useState(false);
   const props = { s: settings, set: setSettings, sorting };
@@ -1154,6 +1205,13 @@ function CardPage({ section, card, onClose }: { section: Section; card: CardId; 
       {section === "bus" && <BusEditor {...props} />}
       {section === "trains" && <TrainsEditor {...props} />}
       {section === "news" && <NewsEditor {...props} />}
+      {onRemove && (
+        <div className="ed-actions">
+          <button className="ed-remove" onClick={() => (confirming ? onRemove() : setConfirming(true))}>
+            {confirming ? "再按一次確認刪除（內容會一起刪掉）" : "刪除板塊"}
+          </button>
+        </div>
+      )}
     </SubPage>
   );
 }
