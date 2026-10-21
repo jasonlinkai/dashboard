@@ -67,9 +67,9 @@ export function News() {
       className="news"
       state={state}
       maxAgeSec={STALE_AFTER_SEC.news}
-      actions={tabs}
       source="各媒體 RSS 標題與連結，版權屬原媒體，點標題閱讀原文"
     >
+      {tabs}
       <ol className="news-list scroll" ref={listRef}>
         {!topic && <li className="hint">所有新聞分類都設為不顯示，可在右上角「設定 → 新聞」開啟。</li>}
         {topic && !items && (state.error ? <li className="hint error">{state.error}</li> : <SkeletonItems rows={8} />)}

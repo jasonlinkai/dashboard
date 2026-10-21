@@ -416,9 +416,9 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .tabs { display: flex; gap: 2px; background: var(--card-2); border-radius: 9px; padding: 2px; flex: none; }
 .tabs button { border: 0; background: none; padding: 3px 9px; border-radius: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .tabs button[aria-selected="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.2); }
-.news .card-head { flex-wrap: wrap; }
 /* Many news topics: the tab row scrolls sideways instead of wrapping. */
-.news-tabs { max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; scrollbar-width: none; }
+/* Under the card's title row (like the train routes), so the update time stays beside the title. */
+.news-tabs { align-self: start; margin-bottom: 6px; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; scrollbar-width: none; }
 .news-tabs::-webkit-scrollbar { display: none; }
 .news-tabs button { flex: none; }
 .tabs button.tab-hidden { opacity: 0.45; text-decoration: line-through; }
