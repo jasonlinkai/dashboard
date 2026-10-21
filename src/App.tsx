@@ -118,6 +118,7 @@ export default function App() {
             onSaver={setSaver}
             onSaverPreview={() => (setShowSettings(false), setSaverPreview(true), toast("螢幕保護預覽中（20 秒）", "info"))}
             section={settingsSection}
+            onShowSources={() => (setShowSettings(false), setSettingsSection(undefined), setShowInfo(true))}
             onClose={() => (setShowSettings(false), setSettingsSection(undefined))}
           />
         )}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSettings } from "../settings";
 import { toast } from "../toast";
 import { SAVER_OPTIONS, type SaverMinutes, type ThemePref } from "../theme";
+import { About } from "./About";
 import { Backup } from "./Backup";
 import type { ContentSection } from "../openSettings";
 import { ContentEditor } from "./ContentEditor";
@@ -19,6 +20,7 @@ const PAGES = [
   ["look", "外觀"],
   ["tdx", "TDX 金鑰"],
   ["backup", "備份"],
+  ["about", "關於"],
 ] as const;
 type Page = (typeof PAGES)[number][0];
 
@@ -40,6 +42,7 @@ export function Settings({
   onSaver,
   onSaverPreview,
   section,
+  onShowSources,
   onClose,
 }: {
   theme: ThemePref;
@@ -52,6 +55,8 @@ export function Settings({
   onSaverPreview: () => void;
   /** Open straight to this card's page (from the gear next to the card's title). */
   section?: ContentSection;
+  /** Close the settings and open the reliability notes. */
+  onShowSources: () => void;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -175,6 +180,7 @@ export function Settings({
           {page === "content" && <ContentEditor initial={section} onExit={onClose} />}
           {page === "tdx" && <TdxKeySetting />}
           {page === "backup" && <Backup theme={theme} fx={fx} onTheme={onTheme} onFx={onFx} />}
+          {page === "about" && <About onShowSources={onShowSources} />}
         </div>
       </div>
     </div>

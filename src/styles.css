@@ -550,7 +550,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 /* Pixel shift between runs (set by ScreenSaver); invisible to the eye. */
 .app { translate: var(--shift-x, 0) var(--shift-y, 0); }
 /* Drawn behind the board (above the weather animation), so the board stays readable meanwhile. */
-.saver { position: fixed; top: 0; left: 0; z-index: 0; width: 100vw; height: 100vh; height: 100lvh; pointer-events: none; }
+.saver { position: fixed; top: 0; left: 0; z-index: 0; width: 100vw; height: 100vh; height: 100lvh; pointer-events: none; opacity: 0; image-rendering: auto; }
 .link-btn { border: 0; background: none; padding: 0; color: var(--blue); font: inherit; text-decoration: underline; cursor: pointer; }
 
 /* ---------- Split-flap digits (Flip) ---------- */
@@ -760,7 +760,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .key-slot { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card-2); }
 .key-slot-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 /* Four pages, always all visible: equal columns instead of a row that scrolls. */
-.settings-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex: none; }
+.settings-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex: none; }
 .settings-tabs button {
   border: 0; border-radius: 999px; padding: 7px 4px; background: var(--card-2); color: var(--muted);
   font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -769,3 +769,8 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .modal-settings .settings-body, .modal-settings .setting { align-content: start; }
 .modal-settings { height: min(860px, 100%); }
 .settings-tabs button[aria-selected="true"] { background: var(--blue); color: #fff; }
+.about-text { margin: 0; line-height: 1.6; font-weight: 400; }
+.about-mail {
+  display: inline-flex; align-items: center; gap: 6px; justify-self: start; align-self: start; padding: 8px 14px; border-radius: 10px;
+  background: var(--card-2); border: 1px solid var(--line); color: var(--blue); font-weight: 600; word-break: break-all;
+}

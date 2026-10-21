@@ -2,10 +2,41 @@ import { useEffect, useRef, useState } from "react";
 
 const RUN_MS = 20_000;
 
+const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+
+/** One soft light: colour, size (share of the screen) and its own slow path. */
+interface Blob {
+  color: (a: number) => string;
+  r: number;
+  sx: number;
+  sy: number;
+  px: number;
+  py: number;
+}
+const rgba = (r: number, g: number, b: number) => (a: number) => `rgba(${r},${g},${b},${a})`;
+
+// Aurora on the dark theme: lights add up where they meet.
+const DARK: Blob[] = [
+  { color: rgba(40, 200, 180), r: 0.55, sx: 0.23, sy: 0.17, px: 0, py: 1 }, // teal
+  { color: rgba(110, 80, 230), r: 0.6, sx: 0.15, sy: 0.21, px: 2, py: 4 }, // violet
+  { color: rgba(230, 70, 140), r: 0.45, sx: 0.19, sy: 0.13, px: 4, py: 2 }, // rose
+  { color: rgba(242, 184, 75), r: 0.4, sx: 0.27, sy: 0.24, px: 1, py: 5 }, // the board's amber
+  { color: rgba(60, 140, 240), r: 0.5, sx: 0.12, sy: 0.29, px: 5, py: 0 }, // sky
+];
+// Watercolour on the light theme: soft pastel washes that deepen where they overlap.
+const LIGHT: Blob[] = [
+  { color: rgba(120, 215, 200), r: 0.55, sx: 0.23, sy: 0.17, px: 0, py: 1 },
+  { color: rgba(175, 160, 245), r: 0.6, sx: 0.15, sy: 0.21, px: 2, py: 4 },
+  { color: rgba(245, 160, 190), r: 0.45, sx: 0.19, sy: 0.13, px: 4, py: 2 },
+  { color: rgba(250, 205, 130), r: 0.4, sx: 0.27, sy: 0.24, px: 1, py: 5 },
+  { color: rgba(140, 190, 245), r: 0.5, sx: 0.12, sy: 0.29, px: 5, py: 0 },
+];
+
 /**
- * Burn-in protection for a board left on all day. Every `minutes`, colour bands sweep across the
- * whole screen for 20 s, drawn behind the board (like the weather animation) so it stays readable
- * and usable meanwhile.
+ * Burn-in protection for a board left on all day. Every `minutes`, soft coloured lights (an
+ * aurora on the dark theme, watercolour washes on the light one) drift across the whole screen
+ * for 20 s, drawn behind the board (like the weather animation) so it stays readable and usable
+ * meanwhile.
  * In between, the whole board shifts by a pixel or two each minute (applied to `.app` via CSS
  * variables), so static text and borders never sit on exactly the same pixels for hours.
  */
@@ -53,39 +84,54 @@ export function ScreenSaver({ minutes, preview, onPreviewEnd }: { minutes: numbe
     if (!running) return;
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
-    const dpr = Math.min(2, devicePixelRatio || 1);
     // The canvas's own size (CSS: the whole screen, incl. under Safari's toolbar), not innerHeight.
     const w = canvas.clientWidth || innerWidth;
     const h = canvas.clientHeight || innerHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // The glow is drawn small and stretched to the screen: the scaling blurs it into soft light
+    // for free, and a few thousand pixels a frame is nothing even for an old tablet.
+    const SCALE = 10;
+    const sw = Math.max(16, Math.round(w / SCALE));
+    const sh = Math.max(16, Math.round(h / SCALE));
+    canvas.width = sw;
+    canvas.height = sh;
+    const dark =
+      document.documentElement.dataset.theme === "dark" ||
+      (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const blobs = dark ? DARK : LIGHT;
     const t0 = performance.now();
     let raf = 0;
     const frame = (t: number) => {
       const p = (t - t0) / RUN_MS;
       if (p >= 1) return end();
       raf = requestAnimationFrame(frame);
-      ctx.clearRect(0, 0, w, h);
-      // Fade in and out over the first and last two seconds.
-      const fade = Math.min(1, p * 10, (1 - p) * 10);
-      ctx.globalAlpha = fade;
-      // Colour bands sweeping diagonally: every pixel cycles through red, green, blue and white.
-      const offset = reduce ? 0 : p * (w + h) * 2;
-      const band = Math.max(w, h) / 3;
-      for (let x = -band * 2 - h; x < w + h + band; x += band / 4) {
-        const i = Math.floor((x + offset) / (band / 4));
-        const hue = (i * 37 + t / 40) % 360;
-        ctx.fillStyle = `hsla(${hue}, 85%, 55%, ${0.35 + 0.25 * Math.sin(i)})`;
-        ctx.beginPath();
-        const xx = ((x + offset) % (w + h + band * 2)) - band;
-        ctx.moveTo(xx, 0);
-        ctx.lineTo(xx + band / 4, 0);
-        ctx.lineTo(xx + band / 4 - h, h);
-        ctx.lineTo(xx - h, h);
-        ctx.fill();
+      const sec = (t - t0) / 1000;
+      // Ease in over the first 3 s and out over the last 3 s.
+      const fade = smooth(Math.min(1, sec / 3, (RUN_MS / 1000 - sec) / 3));
+      ctx.globalCompositeOperation = "source-over";
+      ctx.clearRect(0, 0, sw, sh);
+      ctx.globalCompositeOperation = dark ? "lighter" : "multiply";
+      if (!dark) {
+        // Multiply needs a white page to darken; the canvas's own alpha fades it in and out.
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, sw, sh);
       }
+      const R = Math.max(sw, sh);
+      blobs.forEach((b, i) => {
+        // Each light drifts on its own slow loop and wanders across most of the screen in 20 s,
+        // so every pixel passes through several colours (that's what protects the panel).
+        const k = reduce ? 0.15 : 1;
+        const x = sw * (0.5 + 0.55 * Math.sin(sec * b.sx * k + b.px));
+        const y = sh * (0.5 + 0.55 * Math.cos(sec * b.sy * k + b.py));
+        const r = R * (b.r + 0.08 * Math.sin(sec * 0.4 + i));
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, b.color(1));
+        g.addColorStop(0.45, b.color(0.55));
+        g.addColorStop(1, b.color(0));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, sw, sh);
+      });
+      canvas.style.opacity = String(fade * (dark ? 0.85 : 0.75));
     };
     const end = () => {
       cancelAnimationFrame(raf);
