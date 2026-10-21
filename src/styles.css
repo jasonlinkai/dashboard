@@ -670,3 +670,4 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .pk-hit-top .muted { flex: none; font-variant-numeric: tabular-nums; }
 .pk-hits-tip { padding: 0 8px 4px; line-height: 1.4; }
 .pk-hits-tip.warn { color: var(--accent); }
+.pk-coord-nav { display: block; text-align: center; font-size: 12px; color: var(--muted); text-decoration: underline; padding: 4px 0 0; }
