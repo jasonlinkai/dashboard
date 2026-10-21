@@ -233,6 +233,37 @@ test.describe("adding cards in layout mode", () => {
   });
 });
 
+test.describe("to-do lock", () => {
+  const withTodo = { ...BASE, absent: ["bus", "train", "news"], todos: [{ text: "買牛奶", done: false }],
+    layout: { wide: { markets: DEF.wide.markets, weather: DEF.wide.weather, todo: { x: 9, y: 6, w: 8, h: 9 } }, tall: DEF.tall, hidden: { wide: [], tall: [] } } };
+
+  test("locked: nothing can be ticked, added or deleted; it stays locked after a reload", async ({ page }) => {
+    await open(page, WIDE, withTodo);
+    const todo = card(page, "todo");
+    await todo.getByRole("button", { name: "鎖定，禁止修改" }).click();
+    await expect(todo.getByRole("checkbox")).toBeDisabled();
+    await expect(todo.getByRole("button", { name: /刪除「/ })).toHaveCount(0);
+    await expect(todo.getByRole("textbox", { name: "新增待辦事項" })).toHaveCount(0);
+    await page.reload();
+    await expect(card(page, "todo").getByRole("checkbox")).toBeDisabled();
+    expect((await stored(page)) as unknown as { todoLocked: boolean }).toMatchObject({ todoLocked: true });
+    await card(page, "todo").getByRole("button", { name: "已鎖定，點一下解鎖" }).click();
+    await card(page, "todo").getByRole("checkbox").check();
+    expect((await stored(page))!.todos).toEqual([{ text: "買牛奶", done: true }]);
+  });
+
+  test("a new to-do card starts unlocked, whatever the first one is", async ({ page }) => {
+    await open(page, WIDE, { ...withTodo, todoLocked: true });
+    await startEditing(page);
+    await bar(page).getByRole("combobox", { name: "新增板塊" }).selectOption("todo");
+    const s = (await stored(page))!;
+    const id = s.extras[0].id;
+    await page.keyboard.press("Escape");
+    await expect(card(page, id).getByRole("button", { name: "鎖定，禁止修改" })).toBeVisible();
+    await expect(card(page, "todo").getByRole("button", { name: "已鎖定，點一下解鎖" })).toBeVisible();
+  });
+});
+
 test.describe("reset", () => {
   const custom = { ...BASE, layout: { wide: swapped(DEF.wide), tall: swapped(DEF.tall), hidden: { wide: ["news"], tall: ["news"] } } };
 

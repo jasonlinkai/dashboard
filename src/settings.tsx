@@ -58,6 +58,8 @@ export interface Settings {
   /** Order of the news tabs on the dashboard. */
   newsOrder: Topic[];
   todos: TodoItem[];
+  /** The to-do list is locked against changes (ticking, adding, deleting). */
+  todoLocked: boolean;
   /** Types whose first card was deleted (or never added): not on the dashboard. Such a type has no extras. */
   absent: Panel[];
   /** Which card sits in which slot of the tablet / desktop layouts. */
@@ -74,7 +76,7 @@ export type Panel = (typeof PANELS)[number];
 export const isPanel = (s: unknown): s is Panel => (PANELS as readonly unknown[]).includes(s);
 export const PANEL_NAMES: Record<Panel, string> = { markets: "市場行情", weather: "天氣", bus: "公車", train: "火車", news: "新聞", todo: "待辦事項" };
 
-/** The phone's bottom tabs (the parking button always comes last). */
+/** The phone's bottom tabs (parking opens from the header's P, as on every screen). */
 export const PHONE_TABS = ["markets", "weather", "transit", "news", "todo"] as const;
 export type PhoneTab = (typeof PHONE_TABS)[number];
 export const TRANSIT = ["bus", "train"] as const;
@@ -150,9 +152,9 @@ export const FIELDS = {
   bus: ["bus"],
   train: ["trains"],
   news: ["news", "newsOrder"],
-  todo: ["todos"],
+  todo: ["todos", "todoLocked"],
 } as const satisfies Record<Panel, readonly (keyof Settings)[]>;
-export type Extra = { id: CardId; type: Panel } & Partial<Pick<Settings, "weather" | "markets" | "bus" | "trains" | "news" | "newsOrder" | "todos">>;
+export type Extra = { id: CardId; type: Panel } & Partial<Pick<Settings, "weather" | "markets" | "bus" | "trains" | "news" | "newsOrder" | "todos" | "todoLocked">>;
 /** Cards of one type, the first one included. */
 export const MAX_PER_TYPE = 3;
 export const cardIds = (s: Settings): CardId[] => [...PANELS.filter((p) => !s.absent.includes(p)), ...s.extras.map((e) => e.id)];
@@ -278,6 +280,7 @@ export const DEFAULT_SETTINGS: Settings = {
   news: DEFAULT_NEWS,
   newsOrder: TOPICS.map(([id]) => id),
   todos: [],
+  todoLocked: false,
   // The default preset has no to-do card; it is added from the settings or the layout bar.
   absent: ["todo"],
   layout: DEFAULT_LAYOUT,
@@ -467,6 +470,9 @@ export function validate(raw: unknown, preset: Preset = DEFAULT_LAYOUT): { setti
       todos.push({ text: t.text, done: t.done });
     });
 
+  const todoLocked = raw.todoLocked ?? false;
+  if (typeof todoLocked !== "boolean") err("todoLocked 要是 true 或 false");
+
   // Older files have every type of their time on the board: only the ones added later are absent.
   const rawAbsent = raw.absent ?? DEFAULT_SETTINGS.absent;
   const absent: Panel[] = [];
@@ -573,7 +579,7 @@ export function validate(raw: unknown, preset: Preset = DEFAULT_LAYOUT): { setti
     }
 
   if (errors.length) return { errors };
-  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, todos, absent, layout, extras, names }, errors };
+  return { settings: { version: 1, weather, markets, bus, trains, news, newsOrder, todos, todoLocked: todoLocked === true, absent, layout, extras, names }, errors };
 }
 
 // ---------- Storage and React context ----------

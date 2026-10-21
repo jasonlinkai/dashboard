@@ -3,47 +3,75 @@ import { LIMITS, MAX_TODO, useSettings } from "../settings";
 import { useScrollHint } from "../hooks";
 import { Section } from "./Section";
 
-/** A to-do list kept on this device: add, tick off and delete items right on the card. */
+/** A to-do list kept on this device: add, tick off and delete items right on the card; the lock stops all of that. */
 export function Todo() {
   const { settings, setSettings } = useSettings();
   const items = settings.todos;
+  const locked = settings.todoLocked;
   const [draft, setDraft] = useState("");
   const listRef = useScrollHint<HTMLUListElement>();
   const set = (todos: typeof items) => setSettings({ ...settings, todos });
   const add = () => {
     const text = draft.trim();
-    if (!text || items.length >= LIMITS.todos) return;
+    if (locked || !text || items.length >= LIMITS.todos) return;
     set([...items, { text, done: false }]);
     setDraft("");
   };
   const left = items.filter((t) => !t.done).length;
   return (
-    <Section title="待辦事項" edit="todo" className="todo" actions={items.length > 0 && <span className="muted small">剩 {left} 項</span>}>
+    <Section
+      title="待辦事項"
+      edit="todo"
+      className="todo"
+      actions={
+        <>
+          <button
+            className={`todo-lock ${locked ? "on" : ""}`}
+            aria-pressed={locked}
+            onClick={() => setSettings({ ...settings, todoLocked: !locked })}
+            aria-label={locked ? "已鎖定，點一下解鎖" : "鎖定，禁止修改"}
+            title={locked ? "已鎖定，點一下解鎖" : "鎖定，禁止修改"}
+          >
+            {locked ? "🔒" : "🔓"}
+          </button>
+          {items.length > 0 && <span className="muted small">剩 {left} 項</span>}
+        </>
+      }
+    >
       <ul className="todo-list scroll" ref={listRef}>
-        {!items.length && <li className="hint">還沒有待辦事項，在下面輸入後按 Enter 新增。</li>}
+        {!items.length && <li className="hint">{locked ? "沒有待辦事項（已鎖定）。" : "還沒有待辦事項，在下面輸入後按 Enter 新增。"}</li>}
         {items.map((t, i) => (
           <li key={i} className={`todo-item ${t.done ? "todo-done" : ""}`}>
             <label>
-              <input type="checkbox" checked={t.done} onChange={() => set(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))} />
+              <input
+                type="checkbox"
+                checked={t.done}
+                disabled={locked}
+                onChange={() => set(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
+              />
               <span>{t.text}</span>
             </label>
-            <button className="todo-del" onClick={() => set(items.filter((_, j) => j !== i))} aria-label={`刪除「${t.text}」`}>
-              ✕
-            </button>
+            {!locked && (
+              <button className="todo-del" onClick={() => set(items.filter((_, j) => j !== i))} aria-label={`刪除「${t.text}」`}>
+                ✕
+              </button>
+            )}
           </li>
         ))}
       </ul>
-      <form className="todo-add" onSubmit={(e) => (e.preventDefault(), add())}>
-        <input
-          value={draft}
-          maxLength={MAX_TODO}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={items.length >= LIMITS.todos ? `最多 ${LIMITS.todos} 項` : "新增待辦…"}
-          disabled={items.length >= LIMITS.todos}
-          aria-label="新增待辦事項"
-        />
-        <button disabled={!draft.trim()}>新增</button>
-      </form>
+      {!locked && (
+        <form className="todo-add" onSubmit={(e) => (e.preventDefault(), add())}>
+          <input
+            value={draft}
+            maxLength={MAX_TODO}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={items.length >= LIMITS.todos ? `最多 ${LIMITS.todos} 項` : "新增待辦…"}
+            disabled={items.length >= LIMITS.todos}
+            aria-label="新增待辦事項"
+          />
+          <button disabled={!draft.trim()}>新增</button>
+        </form>
+      )}
     </Section>
   );
 }

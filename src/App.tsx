@@ -270,7 +270,7 @@ export default function App() {
       bus: { bus: [] },
       train: { trains: [] },
       news: { news: from.news, newsOrder: from.newsOrder },
-      todo: { todos: [] },
+      todo: { todos: [], todoLocked: false }, // not the first card's lock
     }[type];
     // A free spot on each board (this screen's minimum here). None: hidden on that board until
     // it is made room for in layout mode.
@@ -508,10 +508,6 @@ export default function App() {
               {TABS[id][0]}
             </button>
           ))}
-          <button onClick={() => setShowParking(true)}>
-            <span className="tab-icon">🅿️</span>
-            停車
-          </button>
         </nav>
         {showParking && (
           <Suspense fallback={<div className="parking pk-loading">載入地圖中…</div>}>

@@ -738,6 +738,10 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .todo-item input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--blue); }
 .todo-done label span { color: var(--muted); text-decoration: line-through; }
 .todo-del { flex: none; border: 0; background: none; color: var(--muted); padding: 4px 8px; border-radius: 6px; }
+.todo-lock { flex: none; border: 0; background: none; padding: 2px 4px; border-radius: 6px; font-size: 15px; line-height: 1; opacity: 0.55; cursor: pointer; }
+.todo-lock.on { opacity: 1; background: color-mix(in srgb, var(--blue) 14%, transparent); }
+.todo-item input:disabled + span { cursor: default; }
+.todo-item:has(input:disabled) label { cursor: default; }
 .todo-add { flex: none; display: flex; gap: 6px; margin-top: 6px; }
 .todo-add input { flex: 1; min-width: 0; }
 .todo-add button { border: 1px solid var(--blue); background: var(--blue); color: #fff; border-radius: 8px; padding: 6px 12px; font-weight: 600; }
