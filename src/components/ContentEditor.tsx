@@ -1162,7 +1162,6 @@ export function ContentEditor({
             section={open.section}
             card={open.card}
             onClose={close}
-            onRemove={() => (setOpen(null), onRemove(open.card))}
           />
         </CardSettings>
       )}
@@ -1170,21 +1169,9 @@ export function ContentEditor({
   );
 }
 
-/** One card's page: its name, then its content editor. */
-function CardPage({
-  section,
-  card,
-  onClose,
-  onRemove,
-}: {
-  section: Section;
-  card: CardId;
-  onClose: () => void;
-  onRemove: () => void;
-}) {
+/** One card's page: its name, then its content editor (deleting is in the list outside). */
+function CardPage({ section, card, onClose }: { section: Section; card: CardId; onClose: () => void }) {
   const { settings, setSettings } = useSettings();
-  // Tap twice: deleting loses the card's content.
-  const [confirming, setConfirming] = useState(false);
   // Sorting is a mode of the page; every page starts out in the normal mode.
   const [sorting, setSorting] = useState(false);
   const props = { s: settings, set: setSettings, sorting };
@@ -1219,14 +1206,6 @@ function CardPage({
       {section === "trains" && <TrainsEditor {...props} />}
       {section === "news" && <NewsEditor {...props} />}
       {section === "todo" && <p className="muted small">待辦事項直接在看板上的板塊新增、勾選與刪除。</p>}
-      <div className="ed-actions">
-        <button className="ed-remove" onClick={() => (confirming ? onRemove() : setConfirming(true))}>
-          {confirming ? "再按一次確認刪除（內容會一起刪掉）" : "刪除板塊"}
-        </button>
-      </div>
-      {confirming && !cardIds(settings).some((c) => c !== card && typeOf(settings, c) === TYPE_OF[section]) && (
-        <div className="muted small">這是最後一個{PANEL_NAMES[TYPE_OF[section]]}板塊；之後可以從「顯示內容」或排版模式再新增，內容會是預設值。</div>
-      )}
     </SubPage>
   );
 }

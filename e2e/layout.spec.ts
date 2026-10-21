@@ -347,9 +347,8 @@ test.describe("deleting everything", () => {
     await open(page, WIDE, { ...BASE, absent: ["weather", "bus", "train", "news", "todo"] });
     await page.getByRole("button", { name: "設定", exact: true }).click();
     await page.getByRole("tab", { name: "顯示內容" }).click();
-    await page.locator(".ed-section").first().click();
-    await page.getByRole("button", { name: "刪除板塊" }).click();
-    await page.getByRole("button", { name: /再按一次確認刪除/ }).click();
+    await page.getByRole("button", { name: "刪除行情" }).click();
+    await page.getByRole("button", { name: "再按一次確認刪除行情" }).click();
     expect((await stored(page))!.absent.sort()).toEqual(["bus", "markets", "news", "todo", "train", "weather"]);
     // Every type's group is empty, each with its own add button.
     await expect(page.locator(".ed-group")).toHaveCount(6);
@@ -360,6 +359,15 @@ test.describe("deleting everything", () => {
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await expect(card(page, "markets")).toBeVisible();
+  });
+
+  test("a card's own page has no delete button (it's in the list)", async ({ page }) => {
+    await open(page, WIDE);
+    await page.getByRole("button", { name: "設定", exact: true }).click();
+    await page.getByRole("tab", { name: "顯示內容" }).click();
+    await page.locator(".ed-section").first().click();
+    await expect(page.getByRole("dialog", { name: /市場行情/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /刪除板塊|確認刪除/ })).toHaveCount(0);
   });
 
   test("a card can be deleted from the list itself (tap twice)", async ({ page }) => {
