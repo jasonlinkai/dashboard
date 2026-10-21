@@ -23,14 +23,25 @@ const REFRESH_SEC = 120; // the server refreshes live spaces at most every 2 min
 const LIVE_OLD_MIN = 15;
 const STORE = "parking.v1";
 
-function load(): { dest: Dest | null; radius: Radius; sort: Sort } {
+const ALL_SOURCES: ParkingSource[] = ["TDX", "NTPC", "OSM"];
+/** OpenStreetMap is off by default: many of its car parks turn out to be private or gone. */
+const DEFAULT_SOURCES: ParkingSource[] = ["TDX", "NTPC"];
+
+function load(): { dest: Dest | null; radius: Radius; sort: Sort; sources: ParkingSource[]; liveOnly: boolean } {
   try {
     const v = JSON.parse(localStorage.getItem(STORE) ?? "{}");
     const dest =
       v.dest && Number.isFinite(v.dest.lat) && Number.isFinite(v.dest.lon) && typeof v.dest.label === "string" ? (v.dest as Dest) : null;
-    return { dest, radius: RADII.includes(v.radius) ? v.radius : 500, sort: ["distance", "fare", "spaces"].includes(v.sort) ? v.sort : "distance" };
+    const sources = Array.isArray(v.sources) ? ALL_SOURCES.filter((x) => v.sources.includes(x)) : DEFAULT_SOURCES;
+    return {
+      dest,
+      radius: RADII.includes(v.radius) ? v.radius : 500,
+      sort: ["distance", "fare", "spaces"].includes(v.sort) ? v.sort : "distance",
+      sources,
+      liveOnly: v.liveOnly === true,
+    };
   } catch {
-    return { dest: null, radius: 500, sort: "distance" };
+    return { dest: null, radius: 500, sort: "distance", sources: DEFAULT_SOURCES, liveOnly: false };
   }
 }
 
@@ -119,6 +130,9 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   const [dest, setDest] = useState<Dest | null>(saved.dest);
   const [radius, setRadius] = useState<Radius>(saved.radius);
   const [sort, setSort] = useState<Sort>(saved.sort);
+  /** Sources to show (a car park found by several sources shows if any of them is on). */
+  const [sources, setSources] = useState<ParkingSource[]>(saved.sources);
+  const [liveOnly, setLiveOnly] = useState(saved.liveOnly);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<GeoResponse | null>(null);
   /** Where the map is looking, so a search like "麥當勞" finds the branches around there. */
@@ -134,9 +148,9 @@ export default function Parking({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE, JSON.stringify({ dest, radius, sort }));
+      localStorage.setItem(STORE, JSON.stringify({ dest, radius, sort, sources, liveOnly }));
     } catch {}
-  }, [dest, radius, sort]);
+  }, [dest, radius, sort, sources, liveOnly]);
 
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -181,7 +195,20 @@ export default function Parking({ onClose }: { onClose: () => void }) {
     };
   }, [dest, radius]);
 
-  const lots = useMemo(() => sortLots(data?.lots ?? [], sort), [data, sort]);
+  const lots = useMemo(
+    () =>
+      sortLots(
+        (data?.lots ?? []).filter((p) => p.sources.some((x) => sources.includes(x)) && (!liveOnly || (p.live === "ok" && mainCount(p)))),
+        sort,
+      ),
+    [data, sort, sources, liveOnly],
+  );
+  const hiddenCount = (data?.lots.length ?? 0) - lots.length;
+  const toggleSource = (x: ParkingSource) => {
+    const next = sources.includes(x) ? sources.filter((y) => y !== x) : ALL_SOURCES.filter((y) => y === x || sources.includes(y));
+    setSources(next);
+    toast(`${sources.includes(x) ? "隱藏" : "顯示"}${SOURCE[x].long.replace("（只有位置）", "")}的停車場`, "info");
+  };
 
   const search = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -251,7 +278,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
   );
   const osmAsOf = data?.extra.find((x) => x.source === "OSM")?.asOf;
   const osmDate = osmAsOf ? osmAsOf.slice(0, 10) : null;
-  const noLiveAtAll = data && data.lots.length > 0 && data.lots.every((p) => p.live !== "ok");
+  const noLiveAtAll = lots.length > 0 && lots.every((p) => p.live !== "ok");
 
   return (
     <div className="parking" role="dialog" aria-modal="true" aria-labelledby="parking-title">
@@ -335,6 +362,23 @@ export default function Parking({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
+      <div className="pk-filters" role="group" aria-label="篩選">
+        <span className="muted small">顯示</span>
+        {ALL_SOURCES.map((x) => (
+          <button key={x} className="pk-filter" aria-pressed={sources.includes(x)} onClick={() => toggleSource(x)}>
+            <span className={`pk-src src-${x.toLowerCase()}`}>{SOURCE[x].badge}</span>
+            {SOURCE[x].short}
+          </button>
+        ))}
+        <button
+          className="pk-filter"
+          aria-pressed={liveOnly}
+          onClick={() => (setLiveOnly(!liveOnly), toast(liveOnly ? "顯示所有停車場" : "只顯示有即時空位的停車場", "info"))}
+        >
+          只看有即時空位
+        </button>
+      </div>
+
       <div className="pk-body">
         <ParkingMap dest={dest} radius={radius} lots={lots} selected={selected} onSelect={(id) => select(id, "map")} onPick={pickOnMap} onView={(v) => (view.current = v)} />
 
@@ -344,7 +388,12 @@ export default function Parking({ onClose }: { onClose: () => void }) {
             <div className="pk-summary">
               <span>
                 <b>{dest.label}</b> 半徑 {fmtDistance(radius)}內
-                {data && !loading && <> ・{data.lots.length} 個停車場</>}
+                {data && !loading && (
+                  <>
+                    {" "}
+                    ・{lots.length} 個停車場{hiddenCount > 0 && <span className="muted">（篩選隱藏 {hiddenCount} 個）</span>}
+                  </>
+                )}
                 {loading && " ・載入中…"}
               </span>
               {data && (
@@ -366,7 +415,7 @@ export default function Parking({ onClose }: { onClose: () => void }) {
               {c.coveredBy
                 ? `TDX 沒有${c.name}的停車場資料，${c.name}改用${c.coveredBy}`
                 : c.lots === "empty"
-                ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（仍會列出 OpenStreetMap 上的停車場）`
+                ? `⚠ TDX 目前沒有${c.name}的停車場資料，${c.name}的官方停車場不會出現（可在上方「顯示」打開 OSM 來源看 OpenStreetMap 上的停車場）`
                 : c.lots === "error"
                 ? `⚠ ${c.name}停車場資料暫時無法取得（${c.error ?? ""}）`
                 : c.live === "error"
@@ -382,6 +431,12 @@ export default function Parking({ onClose }: { onClose: () => void }) {
                 {x.status === "error" ? "暫時無法取得，這個來源的停車場不會出現" : ""}（{x.error}）
               </p>
             ))}
+          {data && !loading && data.lots.length > 0 && lots.length === 0 && (
+            <p className="pk-note">
+              附近的 {data.lots.length} 個停車場都被篩選隱藏了，可以在上方「顯示」打開其他來源
+              {!sources.includes("OSM") && "（OSM 預設關閉：OpenStreetMap 的停車場常是私人或已不存在，只有位置）"}。
+            </p>
+          )}
           {data && !loading && data.lots.length === 0 && !error && (
             <p className="pk-note">
               這個範圍內沒有找到停車場。可以加大半徑。

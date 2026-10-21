@@ -715,3 +715,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .bus-stop-pick { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--blue); cursor: pointer; }
 .bus-sheet-hint { padding: 6px 14px 0; margin: 0; flex: none; }
 .bus-plate { margin-left: auto; }
+.pk-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: none; }
+.pk-filter {
+  display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: var(--card);
+  color: var(--muted); border-radius: 999px; padding: 4px 10px 4px 6px; font-size: 13px;
+}
+.pk-filter:last-child { padding-left: 10px; }
+.pk-filter[aria-pressed="true"] { color: var(--text); border-color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, var(--card)); }
+.pk-filter[aria-pressed="false"] .pk-src { opacity: 0.4; }
