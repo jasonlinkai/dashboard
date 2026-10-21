@@ -255,6 +255,11 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   opacity: 0.5; outline: 2px dashed color-mix(in srgb, var(--blue) 70%, transparent); outline-offset: -2px;
 }
 .reorder-active { cursor: grabbing; }
+/* A selected (blue, white text) route tab stays blue while lifted; the blue ring wouldn't show on it. */
+.route-tab.reordering[aria-selected="true"] {
+  background: var(--blue) !important; color: #fff;
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.55), 0 18px 40px rgb(0 0 0 / 0.55) !important;
+}
 
 /* Every piece of data is a link to its source page. */
 .link { display: block; border-radius: 10px; transition: background 0.15s, box-shadow 0.15s; }
